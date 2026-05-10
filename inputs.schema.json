@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yelli.powerbyte.app/schemas/inputs.schema.json",
+  "title": "Yelli — inputs.yml validation",
+  "description": "Locked app spec validation (Spec-Driven Platform V31). Validates inputs.yml structure and constraints.",
+  "type": "object",
+  "required": [
+    "version", "app", "tenancy", "environments", "domains",
+    "tech_stack", "apps", "packages", "entities", "modules", "roles",
+    "ports", "docker", "deploy", "git", "models", "security"
+  ],
+  "properties": {
+    "version": { "type": "integer", "const": 3 },
+    "app": {
+      "type": "object",
+      "required": ["name", "slug", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+        "description": { "type": "string", "minLength": 10 },
+        "industry": { "type": "string" },
+        "app_type": { "type": "string" }
+      }
+    },
+    "tenancy": {
+      "type": "object",
+      "required": ["mode", "isolation", "scoping_column"],
+      "properties": {
+        "mode": { "enum": ["single", "multi"] },
+        "self_hosted_mode": { "enum": ["single", "multi"] },
+        "isolation": { "enum": ["shared_schema_with_tenant_id", "separate_schema_per_tenant", "separate_database_per_tenant"] },
+        "scoping_column": { "type": "string" },
+        "url_routing": { "enum": ["subdomain", "subdirectory", "single_domain"] },
+        "db_isolation_exception": { "type": "string" }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "items": { "enum": ["dev", "staging", "prod"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "domains": {
+      "type": "object",
+      "required": ["dev", "staging", "prod"]
+    },
+    "tech_stack": {
+      "type": "object",
+      "required": ["frontend", "api", "orm", "auth_provider", "database", "ui_library"],
+      "properties": {
+        "frontend": { "enum": ["nextjs", "remix", "astro"] },
+        "api": { "enum": ["trpc", "rest", "graphql"] },
+        "orm": { "enum": ["prisma", "drizzle", "kysely"] },
+        "auth_provider": { "enum": ["authjs", "keycloak", "clerk"] },
+        "auth_strategy": { "type": "string" },
+        "database": { "enum": ["postgresql", "mysql"] },
+        "cache": { "enum": ["valkey", "redis", "memcached"] },
+        "job_queue": { "enum": ["bullmq", "graphile", "inngest"] },
+        "file_storage": { "enum": ["minio", "s3", "r2", "azure_blob"] },
+        "ui_library": { "const": "shadcn_ui", "description": "Locked — UI Component Rules Rule 26" },
+        "chart_library": { "type": "string" },
+        "map_library": { "type": "string" },
+        "icon_set": { "const": "lucide_react", "description": "Locked — UI Component Rules" },
+        "media_server": { "type": "string" },
+        "turn_server": { "type": "string" },
+        "realtime_signaling": { "type": "string" },
+        "payment_gateway": { "enum": ["xendit", "stripe", "paymongo", "none"] },
+        "bot_protection": { "enum": ["cloudflare_turnstile", "recaptcha", "none"] },
+        "node_version": { "type": "integer", "minimum": 22 },
+        "typescript_strict": { "const": true, "description": "Rule 12 — locked" }
+      }
+    },
+    "apps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "framework"],
+        "properties": {
+          "name": { "type": "string" },
+          "framework": { "enum": ["nextjs", "expo", "remix"] },
+          "description": { "type": "string" },
+          "role": { "type": "string" },
+          "auth_required": { "type": "boolean" },
+          "port_env": { "type": "string" },
+          "has_dockerfile": { "type": "boolean" }
+        }
+      }
+    },
+    "mobile": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "strategy": { "type": "string" }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "consumers": { "type": "array", "items": { "type": "string" } },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "fields"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+          "description": { "type": "string" },
+          "fields": { "type": "array", "minItems": 1 },
+          "saas_only": { "type": "boolean" },
+          "singleton": { "type": "boolean" }
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "url_prefix"],
+        "properties": {
+          "name": { "type": "string" },
+          "url_prefix": { "type": "string", "pattern": "^/" },
+          "owner_role": { "type": "array" },
+          "saas_only": { "type": "boolean" }
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "scope"],
+        "properties": {
+          "name": { "type": "string" },
+          "scope": { "enum": ["platform", "organization", "per_meeting"] },
+          "saas_only": { "type": "boolean" },
+          "transient": { "type": "boolean" },
+          "no_account": { "type": "boolean" },
+          "bypasses_tenant_guard": { "type": "boolean" }
+        }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "provider": { "type": "string" },
+        "backend": { "type": "string" },
+        "queues": { "type": "array" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "provider": { "type": "string" },
+        "buckets": { "type": "array" },
+        "key_strategy": { "type": "string" },
+        "max_upload_mb": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ports": {
+      "type": "object",
+      "required": ["dev", "staging", "prod"],
+      "properties": {
+        "dev": {
+          "type": "object",
+          "required": ["base", "postgres", "valkey", "app"],
+          "properties": {
+            "base": { "type": "integer", "minimum": 40000, "maximum": 49999 },
+            "postgres": { "type": "integer", "minimum": 40000, "maximum": 49999 },
+            "valkey": { "type": "integer", "minimum": 40000, "maximum": 49999 },
+            "app": { "type": "integer", "minimum": 40000, "maximum": 49999 }
+          }
+        }
+      }
+    },
+    "docker": {
+      "type": "object",
+      "required": ["publish"],
+      "properties": {
+        "publish": { "type": "boolean" },
+        "registry": { "type": "string" },
+        "hub_repo": { "type": "string", "pattern": "^[a-z0-9_][a-z0-9_-]*/[a-z0-9][a-z0-9-]*$" },
+        "image_name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "platforms": { "type": "array" },
+        "build_on_push_to": { "type": "string" },
+        "dev_build": { "type": "boolean" }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["compose", "k8s"] },
+        "k8s": {
+          "type": "object",
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "manager": { "type": "string" },
+        "reverse_proxy": { "type": "string" }
+      }
+    },
+    "git": {
+      "type": "object",
+      "required": ["default_branch", "branch_pattern", "squash_merge"],
+      "properties": {
+        "default_branch": { "type": "string" },
+        "branch_pattern": { "type": "string" },
+        "scaffold_pattern": { "type": "string" },
+        "commit_style": { "enum": ["conventional", "free"] },
+        "squash_merge": { "type": "boolean" },
+        "use_worktrees": { "type": "boolean" }
+      }
+    },
+    "models": {
+      "type": "object",
+      "required": ["execution"],
+      "properties": {
+        "planning": { "type": "string" },
+        "execution": { "type": "string" },
+        "governance": { "type": "string" }
+      }
+    },
+    "vibe_test": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "context7": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "accessibility": {
+      "type": "object",
+      "properties": {
+        "level": { "enum": ["none", "wcag_aa", "wcag_aaa"] }
+      }
+    },
+    "payment": {
+      "type": "object",
+      "properties": {
+        "gateway": { "enum": ["xendit", "stripe", "paymongo", "none"] },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "methods": { "type": "array" },
+        "recurring": { "type": "boolean" },
+        "multi_currency": { "type": "boolean" }
+      }
+    },
+    "turnstile": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "widget_mode": { "enum": ["managed", "non_interactive", "invisible"] },
+        "protected_pages": { "type": "array" }
+      }
+    },
+    "video": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "sfu_model": { "type": "string" },
+        "egress_enabled": { "type": "boolean" },
+        "max_participants_per_room": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "realtime": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "features": { "type": "array" }
+      }
+    },
+    "security": {
+      "type": "object",
+      "required": ["layers_always_active", "rate_limits"],
+      "properties": {
+        "layers_always_active": { "type": "array", "minItems": 3 },
+        "http_headers_enabled": { "type": "boolean" },
+        "rate_limiter_enabled": { "type": "boolean" },
+        "rate_limits": { "type": "object" },
+        "cors_origins": { "type": "object" },
+        "audit_events": { "type": "array" }
+      }
+    },
+    "nfr": {
+      "type": "object",
+      "properties": {
+        "api_response_target_ms": { "type": "integer" },
+        "concurrent_users_target": { "type": "integer" },
+        "uptime_sla": { "type": "string" }
+      }
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

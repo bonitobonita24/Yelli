@@ -1,0 +1,36 @@
+{
+  "name": "yelli",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Yelli — Instant video intercom for offices, hospitals, and government departments",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "tools:validate-inputs": "node tools/validate-inputs.mjs",
+    "tools:check-env": "node tools/check-env.mjs",
+    "tools:check-product-sync": "node tools/check-product-sync.mjs",
+    "tools:hydration-lint": "node tools/hydration-lint.mjs"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.0.0",
+    "typescript": "^5.6.0"
+  }
+}

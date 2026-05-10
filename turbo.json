@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*", "tsconfig.base.json", ".eslintrc.js", ".prettierrc"],
+  "globalEnv": [
+    "NODE_ENV",
+    "APP_ENV",
+    "COMPOSE_PROJECT_NAME",
+    "APP_PORT",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "AUTH_SECRET",
+    "NEXTAUTH_URL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"],
+      "env": ["NODE_ENV", "APP_ENV"]
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": ["*.tsbuildinfo"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}
