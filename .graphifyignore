@@ -1,0 +1,29 @@
+# Defensive exclusions — applies if graphify is ever installed
+# Per scan-project rules: prevents indexing of ephemeral planning/state files
+
+task_plan.md
+findings.md
+progress.md
+HANDOFF.md
+HANDOFF_OUTPUT.md
+
+# Spec-Driven framework state files
+.cline/STATE.md
+.cline/handoffs/
+.cline/memory/agent-log.md
+CREDENTIALS.md
+.claude/scan-results.json
+
+# Generated outputs
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# AI artifacts
+.specstory/
+.code-review-graph/
+.socraticodecontextartifacts.json

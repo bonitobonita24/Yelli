@@ -1,0 +1,82 @@
+{
+  "scannedAt": "2026-05-11",
+  "techStack": [
+    "Next.js 15 App Router",
+    "tRPC v11",
+    "Prisma",
+    "Auth.js v5",
+    "PostgreSQL 16",
+    "PgBouncer",
+    "Valkey",
+    "BullMQ",
+    "MinIO / S3",
+    "shadcn/ui",
+    "LiveKit",
+    "coturn",
+    "Socket.io",
+    "Xendit",
+    "Cloudflare Turnstile",
+    "Turborepo",
+    "pnpm",
+    "Node 22",
+    "TypeScript strict"
+  ],
+  "projectType": "full-stack monorepo SaaS with self-hosted path",
+  "specDriven": {
+    "detected": true,
+    "frameworkVersion": "V31",
+    "memoryGovernanceInstalled": true,
+    "memoryGovernancePath": ".claude/rules/memory-governance.md",
+    "currentPhase": "Phase 4 Part 1 complete, ready for Part 2",
+    "midProjectAdoption": false,
+    "mcpJsonWired": true,
+    "mcpServers": ["socraticode", "context7", "shadcn"]
+  },
+  "installedSkills": [
+    { "name": "skillpilot", "category": "Context Management", "tier": "T1", "reason": "Skill orchestrator — must be first" },
+    { "name": "awesome-design-md", "category": "Design & UI", "tier": "T1", "reason": "docs/DESIGN.md present (Scenario 33) — provides 31 source DESIGN.md library for visual tokens" },
+    { "name": "design-auditor", "category": "Design & UI", "tier": "T1", "reason": "Phase 4 Parts 5-6 UI quality bar — scores designs against 17 rules" },
+    { "name": "oiloil-ui-ux-guide", "category": "Design & UI", "tier": "T1", "reason": "Phase 4 Parts 5-6 UX theory — task-first UX, HCI laws (per phases.md Step 6)" },
+    { "name": "owasp-security", "category": "Security & Testing", "tier": "T1", "reason": "Slot 4 — OWASP Top 10:2025 + ASVS 5.0 security gates" },
+    { "name": "varlock-claude-skill", "category": "Security & Testing", "tier": "T1", "reason": "Secrets never appear in Claude/terminal/git — works with CREDENTIALS.md gitignore rule" },
+    { "name": "playwright-skill", "category": "Security & Testing", "tier": "T1", "reason": "Phase 4 Parts 5-6 — E2E + component + visual + a11y testing per module" },
+    { "name": "git-pushing", "category": "Collaboration & Workflow", "tier": "T1", "reason": "Slot 5 — commit discipline, safe push workflow (matches Rule 23 git strategy)" },
+    { "name": "test-fixing", "category": "Collaboration & Workflow", "tier": "T1", "reason": "Phase 5 — smart error grouping for failing tests during validation" },
+    { "name": "review-implementing", "category": "Collaboration & Workflow", "tier": "T1", "reason": "Phase 7 — systematic code review feedback implementation (Rule 25 two-stage review)" },
+    { "name": "postgres", "category": "Data & Analytics", "tier": "T1", "reason": "Phase 4 Part 3 + Phase 6 — read-only DB queries to verify schema/seed after migration" },
+    { "name": "vercel-agent-skills", "category": "Development & DevOps", "tier": "T1", "reason": "Next.js 15 App Router rules (67) + web design (100+) + Vercel deploy — stack match" },
+    { "name": "mcp-builder", "category": "Development & DevOps", "tier": "T2", "reason": "Framework wires SocratiCode + shadcn MCPs; useful for any custom MCP needs" },
+    { "name": "claude-api", "category": "Development & DevOps", "tier": "T2", "reason": "Anthropic API reference for future AI integration phases" }
+  ],
+  "pluginsToInstallManually": [
+    { "name": "context-mode", "command": "/plugin marketplace add mksglu/context-mode && /plugin install context-mode@context-mode", "reason": "98% token reduction on tool outputs — critical for Sonnet 4.6 80K SAFE zone" },
+    { "name": "claude-mem", "command": "/plugin marketplace add thedotmack/claude-mem && /plugin install claude-mem@thedotmack", "reason": "Compressed cross-session memory — replaces governance doc re-reads" },
+    { "name": "superpowers", "command": "/plugin install superpowers", "reason": "BUNDLE: TDD + systematic-debugging + root-cause-tracing + brainstorming + git-worktrees + finishing-branch + parallel-agents + code-review + defense-in-depth" },
+    { "name": "planning-with-files", "command": "/plugin install planning-with-files", "reason": "Slot 3 — persistent task_plan.md/findings.md matches STATE.md pattern" },
+    { "name": "frontend-design", "command": "/plugin install frontend-design@claude-code", "reason": "Slot 4 — Anthropic's production UI code generation" },
+    { "name": "claude-skills-65", "command": "/plugin install claude-skills-65", "reason": "Slot 6 — 65 framework skills for React/Next.js/tRPC/Prisma/Tailwind" },
+    { "name": "ui-ux-pro-max", "command": "/plugin install ui-ux-pro-max@ui-ux-pro-max-skill", "reason": "Phase 2.6 design system regeneration (already ran once — keep for future)" },
+    { "name": "a11y-skill", "command": "npx skills add airowe/claude-a11y-skill", "reason": "MANDATORY — accessibility: wcag_aa locked in inputs.yml for hospital/govt deployments" }
+  ],
+  "systemTools": [
+    { "name": "code-review-graph", "status": "already installed at /home/me/.local/bin/code-review-graph", "nextAction": "After Phase 4 Parts 3-5 generate source files, run: cd <project> && code-review-graph build" }
+  ],
+  "mcpsAlreadyWired": [
+    { "name": "socraticode", "location": ".vscode/mcp.json", "purpose": "Vector search — 61% less context" },
+    { "name": "context7", "location": ".vscode/mcp.json", "purpose": "Live library docs (Rule 30)" },
+    { "name": "shadcn", "location": ".vscode/mcp.json", "purpose": "Component install via natural language" }
+  ],
+  "resolvedConflicts": [
+    { "type": "pre-resolved (no install attempted)", "skipped": "graphify", "reason": "HIGH conflict with code-review-graph — never install both" },
+    { "type": "pre-resolved (no install attempted)", "skipped": "debug-skill", "reason": "phases.md prohibits alongside superpowers (which includes systematic-debugging)" },
+    { "type": "pre-resolved (no install attempted)", "skipped": "individual superpowers sub-skills", "reason": "Bundle includes systematic-debugging, TDD, root-cause-tracing, git-worktrees, finishing-branch, brainstorming, defense-in-depth — install bundle as unit" },
+    { "type": "MCP-only enforcement", "skill": "socraticode", "resolution": "Wired in .vscode/mcp.json only, never as plugin install — has no instructions field, injects zero behavioral directives" }
+  ],
+  "excludedGlobals": [],
+  "skippedOptional": [
+    { "name": "n8n-expression-syntax", "reason": "OPTIONAL bundle skill — Yelli has no n8n automation declared in inputs.yml" },
+    { "name": "n8n-mcp-tools-expert", "reason": "OPTIONAL — same as above" },
+    { "name": "n8n-workflow-patterns", "reason": "OPTIONAL — same as above" }
+  ],
+  "globalCleanupAdvised": false
+}
