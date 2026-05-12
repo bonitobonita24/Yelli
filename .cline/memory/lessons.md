@@ -101,3 +101,69 @@
   pnpm install to pick up the allowlist. Verify Prisma generate works afterward.
 
 # ---
+
+## 2026-05-13 — 🟡 Sonnet subagents thrash when prompts inline verbose templates
+
+- Type: 🟡 fix
+- Phase: Phase 4 Part 4 (dispatch 4a — packages/ui)
+- Files: subagent dispatch patterns (Agent tool prompts)
+- Concepts: sonnet, subagent, context-budget, autocompact-thrash, prompt-design, architect-execute
+- Narrative: Dispatched a Sonnet 4.6 subagent for packages/ui scaffold with 18 files. The dispatch
+  prompt embedded VERBATIM templates for 9 shadcn components (~770 lines of inline source code
+  meant to guide the subagent's writes). At 21 tool uses / 25 min the runtime threw:
+  "Autocompact is thrashing: context refilled to the limit within 3 turns of the previous compact,
+   3 times in a row." Sonnet's 60K context − system/tool overhead ≈ 30K safe execution budget
+  (memory-governance.md §1 Step 2.5). The verbose templates alone burned ~15K just to LOAD into
+  the prompt, leaving Sonnet only ~15K for reasoning + tool results — too little to handle
+  20-file iteration with read references + write outputs. Resolution: Opus completed the
+  remaining file (src/index.ts) inline. Lesson:
+  (1) Subagent prompts must be TIGHT — instructions only, no inline source templates.
+  (2) Reference style: "follow canonical shadcn New York-style implementation" — let Sonnet
+      pull from training data.
+  (3) If a template MUST be inline (rare), the dispatch should target ≤5 files, not 20.
+  (4) Storage 4b (no inline templates, just rules + 30 lines of TS examples) ran cleanly in
+      ~11 min for 18 files — confirms the pattern.
+  Future Part 5+ dispatches: instructions + rules + 2-3 line code snippets, never full files.
+
+# ---
+
+## 2026-05-13 — 🔴 exactOptionalPropertyTypes traps with `useTheme()` and dispatch-with-undefined
+
+- Type: 🔴 gotcha
+- Phase: Phase 4 Part 4 (packages/ui typecheck)
+- Files: packages/ui/src/components/sonner.tsx, packages/ui/src/components/use-toast.ts
+- Concepts: typescript, exactOptionalPropertyTypes, next-themes, react-reducer, strict-mode
+- Narrative: tsconfig.base.json sets `exactOptionalPropertyTypes: true` — an optional `prop?: T`
+  CANNOT receive `T | undefined`; the property must be entirely omitted to be absent.
+  Two violations from default shadcn patterns:
+  (1) `<Sonner theme={theme as ToasterProps["theme"]}>` fails because useTheme returns
+      `string | undefined`. Even after `const { theme = "system" }` destructure-default, TS
+      sees `theme: string`, not `"system" | "light" | "dark"`. The unsafe cast then passes
+      `string` to a typed param. Fix: narrow with a ternary —
+      `theme === "light" || theme === "dark" ? theme : "system"`.
+  (2) `dispatch({ type: "DISMISS_TOAST", toastId })` where `toastId?: string` and the dispatched
+      object has `toastId: string | undefined`. Fix: conditional spread —
+      `dispatch({ type: "DISMISS_TOAST", ...(toastId !== undefined ? { toastId } : {}) })`.
+  This will recur for every third-party API that returns `string | undefined` and feeds into
+  a strictly-optional prop. Pattern: ALWAYS narrow before assigning to exactOptional props;
+  ALWAYS use conditional spread when forwarding optional values to discriminated-union actions.
+
+# ---
+
+## 2026-05-13 — 🟡 Const-as-typeof unused-var lint trap; use type literal instead
+
+- Type: 🟡 fix
+- Phase: Phase 4 Part 4 (packages/ui lint)
+- Files: packages/ui/src/components/use-toast.ts
+- Concepts: eslint, no-unused-vars, typeof-const, shadcn-pattern
+- Narrative: Canonical shadcn use-toast.ts declares `const actionTypes = { ADD_TOAST: "ADD_TOAST",
+   UPDATE_TOAST: "UPDATE_TOAST", ... } as const;` then `type ActionType = typeof actionTypes;`.
+  The reducer dispatches use the type only — the const is never read at runtime. ESLint's
+  @typescript-eslint/no-unused-vars rule flags this as unused (the typeof usage is type-only,
+  not runtime). Fix: replace the runtime const with a direct type literal:
+  `type ActionType = { ADD_TOAST: "ADD_TOAST"; UPDATE_TOAST: "UPDATE_TOAST"; ... };` —
+  eliminates the unused-var trigger AND keeps the same type surface. The string literals in
+  dispatch sites (`{ type: "ADD_TOAST", ... }`) already match the type union; no runtime
+  reference to actionTypes was needed in the first place.
+
+# ---

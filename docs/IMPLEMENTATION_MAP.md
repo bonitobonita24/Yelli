@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 3 complete — packages/db Prisma schema + L6 tenant-guard + audit/RLS/tenant-context helpers + seed script + initial migration. Next: Part 4 in a new session.
+Phase: 4 Part 4 complete — packages/ui shadcn workspace + packages/jobs BullMQ queues + packages/storage S3-compatible wrapper. Next: Part 5 (apps/web scaffold, 5-way split) in a new session.
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -85,10 +85,32 @@ Framework: Spec-Driven Platform V31
   - Branch scaffold/part-3 → squash-merged to main
   - Verification: prisma generate ✓; pnpm typecheck PASS (3 packages); pnpm lint PASS (3 packages)
 
+- ✅ Phase 4 Part 4 — packages/ui + packages/jobs + packages/storage (2026-05-13)
+  - **packages/ui**: shadcn/ui New York style workspace (Rule 26 — sole UI library)
+    - 9 base components (Button + Card + Input + Label + Textarea + Dialog + Select + Toast + Sonner) + useToast hook + cn utility + index.ts barrel
+    - tailwind.config.ts ESM with DESIGN.md HSL tokens (accent yellow + zinc neutrals + semantic success/warning/info + custom shadow-button for 3D speed dial + 4 custom keyframes — fadeInUp/ringPulse/glow/autoAnswerPulse — with prefers-reduced-motion fallback)
+    - globals.css :root + .dark variable blocks + @tailwind directives
+    - Per-component subpath exports for tree-shake-friendly imports
+  - **packages/jobs**: 4 typed BullMQ queues backed by Valkey
+    - recording-processing (concurrency 2, 3 retries), report-generation (concurrency 1, 2 retries), usage-calculation (cron */15, 3 retries), billing-cycle (cron 0 2 daily, 5 retries)
+    - All queues use exponential backoff; jobs auto-removed after 24h (success) or 7d (failure)
+    - TenantJobBase contract: every job carries organizationId + userId; validateTenantJob helper rejects malformed jobs per security.md Queue Safety
+    - registerCronJobs() helper using upsertJobScheduler for app-startup registration
+    - IORedis singleton via globalThis with REDIS_URL env-var requirement
+  - **packages/storage**: AWS SDK v3 S3-compatible wrapper (MinIO dev → S3/R2 prod via STORAGE_ENDPOINT toggle)
+    - buildStorageKey enforces {organizationId}/{entityType}/{cuid2}{ext} — strips user filename per security.md
+    - verifyKeyOwnership / extractOrganizationId — every download path verifies tenant prefix; mismatch returns null → caller maps to HTTP 404 (no existence-leak)
+    - MIME blocklist-first: SVG/HTML/JS always rejected; image/video/audio/PDF/OOXML allowed
+    - 100MB hard size cap
+    - uploadObject + getDownloadUrl (presigned, 5-min default) + deleteObject + objectExists, all tenant-guarded
+  - Dependencies added: Radix UI primitives (5 packages), lucide-react, next-themes, sonner, class-variance-authority, clsx, tailwind-merge, tailwindcss + animate, BullMQ + IORedis, AWS SDK v3 (client-s3 + s3-request-presigner), @paralleldrive/cuid2
+  - Branch scaffold/part-4 → squash-merged to main
+  - Verification: pnpm install (+230 packages) ✓; pnpm typecheck ✓ (6 packages); pnpm lint ✓ (6 packages, 16 import-order issues auto-fixed)
+
 ## Not Yet Built
 
-- Phase 4 Parts 4-8 (scaffold continues)
-  - Part 4: packages/ui + packages/jobs + packages/storage
+- Phase 4 Parts 5-8 (scaffold continues)
+  - Part 5: apps/web (5-way split — shell + 4 feature domains)
   - Part 5: apps/web (Next.js, tRPC, Auth.js v5, security headers, rate limit, sanitize, Dockerfile)
   - Part 6: apps/mobile — SKIP (Yelli is web-only)
   - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json
