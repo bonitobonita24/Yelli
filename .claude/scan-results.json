@@ -1,5 +1,6 @@
 {
-  "scannedAt": "2026-05-11",
+  "scannedAt": "2026-05-13",
+  "previousScans": ["2026-05-11"],
   "techStack": [
     "Next.js 15 App Router",
     "tRPC v11",
@@ -27,7 +28,7 @@
     "frameworkVersion": "V31",
     "memoryGovernanceInstalled": true,
     "memoryGovernancePath": ".claude/rules/memory-governance.md",
-    "currentPhase": "Phase 4 Part 1 complete, ready for Part 2",
+    "currentPhase": "Phase 4 Part 2 complete, ready for Part 3",
     "midProjectAdoption": false,
     "mcpJsonWired": true,
     "mcpServers": ["socraticode", "context7", "shadcn"]
@@ -48,18 +49,24 @@
     { "name": "mcp-builder", "category": "Development & DevOps", "tier": "T2", "reason": "Framework wires SocratiCode + shadcn MCPs; useful for any custom MCP needs" },
     { "name": "claude-api", "category": "Development & DevOps", "tier": "T2", "reason": "Anthropic API reference for future AI integration phases" }
   ],
-  "pluginsToInstallManually": [
-    { "name": "context-mode", "command": "/plugin marketplace add mksglu/context-mode && /plugin install context-mode@context-mode", "reason": "98% token reduction on tool outputs — critical for Sonnet 4.6 80K SAFE zone" },
-    { "name": "claude-mem", "command": "/plugin marketplace add thedotmack/claude-mem && /plugin install claude-mem@thedotmack", "reason": "Compressed cross-session memory — replaces governance doc re-reads" },
-    { "name": "superpowers", "command": "/plugin install superpowers", "reason": "BUNDLE: TDD + systematic-debugging + root-cause-tracing + brainstorming + git-worktrees + finishing-branch + parallel-agents + code-review + defense-in-depth" },
-    { "name": "planning-with-files", "command": "/plugin install planning-with-files", "reason": "Slot 3 — persistent task_plan.md/findings.md matches STATE.md pattern" },
-    { "name": "frontend-design", "command": "/plugin install frontend-design@claude-code", "reason": "Slot 4 — Anthropic's production UI code generation" },
-    { "name": "claude-skills-65", "command": "/plugin install claude-skills-65", "reason": "Slot 6 — 65 framework skills for React/Next.js/tRPC/Prisma/Tailwind" },
-    { "name": "ui-ux-pro-max", "command": "/plugin install ui-ux-pro-max@ui-ux-pro-max-skill", "reason": "Phase 2.6 design system regeneration (already ran once — keep for future)" },
-    { "name": "a11y-skill", "command": "npx skills add airowe/claude-a11y-skill", "reason": "MANDATORY — accessibility: wcag_aa locked in inputs.yml for hospital/govt deployments" }
+  "installedPlugins": [
+    { "name": "context-mode", "status": "installed", "reason": "98% token reduction on tool outputs — critical for Sonnet 4.6 80K SAFE zone" },
+    { "name": "claude-mem", "status": "installed", "reason": "Compressed cross-session memory — replaces governance doc re-reads" },
+    { "name": "superpowers", "status": "installed", "reason": "BUNDLE: TDD + systematic-debugging + root-cause-tracing + brainstorming + git-worktrees + finishing-branch + parallel-agents + code-review + defense-in-depth" },
+    { "name": "planning-with-files", "status": "installed", "reason": "Slot 3 — persistent task_plan.md/findings.md matches STATE.md pattern" },
+    { "name": "frontend-design", "status": "installed (via document-skills bundle)", "reason": "Slot 4 — Anthropic's production UI code generation" },
+    { "name": "fullstack-dev-skills", "status": "installed (= claude-skills-65 equivalent)", "reason": "Slot 6 — framework skills for React/Next.js/tRPC/Prisma/TypeScript/Postgres" },
+    { "name": "vercel-plugin", "status": "installed", "reason": "Vercel deployment guidance, AI SDK, Next.js cache components, shadcn integration" },
+    { "name": "code-review", "status": "installed", "reason": "PR review workflow companion to code-review-graph" }
+  ],
+  "pluginsAvailableButNotInstalled": [
+    { "name": "ui-ux-pro-max", "command": "/plugin install ui-ux-pro-max@ui-ux-pro-max-skill", "reason": "Phase 2.6 design system regeneration — already ran once, install only if regenerating MASTER.md" }
+  ],
+  "rejectedSkills": [
+    { "name": "a11y-skill", "rejectedAt": "2026-05-12", "decisionRef": "DECISIONS_LOG.md + observation 565", "reason": "Layered accessibility coverage already provided by design-auditor + frontend-design + ui-ux-pro-max + oiloil-ui-ux-guide + Phase 2.6 MASTER.md a11y enforcement block. Dedicated a11y-skill would be redundant." }
   ],
   "systemTools": [
-    { "name": "code-review-graph", "status": "already installed at /home/me/.local/bin/code-review-graph", "nextAction": "After Phase 4 Parts 3-5 generate source files, run: cd <project> && code-review-graph build" }
+    { "name": "code-review-graph", "status": "installed at /home/me/.local/bin/code-review-graph", "nextAction": "Run 'code-review-graph build' after Part 3 (Prisma schema + first router scaffolding) for richer blast-radius analysis in Phase 7" }
   ],
   "mcpsAlreadyWired": [
     { "name": "socraticode", "location": ".vscode/mcp.json", "purpose": "Vector search — 61% less context" },
