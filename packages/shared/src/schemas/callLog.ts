@@ -7,12 +7,12 @@ export const CallStatusSchema = z.enum(['completed', 'missed', 'failed']);
 export type CallStatus = z.infer<typeof CallStatusSchema>;
 
 export const CallLogSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
-  meeting_id: z.string().cuid2().nullable(),
-  caller_user_id: z.string().cuid2().nullable(),
-  caller_department_id: z.string().cuid2().nullable(),
-  recipient_department_id: z.string().cuid2().nullable(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid().nullable(),
+  caller_user_id: z.string().cuid().nullable(),
+  caller_department_id: z.string().cuid().nullable(),
+  recipient_department_id: z.string().cuid().nullable(),
   call_type: CallTypeSchema,
   started_at: z.coerce.date(),
   ended_at: z.coerce.date().nullable(),
@@ -32,10 +32,10 @@ export const CallLogCreateInputSchema = CallLogSchema.omit({
   recipient_department_id: true,
   ended_at: true,
 }).extend({
-  meeting_id: z.string().cuid2().nullable().optional(),
-  caller_user_id: z.string().cuid2().nullable().optional(),
-  caller_department_id: z.string().cuid2().nullable().optional(),
-  recipient_department_id: z.string().cuid2().nullable().optional(),
+  meeting_id: z.string().cuid().nullable().optional(),
+  caller_user_id: z.string().cuid().nullable().optional(),
+  caller_department_id: z.string().cuid().nullable().optional(),
+  recipient_department_id: z.string().cuid().nullable().optional(),
   ended_at: z.coerce.date().nullable().optional(),
 });
 export type CallLogCreateInput = z.infer<typeof CallLogCreateInputSchema>;

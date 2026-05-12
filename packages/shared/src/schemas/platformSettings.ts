@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 export const PlatformSettingsSchema = z.object({
-  id: z.string().cuid2(),
+  // Singleton primary key — fixed to "singleton" by the platformSettings row;
+  // do not enforce cuid format here.
+  id: z.string().min(1),
   free_tier_group_call_limit_minutes: z.number().int().default(45),
   free_tier_max_participants: z.number().int().default(8),
   pro_tier_price_cents: z.number().int().default(299900),

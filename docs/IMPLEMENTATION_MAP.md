@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 2 complete — shared types/schemas + tRPC client wrapper in place. Next: Part 3 in a new session.
+Phase: 4 Part 3 complete — packages/db Prisma schema + L6 tenant-guard + audit/RLS/tenant-context helpers + seed script + initial migration. Next: Part 4 in a new session.
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -65,10 +65,29 @@ Framework: Spec-Driven Platform V31
   - Branch scaffold/part-2 → squash-merged to main
   - Verification: pnpm typecheck PASS (2 packages, 0 errors); pnpm lint PASS
 
+- ✅ Phase 4 Part 3 — packages/db (2026-05-13)
+  - packages/db/prisma/schema.prisma — 14 models, 12 enums, 30+ indexes
+    - Tenant root: Organization (cascade FK on all org-scoped tables)
+    - User (+ UserRole, UserStatus enums, security_version for L1 session invalidation, is_super_admin platform escape)
+    - Department, Subscription, Invoice, PlatformSettings (singleton id="singleton"), AuditLog (system, exempt)
+    - Meeting, Participant, CallLog, ChatMessage, Recording, SharedFile, WhiteboardSnapshot
+    - L6 denormalization: meeting-scoped child entities (Participant, ChatMessage, SharedFile, WhiteboardSnapshot) carry organization_id for uniform tenant-guard injection
+  - packages/db/src/client.ts — L6 Prisma.defineExtension via $allOperations; injects organization_id into where + data; exempts {AuditLog, Organization, PlatformSettings}; super-admin bypass via ALS; throws on missing context (dev-mode trap)
+  - packages/db/src/platform-client.ts — separate unguarded PrismaClient for super-admin queries (per security.md)
+  - packages/db/src/audit.ts — writeAuditLog(tx, entry); handles Prisma.JsonNull for null before/after; AuditAction = CREATE | UPDATE | DELETE | "PLATFORM:*"
+  - packages/db/src/rls.ts — withTenantRLS (L2 dormant — RLS policies commented in migration; activates by ALTER TABLE … ENABLE RLS in multi-tenant SaaS)
+  - packages/db/src/tenant-context.ts — AsyncLocalStorage<TenantContext>; getTenantContext / requireTenantContext / runWithTenantContext
+  - packages/db/prisma/seed.ts — webmaster super-admin seed (idempotent upsert; reads WEBMASTER_PASSWORD from env — NEVER from CREDENTIALS.md by AI; bcrypt cost 12)
+  - packages/db/prisma/migrations/20260513000000_initial/{migration.sql, migration_down.sql} — initial migration generated offline via prisma migrate diff; matching down for emergency rollback
+  - packages/db/prisma/migrations/migration_lock.toml — provider = postgresql
+  - packages/shared updates: cuid2 → cuid across 13 schemas (Prisma 5.x lacks cuid2 support); organization_id added to Participant/ChatMessage/SharedFile/WhiteboardSnapshot for L6 uniformity; PlatformSettings.id Zod relaxed to z.string().min(1)
+  - Root package.json: pnpm.onlyBuiltDependencies allowlist for native builds (Prisma engines, bcrypt, esbuild)
+  - Branch scaffold/part-3 → squash-merged to main
+  - Verification: prisma generate ✓; pnpm typecheck PASS (3 packages); pnpm lint PASS (3 packages)
+
 ## Not Yet Built
 
-- Phase 4 Parts 3-8 (full scaffold)
-  - Part 3: packages/db (Prisma schema, migrations, seed, AuditLog, tenant-guard $allOperations extension)
+- Phase 4 Parts 4-8 (scaffold continues)
   - Part 4: packages/ui + packages/jobs + packages/storage
   - Part 5: apps/web (Next.js, tRPC, Auth.js v5, security headers, rate limit, sanitize, Dockerfile)
   - Part 6: apps/mobile — SKIP (Yelli is web-only)

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const DepartmentSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
   name: z.string().min(1).max(200),
   description: z.string().nullable(),
   group_label: z.string().nullable(),

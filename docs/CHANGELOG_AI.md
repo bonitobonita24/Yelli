@@ -96,3 +96,59 @@
   3. Imported HTTPHeaders type from @trpc/client.
 - Convention established: snake_case field names matching inputs.yml; z.string().cuid2() for ID + foreign keys; z.coerce.date() for datetimes; named enum schemas exported alongside inferred types; {Entity}CreateInputSchema (omit id/timestamps, nullables become optional) + {Entity}UpdateInputSchema (.partial()) per entity.
 - Verification: pnpm install (285 packages); pnpm typecheck PASS (2 packages, 0 errors); pnpm lint PASS after auto-fix (import/order); pnpm format applied; ls confirms 13 entity schemas + 4 api-client files + barrels.
+
+## 2026-05-13 — Phase 4 Part 3 — packages/db
+
+- Agent: CLAUDE_CODE
+- Why: Generate the database layer (Part 3 of 8) — Prisma schema for all 13 entities + AuditLog system table, L6 tenant-guard extension, L5 audit-log helper, L2 RLS scaffold (dormant), L1 tenant context via AsyncLocalStorage, separate platformPrisma client for super-admin queries, seed script that reads webmaster password from env (never CREDENTIALS.md by AI). Branch scaffold/part-3 → squash-merge to main per Rule 23/24.
+- Files added:
+  - packages/db/package.json (@yelli/db; @prisma/client@^5.22, @paralleldrive/cuid2@^2.2, bcrypt@^5.1; prisma@^5.22, tsx@^4.19 devDeps; scripts: db:generate, db:migrate, db:migrate:deploy, db:seed, db:studio, typecheck, lint)
+  - packages/db/tsconfig.json (extends ../../tsconfig.base.json, bundler resolution, ESNext, include src/**/* + prisma/**/*.ts)
+  - packages/db/.gitignore (node_modules, dist, .turbo, *.tsbuildinfo)
+  - packages/db/prisma/schema.prisma (476 lines): 14 models (Organization, User, Department, Subscription, Invoice, PlatformSettings, AuditLog, Meeting, Participant, CallLog, ChatMessage, Recording, SharedFile, WhiteboardSnapshot), 12 enums (PlanTier, SubscriptionStatus, UserRole, UserStatus, InvoiceStatus, MeetingStatus, ParticipantRole, CallType, CallStatus, MessageType, StorageType, RecordingStatus). All tenant-scoped tables carry organization_id (Participant/ChatMessage/SharedFile/WhiteboardSnapshot intentionally denormalized for L6 uniformity). 30+ indexes, cascade FK strategy (Organization→Cascade, User→Restrict on host, related entities→SetNull where nullable). RLS policies scaffolded as SQL comments (DORMANT in single-tenant mode).
+  - packages/db/prisma/seed.ts: idempotent webmaster seed — reads WEBMASTER_PASSWORD from env (rejects < 22 chars), upserts System Organization + webmaster super-admin User (bcrypt cost 12) + PlatformSettings singleton; uses raw PrismaClient (no L6 extension) to bootstrap tenant root.
+  - packages/db/prisma/migrations/migration_lock.toml (provider = "postgresql")
+  - packages/db/prisma/migrations/20260513000000_initial/migration.sql (466 lines — generated offline via `prisma migrate diff --from-empty --to-schema-datamodel`)
+  - packages/db/prisma/migrations/20260513000000_initial/migration_down.sql (emergency rollback — DROPs all tables in reverse-FK order, drops 12 enums)
+  - packages/db/src/index.ts (barrel — prisma, platformPrisma, writeAuditLog, withTenantRLS, tenantContextStore + getTenantContext + requireTenantContext + runWithTenantContext, type TenantContext; re-exports all @prisma/client types)
+  - packages/db/src/client.ts: L6 tenant-guard — Prisma.defineExtension with $allOperations injecting organization_id into where AND data on every non-exempt query. EXEMPT_MODELS = AuditLog, Organization, PlatformSettings. Super-admin bypass via ALS context (isSuperAdmin). Throws if no tenant context (catches missing-context bugs in dev). HMR-safe global singleton.
+  - packages/db/src/platform-client.ts: separate UNGUARDED PrismaClient for super-admin queries. Documents "PLATFORM:*" audit-log prefix requirement.
+  - packages/db/src/audit.ts: writeAuditLog(tx, entry) — immutable AuditLog write inside transaction. Maps before/after to Prisma.JsonNull when null. AuditAction type allows "PLATFORM:*" prefix for super-admin actions.
+  - packages/db/src/rls.ts: withTenantRLS — sets app.current_tenant_id GUC inside transaction. DORMANT — RLS policies in migration are commented; activates by ALTER TABLE … ENABLE RLS in multi-tenant SaaS deployment.
+  - packages/db/src/tenant-context.ts: AsyncLocalStorage<TenantContext>; getTenantContext / requireTenantContext / runWithTenantContext; TenantContext = { organizationId, userId, isSuperAdmin }.
+- Files modified:
+  - packages/shared/src/schemas/{organization,user,department,subscription,invoice,meeting,participant,callLog,chatMessage,recording,sharedFile,whiteboardSnapshot}.ts: replaced `.cuid2()` validators with `.cuid()` (Prisma 5.x lacks @default(cuid(2)) support — issue prisma#15532 still open; standardized on cuid1).
+  - packages/shared/src/schemas/platformSettings.ts: id z.string().cuid2() → z.string().min(1) (singleton row keyed "singleton" literal, not cuid format).
+  - packages/shared/src/schemas/{participant,chatMessage,sharedFile,whiteboardSnapshot}.ts: added organization_id: z.string().cuid() — denormalized so L6 $allOperations guard can inject uniformly (defense-in-depth — eliminates resolver-discipline risk per security.md).
+  - package.json (root): added pnpm.onlyBuiltDependencies allowlist (@prisma/client, @prisma/engines, bcrypt, esbuild, prisma) so pnpm runs native build scripts; pnpm 10 blocks builds by default.
+  - pnpm-lock.yaml: added @prisma/client@5.22, prisma@5.22, bcrypt@5.1, @paralleldrive/cuid2@2.2, tsx@4.19, @types/bcrypt@5.0.
+- Files deleted: none.
+- Schema/migrations:
+  - 1 initial migration written offline via prisma migrate diff (14 tables + 12 enums + 30+ indexes + FK constraints + cascade rules).
+  - Matching down migration for emergency rollback.
+  - Migrations not yet applied — Phase 6 runs `pnpm db:migrate deploy` against the Docker postgres service.
+- Errors encountered:
+  1. Sonnet subagent (3a) connection refused after 15 min / 12 tool uses with 9 of 11 files written. Resume not attempted (agent ID a8ba6554a1281e1f4).
+  2. Prisma 5.22.0 rejected `@default(cuid(2))` — "The `cuid` function does not take any argument" (cuid2 support is at prisma#15532, still open as of Prisma 5).
+  3. @yelli/db typecheck failed — `Prisma.JsonNull` used as value but imported as `import type { Prisma }`.
+  4. pnpm install blocked native build scripts for prisma, @prisma/engines, bcrypt, esbuild (pnpm 10 default).
+  5. Lint errors in client.ts (import/order missing newline; unused param `operation`); seed.ts produced 6 no-console warnings.
+  6. `prisma migrate diff --script` output included a stderr "Update available" banner appended to migration.sql (lines 467+).
+- Errors resolved:
+  1. Opus completed the remaining 2 files (src/index.ts, prisma/seed.ts) inline. Sub-sessions 3b + 3c executed inline by Opus due to dispatch unreliability.
+  2. Reverted all @default(cuid(2)) to @default(cuid()) in schema.prisma. Updated all 13 Zod schemas: `.cuid2()` → `.cuid()`. Logged as 🔴 gotcha in lessons.md.
+  3. Changed `import type { Prisma }` to `import { Prisma }` in audit.ts — namespace contains both types and runtime values (Prisma.JsonNull).
+  4. Added pnpm.onlyBuiltDependencies to root package.json + pnpm install allowed native build scripts.
+  5. Inserted blank line between import groups in client.ts; renamed unused param `operation` → `_operation`. Added `/* eslint-disable no-console -- seed script intentionally logs progress */` at top of seed.ts.
+  6. Truncated migration.sql to 466 lines (clean SQL only). Banner stripped.
+- Verification:
+  - pnpm install (+53 packages, 13.3s) ✓
+  - pnpm exec prisma generate ✓ (Prisma Client v5.22.0 generated)
+  - pnpm typecheck — 3 packages all PASS (0 errors) ✓
+  - pnpm lint — 3 packages all PASS (0 errors, 0 warnings) ✓
+  - find verification: all 11 expected packages/db files present + 3 migration files ✓
+- Key decisions (logged inline + lessons.md):
+  - L6 denormalization: child meeting entities carry organization_id directly rather than scoping through meeting.organization_id. Cost: 16 bytes/row × {Participant, ChatMessage, SharedFile, WhiteboardSnapshot}. Benefit: tenant-guard $allOperations injects WHERE org_id = … uniformly — no per-resolver discipline required.
+  - cuid1 over cuid2: Prisma 5.x doesn't support `cuid(2)`. Standardized on Prisma's built-in cuid() (v1, 25-char). Future migration to cuid2 deferred until prisma#15532 ships.
+  - Singleton PlatformSettings: id = literal "singleton" (Prisma @default("singleton")), Zod relaxed to z.string().min(1).
+  - Seed reads WEBMASTER_PASSWORD from env, NEVER from CREDENTIALS.md — preserves security.md "agents never read CREDENTIALS.md". Operator pastes from CREDENTIALS.md → exports → seed bcrypts → discards.

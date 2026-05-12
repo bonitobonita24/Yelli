@@ -4,9 +4,10 @@ export const ParticipantRoleSchema = z.enum(['host', 'moderator', 'participant',
 export type ParticipantRole = z.infer<typeof ParticipantRoleSchema>;
 
 export const ParticipantSchema = z.object({
-  id: z.string().cuid2(),
-  meeting_id: z.string().cuid2(),
-  user_id: z.string().cuid2().nullable(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid(),
+  user_id: z.string().cuid().nullable(),
   guest_display_name: z.string().nullable(),
   role_in_meeting: ParticipantRoleSchema,
   joined_at: z.coerce.date(),

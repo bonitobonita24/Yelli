@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 export const WhiteboardSnapshotSchema = z.object({
-  id: z.string().cuid2(),
-  meeting_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid(),
   snapshot_data: z.unknown(),
   is_persisted: z.boolean(),
   created_at: z.coerce.date(),

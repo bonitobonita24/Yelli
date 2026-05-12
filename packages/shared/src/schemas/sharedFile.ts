@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 export const SharedFileSchema = z.object({
-  id: z.string().cuid2(),
-  meeting_id: z.string().cuid2(),
-  uploaded_by_user_id: z.string().cuid2().nullable(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid(),
+  uploaded_by_user_id: z.string().cuid().nullable(),
   uploaded_by_guest_name: z.string().nullable(),
   file_name: z.string().min(1).max(500),
   file_path: z.string().min(1),

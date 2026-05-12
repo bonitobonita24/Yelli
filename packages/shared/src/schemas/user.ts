@@ -7,8 +7,8 @@ export const UserStatusSchema = z.enum(['active', 'inactive']);
 export type UserStatus = z.infer<typeof UserStatusSchema>;
 
 export const UserSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
   email: z.string().email(),
   password_hash: z.string(),
   display_name: z.string().min(1).max(200),

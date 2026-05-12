@@ -4,9 +4,9 @@ export const MeetingStatusSchema = z.enum(['scheduled', 'active', 'ended', 'canc
 export type MeetingStatus = z.infer<typeof MeetingStatusSchema>;
 
 export const MeetingSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
-  host_user_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  host_user_id: z.string().cuid(),
   title: z.string().min(1).max(300),
   description: z.string().nullable(),
   scheduled_at: z.coerce.date().nullable(),

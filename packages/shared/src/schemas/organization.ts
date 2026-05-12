@@ -7,7 +7,7 @@ export const SubscriptionStatusSchema = z.enum(['active', 'past_due', 'cancelled
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
 
 export const OrganizationSchema = z.object({
-  id: z.string().cuid2(),
+  id: z.string().cuid(),
   name: z.string().min(1).max(200),
   slug: z
     .string()

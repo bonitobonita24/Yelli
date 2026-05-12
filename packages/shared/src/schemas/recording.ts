@@ -7,16 +7,16 @@ export const RecordingStatusSchema = z.enum(['processing', 'ready', 'failed', 'd
 export type RecordingStatus = z.infer<typeof RecordingStatusSchema>;
 
 export const RecordingSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
-  meeting_id: z.string().cuid2(),
-  call_log_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid(),
+  call_log_id: z.string().cuid(),
   file_path: z.string().min(1),
   file_size_bytes: z.bigint(),
   duration_seconds: z.number().int(),
   storage_type: StorageTypeSchema,
   status: RecordingStatusSchema,
-  recorded_by_user_id: z.string().cuid2(),
+  recorded_by_user_id: z.string().cuid(),
   created_at: z.coerce.date(),
   deleted_at: z.coerce.date().nullable(),
 });

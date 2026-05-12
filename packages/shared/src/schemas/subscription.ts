@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { PlanTierSchema, SubscriptionStatusSchema } from './organization.js';
 
 export const SubscriptionSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
   plan_tier: PlanTierSchema,
   xendit_subscription_id: z.string().nullable(),
   payment_method: z.string().nullable(),

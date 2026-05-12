@@ -4,9 +4,9 @@ export const InvoiceStatusSchema = z.enum(['paid', 'pending', 'failed', 'refunde
 export type InvoiceStatus = z.infer<typeof InvoiceStatusSchema>;
 
 export const InvoiceSchema = z.object({
-  id: z.string().cuid2(),
-  organization_id: z.string().cuid2(),
-  subscription_id: z.string().cuid2(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  subscription_id: z.string().cuid(),
   xendit_invoice_id: z.string().min(1),
   amount_cents: z.number().int().nonnegative(),
   currency: z.string().length(3).default('PHP'),

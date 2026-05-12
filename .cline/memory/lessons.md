@@ -43,3 +43,61 @@
   If a dedicated skill becomes available with valid SKILL.md, evaluate then.
 
 # ---
+
+## 2026-05-13 — 🔴 Prisma 5.x does NOT support @default(cuid(2)) — use @default(cuid())
+
+- Type: 🔴 gotcha
+- Phase: Phase 4 Part 3 (packages/db scaffold)
+- Files: packages/db/prisma/schema.prisma, packages/shared/src/schemas/*.ts
+- Concepts: prisma, cuid, cuid2, schema, validation, version-compat
+- Narrative: When writing Prisma models, `@default(cuid(2))` looks valid (cuid2 is a real ID format,
+  newer/better than cuid1: shorter, no fingerprint surface, host-independent collision resistance).
+  But Prisma 5.x (verified on 5.22.0) parses this as an error: "The `cuid` function does not take
+  any argument. Consider changing this default to `cuid()`."
+  The cuid2 default-function feature is at https://github.com/prisma/prisma/issues/15532 — still open.
+  Resolution: use `@default(cuid())` (cuid1, 25 chars). Update Zod validators from `.cuid2()` to
+  `.cuid()` for matching format. If you need cuid2 today, drop the @default and generate IDs in app
+  code via `createId()` from `@paralleldrive/cuid2` — but ALL inserts must explicitly provide id,
+  including seed scripts. Stick with cuid() until prisma#15532 ships.
+
+# ---
+
+## 2026-05-13 — 🟤 L6 tenant-guard denormalization for meeting-scoped child entities
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 3 (Prisma schema design)
+- Files: packages/db/prisma/schema.prisma, packages/shared/src/schemas/{participant,chatMessage,sharedFile,whiteboardSnapshot}.ts
+- Concepts: multi-tenancy, l6, prisma-extension, $allOperations, denormalization, defense-in-depth
+- Narrative: Original Zod design had Participant/ChatMessage/SharedFile/WhiteboardSnapshot scope
+  tenancy only through their meeting_id → Meeting.organization_id. Clean from a normalization view.
+  But the L6 tenant-guard (Prisma.defineExtension with $allOperations) injects `organization_id: <id>`
+  into every non-exempt query's WHERE and DATA. For models LACKING an organization_id column,
+  Prisma throws "Unknown argument" — meaning the guard can't run on those 4 entities and would
+  have to be exempted, forcing every resolver to remember to filter via meeting.organization_id.
+  Per security.md, "EVERY tenant-scoped query MUST include organization_id" — the whole point of
+  L6 is to make this structural, not a discipline requirement. Decision: denormalize organization_id
+  onto all 4 child entities. Cost: ~24 bytes/row (cuid column). Benefit: uniform L6 injection,
+  no exemption list growth, no resolver-discipline risk. Also enables single-table tenant queries
+  (no joins) when these tables grow large. Updated 4 Zod schemas + Prisma models in lockstep so
+  packages/shared and packages/db agree on the contract.
+
+# ---
+
+## 2026-05-13 — 🟡 pnpm 10 blocks native build scripts by default — must allowlist
+
+- Type: 🟡 fix
+- Phase: Phase 4 Part 3 (pnpm install for Prisma + bcrypt)
+- Files: package.json (root)
+- Concepts: pnpm, native-deps, prisma, bcrypt, build-scripts, supply-chain
+- Narrative: pnpm 10 enforces a build-script allowlist as a supply-chain hardening default —
+  newly installed deps that declare a `scripts.install`/`postinstall`/etc. step do NOT run them
+  unless explicitly allowed. For Prisma (compiles + downloads engine binaries) and bcrypt (compiles
+  native bindings via node-gyp), this means `pnpm install` succeeds silently but Prisma can't
+  generate Client and bcrypt can't be imported (no compiled binary). The warning surfaces as:
+  "The following dependencies have build scripts that were ignored: @prisma/client, @prisma/engines,
+   bcrypt, esbuild, prisma. To allow the execution of build scripts for these packages, add their
+   names to 'pnpm.onlyBuiltDependencies' in your 'package.json', then run 'pnpm rebuild'."
+  Fix: add `pnpm.onlyBuiltDependencies` to root package.json with the explicit list. Re-run
+  pnpm install to pick up the allowlist. Verify Prisma generate works afterward.
+
+# ---

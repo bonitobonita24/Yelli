@@ -4,9 +4,10 @@ export const MessageTypeSchema = z.enum(['text', 'file', 'system']);
 export type MessageType = z.infer<typeof MessageTypeSchema>;
 
 export const ChatMessageSchema = z.object({
-  id: z.string().cuid2(),
-  meeting_id: z.string().cuid2(),
-  sender_user_id: z.string().cuid2().nullable(),
+  id: z.string().cuid(),
+  organization_id: z.string().cuid(),
+  meeting_id: z.string().cuid(),
+  sender_user_id: z.string().cuid().nullable(),
   sender_guest_name: z.string().nullable(),
   content: z.string().min(1).max(10000),
   message_type: MessageTypeSchema,
