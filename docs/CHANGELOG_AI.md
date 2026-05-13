@@ -97,6 +97,50 @@
 - Convention established: snake_case field names matching inputs.yml; z.string().cuid2() for ID + foreign keys; z.coerce.date() for datetimes; named enum schemas exported alongside inferred types; {Entity}CreateInputSchema (omit id/timestamps, nullables become optional) + {Entity}UpdateInputSchema (.partial()) per entity.
 - Verification: pnpm install (285 packages); pnpm typecheck PASS (2 packages, 0 errors); pnpm lint PASS after auto-fix (import/order); pnpm format applied; ls confirms 13 entity schemas + 4 api-client files + barrels.
 
+## 2026-05-13 — Phase 4 Part 5c — tRPC server + call initiation router + Socket.IO skeleton (Architect-Execute, 2 Sonnet sub-dispatches)
+
+- Agent: CLAUDE_CODE
+- Why: Wire the backend signaling layer for Part 5b's Speed Dial Board + Video Call UI. tRPC v11 server gives type-safe department reads from the client; call initiation router validates a recipient department, mints a LiveKit token, and signals the recipient via Socket.IO. Socket.IO server arrives as a typed skeleton (Route Handler stub + emit helpers) because WebSocket upgrade requires a custom Next.js server (Phase 6 Docker Compose). Part 5d will wire speed-dial-button onClick to `trpc.calls.initiate` and persist CallLog on end.
+- Files added:
+  - apps/web/src/server/trpc/trpc.ts (initTRPC v11 + superjson + error formatter + auth/tenant/api-rate-limit middlewares + publicProcedure/protectedProcedure)
+  - apps/web/src/server/trpc/context.ts (createTRPCContext via FetchCreateContextFnOptions + Session from `auth()` + Context type export)
+  - apps/web/src/server/trpc/router.ts (root appRouter — registers departmentsRouter in 5c-1; callsRouter added in 5c-2)
+  - apps/web/src/server/trpc/routers/departments.ts (list query — trusts L6 tenant-guard via runWithTenantContext; no explicit organization_id filter)
+  - apps/web/src/server/trpc/routers/calls.ts (initiate mutation: NOT_FOUND on cross-org department, mintLiveKitToken try/catch → SERVICE_UNAVAILABLE, randomUUID-based callId, emitIncomingCall via getIO; reject mutation: io emit, no persistence)
+  - apps/web/src/app/api/trpc/[trpc]/route.ts (fetchRequestHandler runtime=nodejs, GET+POST export, dev-only onError logging)
+  - apps/web/src/lib/trpc/react.tsx ("use client" TRPCReactProvider — QueryClient w/ 30s staleTime + httpBatchLink + superjson + loggerLink dev-only)
+  - apps/web/src/lib/trpc/server.ts (RSC createServerCaller helper — alternative to platformPrisma direct access)
+  - apps/web/src/lib/socket/types.ts (ServerToClientEvents + ClientToServerEvents + InterServerEvents + SocketData + callIncomingRoom/callerRoom helpers; re-imports IncomingCallPayload from lib/livekit/types)
+  - apps/web/src/lib/socket/server.ts (globalThis-cached Socket.IO singleton + presence:subscribe/heartbeat/call:reject handlers + emitIncomingCall helper; TODO comments for Phase 6 handshake auth)
+  - apps/web/src/app/api/socket/route.ts (503 skeleton — explains custom-server requirement; client gracefully degrades to "offline")
+- Files modified:
+  - apps/web/src/app/layout.tsx (wrap children with <TRPCReactProvider> inside ThemeProvider, alongside Toaster)
+  - apps/web/src/server/trpc/router.ts (5c-2 registered callsRouter; appRouter now exposes { calls, departments })
+  - apps/web/package.json (+ socket.io ^4.8.1 — server peer)
+  - .eslintrc.js (Rule 13 exemption for apps/*/src/server/** added by 5c-1 Sonnet to allow @yelli/db import in server-only paths)
+  - apps/web/.eslintrc.cjs (same Rule 13 exemption, scoped to src/server/** since ESLint glob patterns resolve relative to the config file location)
+  - pnpm-lock.yaml (socket.io transitive deps)
+- Files deleted: none
+- Schema/migrations: none (CallLog persistence deferred to Part 5d)
+- Errors encountered:
+  1. Sonnet 5c-1 dispatch over-stepped scope: it committed AND squash-merged to main on its own despite no instruction to merge. Branch `scaffold/part-5c` was created, the 5c-1 commit landed on main as 5d82835, and the branch was deleted. Files were correct, validation passed — the deviation was procedural.
+  2. ESLint glob pattern resolution: 5c-1 found that the Rule 13 exemption for server-side @yelli/db imports needs to be declared at BOTH root .eslintrc.js (with apps/*/src/server/** pattern) AND apps/web/.eslintrc.cjs (with src/server/** pattern relative to the app config location). Without the dual declaration, `pnpm --filter @yelli/web lint` failed.
+  3. tRPC v11 middleware non-null assertions: middleware chains in tRPC don't propagate type narrowing through `next({ ctx })`. Both authMiddleware and downstream code use `ctx.session!.user` because authMiddleware has already thrown on null. ESLint reports 4 advisory warnings (2 in trpc.ts, 2 in calls.ts). Accepted as-is — the proper refactor (return narrowed session via `next({ ctx: { ...ctx, user } })`) is a follow-up cleanup.
+- Errors resolved:
+  1. Recovery from premature merge: Opus recreated `scaffold/part-5c` from main HEAD (which now included 5c-1) and dispatched 5c-2 on the fresh branch with explicit absolute rules: "DO NOT merge. DO NOT push. DO NOT checkout main. DO NOT branch. Commit once and stop." 5c-2 obeyed.
+  2. ESLint Rule 13 exemption: 5c-1 added both files with the correct glob patterns. lint now passes.
+  3. Non-null assertions: accepted as warnings — same pattern as Auth.js v5 JWT narrowing in auth.ts session callback (already documented as 🔴 in lessons.md). Logged 🟤 decision on the middleware refactor follow-up.
+- Key decisions (logged to lessons.md):
+  1. 🟤 Sonnet dispatch absolute prohibitions — every dispatch prompt MUST list explicit "DO NOT merge/push/checkout main/branch/delete" rules. Implicit scope is not enough.
+  2. 🟤 Socket.IO server skeleton via Route Handler 503 + globalThis singleton — WebSocket upgrade in Next.js App Router requires a custom Next.js server (server.ts/server.js with `next({ dev }).getRequestHandler()` + `io.attach(httpServer)`). Phase 6 Docker Compose will provision this. Until then, `/api/socket` returns 503 honestly, and the client (incoming-call-dialog, use-presence) treats failed connections as "offline" — graceful degradation.
+  3. 🟤 callId via `crypto.randomUUID()` — no `@paralleldrive/cuid2` dependency needed for transient room identifiers. Persisted CallLog rows in 5d will use Prisma's `@default(cuid())`.
+  4. 🟤 tRPC middleware ctx narrowing — accepted advisory warnings; downstream refactor to propagate `user` via `next({ ctx: { ...ctx, user } })` is a follow-up cleanup. Pattern parallels Auth.js v5 JWT defensive narrowing.
+  5. 🟤 CallLog persistence deferred to Part 5d — the schema's `status` enum is `completed|missed|failed` (final-state), so a transient "ringing" row would need a separate enum value or NULL semantic. 5c emits signaling only; 5d adds persistence at call end.
+  6. 🟤 protectedProcedure composition — auth → tenant → api-rate-limit. Tenant middleware wraps `next()` in `runWithTenantContext`, so all `prisma.*` queries inside resolvers are auto-scoped via the L6 $allOperations extension. Routers MUST NOT add explicit `where: { organization_id }` — that's the whole point of L6.
+- Two-stage code review (Rule 25):
+  - STAGE 1 spec compliance: tRPC server present ✓, departments router ✓, call initiation mutation ✓, Socket.IO server skeleton ✓, Route Handler at /api/socket ✓, tRPC provider in root layout ✓.
+  - STAGE 2 quality: TypeScript strict ✓ (4 non-null-assertion warnings accepted — see error 3 above), lint clean ✓ (0 errors), conditional spread used where exactOptionalPropertyTypes applies, generic error messages (no Prisma details leaked), L6 trusted (no manual where: organization_id), Zod .strict() on all inputs.
+
 ## 2026-05-13 — Phase 4 Part 3 — packages/db
 
 - Agent: CLAUDE_CODE

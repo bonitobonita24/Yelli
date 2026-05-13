@@ -275,3 +275,104 @@
   reviewers don't flag it.
 
 # ---
+
+## 2026-05-13 — 🟤 Sonnet dispatch absolute-rules prohibitions — implicit scope is not enough
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5c-1 (tRPC server dispatch)
+- Files: (dispatch protocol — affects all future Opus→Sonnet dispatches)
+- Concepts: architect-execute, dispatch-discipline, premature-merge, git-safety, scope-control
+- Narrative: The 5c-1 dispatch instructed Sonnet to "create files, validate, commit on
+  scaffold/part-5c" but did NOT explicitly prohibit merging. Sonnet went ahead and
+  squash-merged its commit to main on its own — files were correct, validation passed,
+  but the procedural deviation broke the Architect's plan to dual-merge 5c-1+5c-2 as one
+  governed unit. Recovery cost was minor (recreated the branch from main HEAD with the
+  5c-1 commit already in it, dispatched 5c-2 on the fresh branch). Real cost: trust
+  erosion — the Architect must verify branch state after every dispatch instead of
+  trusting the dispatch contract.
+  Lesson: every dispatch prompt MUST include an ABSOLUTE RULES block stating:
+    "DO NOT merge. DO NOT push. DO NOT checkout main. DO NOT branch. DO NOT delete
+     branches. Commit once on the current branch and stop. The Architect handles merge."
+  Sonnet 5c-2 received this block and obeyed perfectly (clean commit, no merge attempt).
+  Rule: implicit boundaries are not boundaries. State every prohibition as a literal
+  shell-command-level rule. Sonnet treats unstated permissions as permitted.
+
+# ---
+
+## 2026-05-13 — 🟤 Socket.IO server skeleton via Route Handler 503 + globalThis singleton
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5c-2 (Socket.IO server scaffold)
+- Files: apps/web/src/lib/socket/server.ts, apps/web/src/app/api/socket/route.ts
+- Concepts: socket-io, websocket-upgrade, next-app-router, custom-server, skeleton-pattern
+- Narrative: Socket.IO requires WebSocket upgrade which Next.js App Router Route Handlers
+  do not natively expose. The standard workaround is a custom Next.js server
+  (server.ts/server.js with `next({ dev }).getRequestHandler()` plus `io.attach(httpServer)`)
+  — but adding a custom server during Phase 4 scaffold tangles dev-mode + Docker Compose
+  startup + Turbo cache invalidation. The cleaner sequencing: ship the API surface in
+  Part 5c (types + emit helpers + Route Handler stub that returns 503 with explanation),
+  defer actual upgrade wiring to Phase 6 when Docker Compose provisions the custom server.
+  The Server instance is cached on globalThis (`g.__yelliSocketIo`) so HMR reloads do not
+  double-create. `getIO()` returns the cached instance or null. callsRouter's `initiate`
+  mutation calls `getIO()` and emits only if io is non-null — if io is null (skeleton
+  phase), the call is mintable but not signaled. The caller still gets a LiveKit token
+  and enters the room; the recipient won't ring until Phase 6.
+  Client side (incoming-call-dialog, use-presence) already handles 503 gracefully — the
+  socket just stays disconnected and presence stays "offline". No client changes needed.
+  Rule: when a primitive requires a custom Next.js server (Socket.IO, gRPC streaming,
+  long-polling SSE with sticky sessions), ship the API surface in the current Part and
+  attach to the actual server in Phase 6. Document the deferral with a Route Handler 503
+  stub so the path resolves and dev tooling does not 404.
+
+# ---
+
+## 2026-05-13 — 🟤 tRPC middleware ctx narrowing — non-null-assertion warnings are advisory, refactor is follow-up
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5c-1 + 5c-2 (tRPC v11 middleware chain)
+- Files: apps/web/src/server/trpc/trpc.ts, apps/web/src/server/trpc/routers/calls.ts
+- Concepts: trpc-v11, middleware-chain, type-narrowing, eslint, exactOptionalPropertyTypes
+- Narrative: tRPC v11 middleware chains pass context through `next({ ctx: ... })` but
+  TypeScript does not propagate narrowing across the boundary. authMiddleware throws
+  UNAUTHORIZED on `ctx.session?.user == null`, so by the time tenantMiddleware runs,
+  session is guaranteed non-null at runtime. But TS still sees `ctx.session: Session | null`.
+  Workaround used: `ctx.session!.user` with explicit non-null assertion + a comment
+  ("authMiddleware must run first — session is non-null here"). ESLint reports 4 advisory
+  warnings (2 in trpc.ts, 2 in routers/calls.ts). The proper refactor is to have
+  authMiddleware return a narrowed ctx via `next({ ctx: { ...ctx, session: ctx.session,
+  user: ctx.session.user } })` and have downstream code read `ctx.user.id` instead of
+  `ctx.session!.user.id`. That eliminates the assertions entirely and is the canonical
+  v11 pattern.
+  Why deferred to Part 5d: refactoring trpc.ts ripples into context.ts (Context type
+  changes), all current routers (departmentsRouter + callsRouter must read `ctx.user`),
+  and any future tRPC routers. Bundling the refactor with Part 5d's Meeting Management
+  scaffolding keeps the cleanup test-adjacent (new routers exercise the new ctx shape).
+  Rule: when middleware chain non-null assertions accumulate, plan the ctx-narrowing
+  refactor as a discrete task — never do it inside an unrelated feature dispatch.
+  Acceptable in the short term as advisory warnings (parallel to Auth.js v5 JWT
+  defensive narrowing pattern in auth.ts session callback).
+
+# ---
+
+## 2026-05-13 — 🟤 ESLint glob patterns resolve relative to config file location
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5c-1 (lint fix for Rule 13 server-side @yelli/db exemption)
+- Files: .eslintrc.js (root), apps/web/.eslintrc.cjs
+- Concepts: eslint, glob-resolution, monorepo, overrides, rule-13
+- Narrative: Rule 13 forbids @yelli/db imports outside the server boundary (mobile apps
+  must use @yelli/api-client). The Part 5a Sonnet had added an `eslint-disable-next-line
+  no-restricted-syntax` comment for the single server-component import. With 5c-1 adding
+  multiple tRPC routers under apps/web/src/server/trpc/ all importing @yelli/db, the
+  inline disables would multiply. The clean fix is an `overrides` block. Initially placed
+  only in apps/web/.eslintrc.cjs with pattern `apps/web/src/server/**` — failed because
+  ESLint glob patterns in `overrides[].files` resolve RELATIVE to the config file's
+  directory, not the project root. From apps/web/.eslintrc.cjs the pattern needed to be
+  `src/server/**`. AND the root .eslintrc.js's no-restricted-syntax rule also fires when
+  running lint from root, so the root config also needed an override with `apps/*/src/server/**`.
+  Dual declaration required because each config evaluates patterns against its own dir.
+  Rule: ESLint `overrides[].files` patterns are relative to the config file. For the same
+  override to apply both when linting from a workspace package and from the root, declare
+  it in BOTH configs with the appropriate relative pattern.
+
+# ---

@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 5b complete — apps/web Speed Dial Board (/app) + 1:1 Video Call UI (/app/call/[id]) + LiveKit token endpoint + IncomingCallDialog mounted globally on /app/* layout. 14 files added (41 total in apps/web). Next: Part 5c (call initiation flow + tRPC routers + Socket.IO server) in a new session.
+Phase: 4 Part 5c complete — apps/web tRPC v11 server (initTRPC + superjson + auth/tenant/rate-limit middlewares) + departmentsRouter (L6-trusted list) + callsRouter (initiate mutation: validate recipient department → mintLiveKitToken → emit Socket.IO call:incoming → return {callId, roomName, token, wsUrl}; reject mutation: io emit, no persistence) + tRPC fetchRequestHandler at /api/trpc/[trpc] + TRPCReactProvider wrapping {children} in root layout + Socket.IO server skeleton (globalThis-cached io singleton + typed event maps + Route Handler stub at /api/socket returning 503 until Phase 6 custom server). 11 files added (52 total in apps/web). Next: Part 5d (Meeting Management UI per execution-plan: /app/meetings list + /new + /app/meeting/:id multi-participant LiveKit room up to 50) in a new session.
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -123,16 +123,25 @@ Framework: Spec-Driven Platform V31
   - Verification: pnpm install (+28 packages, 5.7s) ✓; pnpm typecheck ✓ (7 packages, 0 errors); pnpm lint ✓ (7 packages, 0 errors, 0 warnings — 10 import/order auto-fixed + 2 Opus manual reorder in intercom-call.tsx)
   - Recovery efficiency: 5b-1 Sonnet returned DONE clean in ~10min; 5b-2 Sonnet thrashed during trailing validation but all 8 files were on disk (1,172 LoC across 14 Part 5b files) — Opus completed validation in-place per memory-governance.md §4 THRASHING protocol, saving an estimated 8min + 30K tokens vs re-dispatch
 
+- ✅ Phase 4 Part 5c — tRPC server + call initiation router + Socket.IO server skeleton (2026-05-13) — Architect-Execute (2 Sonnet sub-dispatches; 5c-1 over-merged scope → recovered via fresh branch)
+  - **8 tRPC v11 files (5c-1)**: src/server/trpc/trpc.ts (initTRPC.context<Context>().create + superjson transformer + errorFormatter masking INTERNAL_SERVER_ERROR in production while preserving zodError for BAD_REQUEST; authMiddleware throws UNAUTHORIZED on null session; tenantMiddleware wraps `next()` in `runWithTenantContext({organizationId, userId, isSuperAdmin})` so all prisma.* queries inside resolvers are L6-scoped automatically; apiRateLimitMiddleware applies `rateLimiters.api.check(ctx.session.user.id)`; publicProcedure + protectedProcedure exports), src/server/trpc/context.ts (createTRPCContext via FetchCreateContextFnOptions + auth() session read + Context = Awaited<ReturnType<typeof createTRPCContext>>), src/server/trpc/router.ts (appRouter root — registers departmentsRouter in 5c-1, callsRouter added in 5c-2; AppRouter type export consumed by @yelli/api-client + lib/trpc/react), src/server/trpc/routers/departments.ts (list query — `prisma.department.findMany({orderBy, select})` with NO explicit `where: organization_id` per L6 trust pattern), src/app/api/trpc/[trpc]/route.ts (fetchRequestHandler `runtime = "nodejs"` + GET+POST adapter + dev-only onError logger), src/lib/trpc/react.tsx ("use client" TRPCReactProvider — createTRPCReact<AppRouter>() with QueryClient staleTime 30_000 + httpBatchLink + superjson + loggerLink dev-only + getBaseUrl SSR-safe), src/lib/trpc/server.ts ("server-only" createServerCaller helper for RSC alternative to platformPrisma)
+  - **3 Socket.IO skeleton files (5c-2)**: src/lib/socket/types.ts (ServerToClientEvents: call:incoming/call:rejected/presence:update + ClientToServerEvents: presence:subscribe/heartbeat/call:reject + InterServerEvents.ping + SocketData {userId, organizationId, subscribedDepartmentIds: Set<string>} + callIncomingRoom/callerRoom helper functions; re-imports IncomingCallPayload from lib/livekit/types), src/lib/socket/server.ts (Server<...> generic from socket.io@^4.8.1 + globalThis-cached io singleton against HMR + initSocketServer(httpServer) idempotent attach + attachConnectionHandlers wiring presence:subscribe → join callIncomingRoom + presence:heartbeat no-op + call:reject emit + disconnect cleanup + emitIncomingCall helper consumed by callsRouter; TODO comments mark Phase 6 handshake auth wiring), src/app/api/socket/route.ts (Route Handler GET + POST returning 503 JSON with explanatory message; top comment block documents why custom Next.js server is needed for WebSocket upgrade and that client gracefully degrades to "offline")
+  - **+1 calls router (5c-2)**: src/server/trpc/routers/calls.ts (`initiate` mutation: Zod.strict{recipientDepartmentId} → prisma.department.findUnique (L6-scoped, returns null on cross-org) → NOT_FOUND on null with generic message → randomUUID callId + roomName=`call-${callId}` → mintLiveKitToken try/catch → SERVICE_UNAVAILABLE 503 if env unset → build IncomingCallPayload {callId, callerName from session, callerDepartment: null until 5d, roomName} → getIO() emit via emitIncomingCall (null io is fine — caller still gets token, recipient won't ring until Phase 6) → return {callId, roomName, token, wsUrl, recipientDepartmentName} as const; `reject` mutation: io emit only, no CallLog persistence)
+  - **Modifications**: src/app/layout.tsx wrapped {children} in <TRPCReactProvider> alongside Toaster inside ThemeProvider; src/server/trpc/router.ts re-registered for callsRouter via 5c-2 update; apps/web/package.json + socket.io ^4.8.1 (server peer; socket.io-client ^4.8.1 already present from Part 5b); .eslintrc.js + apps/web/.eslintrc.cjs Rule 13 server-side @yelli/db exemption (dual declaration — ESLint glob patterns resolve relative to config file location)
+  - Branch handling: scaffold/part-5c created from main → 5c-1 Sonnet over-stepped and squash-merged its own commit to main (5d82835) → Opus recovered by recreating the branch from updated main HEAD and explicitly prohibiting merge/push/branch/checkout in the 5c-2 dispatch prompt → 5c-2 obeyed (commit 52dc5da on branch) → Opus performed the governance + squash-merge
+  - Verification: pnpm install (+socket.io ^4.8.1 transitive deps) ✓; pnpm --filter @yelli/web typecheck ✓ (0 errors); pnpm --filter @yelli/web lint ✓ (0 errors, 4 advisory non-null-assertion warnings on `ctx.session!.user` pattern — accepted, parallel to Auth.js v5 JWT defensive narrowing in auth.ts session callback; refactor to propagate narrowed user via `next({ctx: {...ctx, user}})` deferred as cleanup task)
+  - Dispatch efficiency: 5c-1 took ~20min/46 tools (includes the ESLint Rule 13 dual-config trouble + premature squash-merge); 5c-2 took ~14min/25 tools (clean, obeyed absolute-rules prohibition explicitly)
+
 ## Not Yet Built
 
-- Phase 4 Parts 5b-8 (scaffold continues)
-  - Part 5b: Speed Dial Board (/app) + Video Calling (/app/call/:id with LiveKit client SDK)
-  - Part 5c: Meeting Management (/app/meetings + /new + /app/meeting/:id LiveKit multi-participant)
-  - Part 5d: In-call overlays (chat sidebar, file dropzone, whiteboard, recording) + call history + recordings library
-  - Part 5e: Admin pages (/admin dashboard + /admin/departments + /admin/users + /admin/settings + /admin/billing Xendit checkout + /admin/reports + /superadmin/* with platformPrisma)
+- Phase 4 Parts 5d-8 (scaffold continues)
+  - Part 5d: Meeting Management (/app/meetings + /new + /app/meeting/:id LiveKit multi-participant up to 50, screen share, mute/unmute, host controls, moderator promotion) + speed-dial-button onClick wired to trpc.calls.initiate + CallLog persistence at call end
+  - Part 5e: In-call overlays (chat sidebar, file dropzone, whiteboard, recording) + call history + recordings library
+  - Part 5f: Admin pages (/admin dashboard + /admin/departments + /admin/users + /admin/settings + /admin/billing Xendit checkout + /admin/reports + /superadmin/* with platformPrisma)
   - Part 6: apps/mobile — SKIP (Yelli is web-only)
-  - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json
+  - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json, custom Next.js server for Socket.IO upgrade
   - Part 8: .github/workflows/ci.yml + docker-publish.yml, MANIFEST.txt, IMPLEMENTATION_MAP rewrite, SocratiCode initial index
+- Part 5d cleanup item: refactor tRPC authMiddleware to return narrowed `user` via `next({ctx: {...ctx, user}})` so downstream procedures use `ctx.user.id` instead of `ctx.session!.user.id`, eliminating the 4 advisory non-null-assertion warnings
 - Phase 5 Validation (9 commands — install/lint/typecheck/test/build/audit + 3 governance checks)
 - Phase 6 Docker services + Visual QA (Rule 16)
 
@@ -180,7 +189,7 @@ prisma_studio=43522 · livekit_signal=43532 · livekit_turn_udp_start=43537 · c
 Staging: standard ports (postgres=5433, valkey=6380, minio=9010, pgadmin=5051, app=3000 behind Traefik)
 Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=3000 behind Traefik)
 
-## File Counts (as of 2026-05-13 Phase 4 Part 5b)
+## File Counts (as of 2026-05-13 Phase 4 Part 5c)
 
 - Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5b entries appended)
 - Spec files: inputs.yml + inputs.schema.json
