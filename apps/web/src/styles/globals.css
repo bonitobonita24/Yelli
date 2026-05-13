@@ -1,0 +1,12 @@
+@import "@yelli/ui/styles";
+
+/*
+ * All design tokens (colors, typography, spacing, animations, CSS variables)
+ * are sourced from @yelli/ui per docs/DESIGN.md and design-system/MASTER.md.
+ * The @yelli/ui/styles import above provides the complete shadcn/ui CSS variable
+ * system (--background, --foreground, --primary, --muted, --border, etc.) and
+ * Tailwind base/components/utilities layers.
+ *
+ * Web-app-specific overrides go below this comment only.
+ * Never redefine tokens already declared in @yelli/ui — extend, do not override.
+ */

@@ -1,0 +1,51 @@
+{
+  "name": "@yelli/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p ${APP_PORT:-3000}",
+    "build": "next build",
+    "start": "next start -p ${APP_PORT:-3000}",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo .next node_modules"
+  },
+  "dependencies": {
+    "@yelli/api-client": "workspace:*",
+    "@yelli/db": "workspace:*",
+    "@yelli/shared": "workspace:*",
+    "@yelli/ui": "workspace:*",
+    "@auth/prisma-adapter": "^2.7.4",
+    "@hookform/resolvers": "^3.9.1",
+    "@marsidev/react-turnstile": "^1.1.0",
+    "@trpc/client": "^11.0.0",
+    "@trpc/next": "^11.0.0",
+    "@trpc/react-query": "^11.0.0",
+    "@trpc/server": "^11.0.0",
+    "@tanstack/react-query": "^5.59.0",
+    "bcrypt": "^5.1.1",
+    "isomorphic-dompurify": "^2.16.0",
+    "lru-cache": "^11.0.2",
+    "next": "^15.0.3",
+    "next-auth": "5.0.0-beta.25",
+    "next-themes": "^0.4.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.2",
+    "superjson": "^2.2.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.0.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.0"
+  }
+}

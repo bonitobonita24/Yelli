@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 4 complete — packages/ui shadcn workspace + packages/jobs BullMQ queues + packages/storage S3-compatible wrapper. Next: Part 5 (apps/web scaffold, 5-way split) in a new session.
+Phase: 4 Part 5a complete — apps/web shell scaffolded (env, Auth.js v5, middleware, layout, Turnstile widget, 4 auth pages). 27 files added. Next: Part 5b (Speed Dial Board + Video Calling UI) in a new session.
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -107,11 +107,22 @@ Framework: Spec-Driven Platform V31
   - Branch scaffold/part-4 → squash-merged to main
   - Verification: pnpm install (+230 packages) ✓; pnpm typecheck ✓ (6 packages); pnpm lint ✓ (6 packages, 16 import-order issues auto-fixed)
 
+- ✅ Phase 4 Part 5a — apps/web shell (2026-05-13) — Architect-Execute (4 Sonnet sub-dispatches + Opus inline fixes)
+  - **9 config files**: package.json (Next.js 15.0.3 + next-auth@beta.25 + @marsidev/react-turnstile + isomorphic-dompurify + lru-cache + @trpc/* + @hookform/resolvers + react-hook-form + @auth/prisma-adapter), tsconfig.json, next.config.ts (7 security headers + Turnstile CSP — challenges.cloudflare.com in script-src+frame-src + wss/ws for LiveKit + blob: for video media + frame-ancestors none), postcss.config.cjs, tailwind.config.ts (extends @yelli/ui/tailwind-config), components.json (shadcn workspace pointer), .eslintrc.cjs, .gitignore, src/styles/globals.css (forwards @yelli/ui/styles)
+  - **7 server core files**: src/env.ts (Zod-validated server + client schemas, AUTH_SECRET min 32, TURNSTILE_SECRET_KEY required, clientEnv export), src/types/next-auth.d.ts (next-auth + next-auth/jwt + @auth/core/jwt module augmentation), src/server/auth.ts (Credentials provider + bcrypt + organizationSlug disambiguation + JWT strategy + securityVersion staleness check via session callback + platformPrisma for unguarded login — generic error messages per security.md §PRODUCTION ERROR HANDLING), src/app/api/auth/[...nextauth]/route.ts, src/server/lib/rate-limit.ts (LRU 5-tier — public 30, auth 10, api 120, upload 20, callInitiation 10), src/server/lib/sanitize.ts (DOMPurify wrapper), src/server/lib/turnstile.ts (siteverify with 10s timeout + hostname-replay validation + dev/staging test-key bypass)
+  - **5 routing + theme files**: src/middleware.ts (Auth.js v5 auth() wrapper + subdomain + /t/[slug] tenant resolution + redirect to /login?callbackUrl= on unauthenticated /app|/admin|/superadmin + x-tenant-slug + x-user-id + x-organization-id headers), src/app/layout.tsx (Inter font with --font-sans variable + ThemeProvider class-based dark mode + Toaster), src/app/page.tsx (auth-aware redirect), src/components/theme-provider.tsx (next-themes wrapper), src/components/turnstile-widget.tsx (@marsidev/react-turnstile forwardRef with theme auto-sync)
+  - **6 auth pages**: (auth)/layout.tsx (brand mark + centered shell), (auth)/_components/form-card.tsx (shadcn Card shell), login/page.tsx (signIn credentials + Turnstile gating), register/page.tsx (TODO Part 5e tRPC wiring — 12-char password + slug regex), forgot-password/page.tsx (generic confirmation per auth enumeration prevention), join/[token]/page.tsx (Next.js 15 async params via React `use()` — guest meeting join shell)
+  - Branch scaffold/part-5 → squash-merged to main
+  - Verification: pnpm install (+108 packages, 32s) ✓; pnpm typecheck ✓ (7 packages, 0 errors); pnpm lint ✓ (7 packages, 0 errors, 0 warnings — 48 import/order auto-fixed + 1 unused-var removed + 1 eslint-disable for legitimate server-side @yelli/db import)
+  - Dispatch efficiency: 4 Sonnet dispatches in 75-186s each, 6-11 tool uses, zero autocompact thrashing (Part 4a thrashing pattern avoided via tight scope + no inline templates)
+
 ## Not Yet Built
 
-- Phase 4 Parts 5-8 (scaffold continues)
-  - Part 5: apps/web (5-way split — shell + 4 feature domains)
-  - Part 5: apps/web (Next.js, tRPC, Auth.js v5, security headers, rate limit, sanitize, Dockerfile)
+- Phase 4 Parts 5b-8 (scaffold continues)
+  - Part 5b: Speed Dial Board (/app) + Video Calling (/app/call/:id with LiveKit client SDK)
+  - Part 5c: Meeting Management (/app/meetings + /new + /app/meeting/:id LiveKit multi-participant)
+  - Part 5d: In-call overlays (chat sidebar, file dropzone, whiteboard, recording) + call history + recordings library
+  - Part 5e: Admin pages (/admin dashboard + /admin/departments + /admin/users + /admin/settings + /admin/billing Xendit checkout + /admin/reports + /superadmin/* with platformPrisma)
   - Part 6: apps/mobile — SKIP (Yelli is web-only)
   - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json
   - Part 8: .github/workflows/ci.yml + docker-publish.yml, MANIFEST.txt, IMPLEMENTATION_MAP rewrite, SocratiCode initial index
@@ -162,14 +173,14 @@ prisma_studio=43522 · livekit_signal=43532 · livekit_turn_udp_start=43537 · c
 Staging: standard ports (postgres=5433, valkey=6380, minio=9010, pgadmin=5051, app=3000 behind Traefik)
 Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=3000 behind Traefik)
 
-## File Counts (as of 2026-05-12 Phase 4 Part 2)
+## File Counts (as of 2026-05-13 Phase 4 Part 5a)
 
-- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2 entries appended)
+- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5a entries appended)
 - Spec files: inputs.yml + inputs.schema.json
 - Env files: 3 real (gitignored) + 1 example (committed)
 - Root config (Part 1): 8 + package.json + pnpm-lock.yaml
 - Bootstrap infrastructure files: 13
-- Source files (apps/, packages/): 22 (Part 2 — packages/shared 18 files, packages/api-client 4 files)
+- Source files (apps/, packages/): apps/web 27 (Part 5a) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 20 + packages/jobs 11 + packages/storage 7 = 98
 - Phase 4 task files: 8 (staged)
 
 ## ⏳ Pending Human Action Before Phase 5

@@ -167,3 +167,65 @@
   reference to actionTypes was needed in the first place.
 
 # ---
+
+## 2026-05-13 — 🔴 Auth.js v5 beta JWT module augmentation does not propagate
+
+- Type: 🔴 gotcha
+- Phase: Phase 4 Part 5a-2 (Auth.js v5 setup typecheck)
+- Files: apps/web/src/types/next-auth.d.ts, apps/web/src/server/auth.ts
+- Concepts: nextauth-v5, module-augmentation, jwt, exactOptionalPropertyTypes, type-narrowing
+- Narrative: With next-auth@5.0.0-beta.25, the canonical augmentation pattern
+  `declare module "next-auth/jwt" { interface JWT { userId: string; ... } }` does
+  NOT propagate into the `session()` callback's `token` parameter. TypeScript still
+  types `token.userId` as `{}` (empty object). Adding a parallel
+  `declare module "@auth/core/jwt"` augmentation (Auth.js v5's internal type
+  source) did NOT fix it either. The augmentation likely fails because Auth.js v5
+  beta uses a generic type variable for JWT that the augmentation can't reach.
+  WORKAROUND: never trust the JWT type directly. At the session() callback boundary,
+  cast `token` to `Record<string, unknown>` and narrow each field via `typeof` guards
+  (e.g. `typeof t.userId === "string" ? t.userId : null`). If any field is missing or
+  has the wrong type → return `{ ...session, user: undefined as never }` which
+  Auth.js v5 treats as unauthenticated. This is actually the CORRECT pattern
+  regardless of augmentation working — never blindly trust a JWT.
+
+## 2026-05-13 — 🟤 Sonnet dispatch discipline — tight scope, no inline templates
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5a (4 Sonnet dispatches succeeded cleanly after Part 4 lessons)
+- Files: (dispatch protocol — affects all future Part 5+ dispatches)
+- Concepts: architect-execute, sonnet-4-6, dispatch-prompts, token-budget, autocompact
+- Narrative: Part 4a thrashed because the dispatch prompt embedded ~770 lines of
+  verbatim shadcn component source as fill-in templates — this alone consumed
+  most of Sonnet's 30K input budget before any work began. Part 5a applied four
+  discipline rules to all dispatches:
+  (1) DO NOT inline more than ~100 lines of template code per file — point Sonnet
+      at the pattern with 5-10 lines + behavior contract, let Sonnet write the body.
+  (2) PRE-EXTRACT all read needs in the prompt — every import path, every type
+      signature, every external API URL — so Sonnet never needs to read PRODUCT.md
+      or security.md.
+  (3) STATE "DO NOT read X" explicitly — list governance docs / large files Sonnet
+      should never open. Curiosity reads are the #1 token leak.
+  (4) Cap each dispatch at ~10 files / ~25-30K estimated tokens — if more is
+      needed, split into 2-3 sequential dispatches with summarized context handoff.
+  Results: 4 dispatches in Part 5a, all returned DONE or DONE_WITH_CONCERNS in
+  75-186s with 6-11 tool uses each. Zero autocompact thrashing. Apply this protocol
+  to Parts 5b-8 and Phase 7+.
+
+## 2026-05-13 — 🟤 Defensive narrowing at trust boundaries (JWT, headers, external input)
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5a-2 (session callback) + 5a-3 (middleware headers)
+- Files: apps/web/src/server/auth.ts, apps/web/src/middleware.ts
+- Concepts: trust-boundary, type-narrowing, security, jwt, request-headers
+- Narrative: Two places in Part 5a cross a trust boundary: (a) Auth.js
+  callback receives a JWT that could be malformed/stale, (b) middleware reads
+  Request.headers which are attacker-controlled until proven otherwise. Both must
+  be defensively narrowed BEFORE the value is used as a key against the database.
+  Pattern: `const userId = typeof t.userId === "string" ? t.userId : null;` followed
+  by an early-return on null. This is independent of TypeScript's static type
+  checking — even if augmentation worked, we'd still narrow at runtime because
+  the input crossed a trust boundary. Locked decision: every trust-boundary read
+  (JWT, request headers, query params, form data, webhook payloads) narrows
+  defensively at the boundary; the rest of the code can then trust the narrowed value.
+
+# ---
