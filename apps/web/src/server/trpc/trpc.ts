@@ -31,52 +31,40 @@ const t = initTRPC.context<Context>().create({
 export const { router, middleware, procedure } = t;
 
 // ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
-
-const authMiddleware = middleware(async ({ ctx, next }) => {
-  if (typeof ctx.session?.user?.id !== "string") {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
-  // Narrow session to non-nullable after the guard above
-  const session = ctx.session;
-  return next({ ctx: { ...ctx, session } });
-});
-
-const tenantMiddleware = middleware(async ({ ctx, next }) => {
-  // authMiddleware must run first — session is non-null here
-  const user = ctx.session!.user;
-  const organizationId = user.organizationId;
-  const userId = user.id;
-  const isSuperAdmin = user.isSuperAdmin;
-
-  return runWithTenantContext(
-    { organizationId, userId, isSuperAdmin },
-    () =>
-      next({
-        ctx: {
-          ...ctx,
-          organizationId,
-          userId,
-        },
-      }),
-  );
-});
-
-const apiRateLimitMiddleware = middleware(async ({ ctx, next }) => {
-  rateLimiters.api.check(ctx.session!.user.id);
-  return next();
-});
-
-// ---------------------------------------------------------------------------
 // Procedures
 // ---------------------------------------------------------------------------
 
 /** Unauthenticated — no session required */
 export const publicProcedure = procedure;
 
-/** Authenticated — requires valid session + tenant context + rate limit */
+/**
+ * Authenticated procedure. The three-step chain is inlined so each middleware
+ * sees the narrowed context from the previous step:
+ *   1. authMiddleware  — guards on session.user.id, narrows `user` into ctx
+ *   2. tenantMiddleware — extracts organizationId + userId from ctx.user,
+ *                          runs the resolver inside runWithTenantContext (L6)
+ *   3. apiRateLimitMiddleware — per-user rate limit using ctx.user.id
+ */
 export const protectedProcedure = procedure
-  .use(authMiddleware)
-  .use(tenantMiddleware)
-  .use(apiRateLimitMiddleware);
+  .use(async ({ ctx, next }) => {
+    if (typeof ctx.session?.user?.id !== "string") {
+      throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
+    // Narrow: after the guard, session.user is known to be non-nullable
+    const user = ctx.session.user;
+    return next({ ctx: { ...ctx, user } });
+  })
+  .use(async ({ ctx, next }) => {
+    const { id: userId, organizationId, isSuperAdmin } = ctx.user;
+    return runWithTenantContext(
+      { organizationId, userId, isSuperAdmin },
+      () =>
+        next({
+          ctx: { ...ctx, organizationId, userId },
+        }),
+    );
+  })
+  .use(async ({ ctx, next }) => {
+    rateLimiters.api.check(ctx.user.id);
+    return next();
+  });

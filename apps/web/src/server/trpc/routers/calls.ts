@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { mintLiveKitToken } from "@/lib/livekit/client";
 import { emitIncomingCall, getIO } from "@/lib/socket/server";
+import { recordIntercomCallLog } from "@/server/lib/call-log";
 import { router, protectedProcedure } from "@/server/trpc/trpc";
 
 export const callsRouter = router({
@@ -40,7 +41,7 @@ export const callsRouter = router({
       try {
         const result = mintLiveKitToken({
           identity: ctx.userId,
-          displayName: ctx.session!.user.name ?? ctx.userId,
+          displayName: ctx.user.name ?? ctx.userId,
           roomName,
           canPublish: true,
         });
@@ -61,7 +62,7 @@ export const callsRouter = router({
           recipientDeptId: department.id,
           payload: {
             callId,
-            callerName: ctx.session!.user.name ?? ctx.userId,
+            callerName: ctx.user.name ?? ctx.userId,
             callerDepartment: null,
             roomName,
           },
@@ -94,5 +95,38 @@ export const callsRouter = router({
       }
 
       return { ok: true } as const;
+    }),
+
+  /**
+   * Records the final state of a 1:1 intercom call. Called by the caller's
+   * client when their LiveKit room disconnects (RoomEvent.Disconnected fires
+   * after hangup or peer drop). Writes a single CallLog row.
+   */
+  end: protectedProcedure
+    .input(
+      z
+        .object({
+          callId: z.string().min(1).max(128),
+          recipientDepartmentId: z.string().cuid().nullable().optional(),
+          startedAt: z.coerce.date(),
+          participantCount: z.number().int().min(0).max(50).default(2),
+          status: z
+            .enum(["completed", "missed", "failed"])
+            .default("completed"),
+        })
+        .strict(),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await recordIntercomCallLog({
+        organizationId: ctx.organizationId,
+        callerUserId: ctx.user.id,
+        recipientDepartmentId: input.recipientDepartmentId ?? null,
+        startedAt: input.startedAt,
+        endedAt: new Date(),
+        participantCount: input.participantCount,
+        status: input.status,
+      });
+
+      return { ok: true, callLogId: result.id } as const;
     }),
 });

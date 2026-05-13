@@ -1,9 +1,10 @@
 "use client";
 
-import { cn } from "@yelli/ui";
+import { cn, toast } from "@yelli/ui";
 import { useRouter } from "next/navigation";
 
 import { usePresence } from "@/lib/presence/use-presence";
+import { trpc } from "@/lib/trpc/react";
 
 import { SpeedDialButton } from "./speed-dial-button";
 
@@ -33,8 +34,37 @@ export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
   const ids = departments.map((d) => d.id);
   const presence = usePresence(ids);
 
+  const initiate = trpc.calls.initiate.useMutation({
+    onSuccess: (data) => {
+      // Stash connection details so the call page can consume them without a second token mint.
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(
+          `yelli:call:${data.callId}`,
+          JSON.stringify({
+            token: data.token,
+            wsUrl: data.wsUrl,
+            roomName: data.roomName,
+            recipientDepartmentName: data.recipientDepartmentName,
+          }),
+        );
+      }
+      toast({
+        title: "Calling...",
+        description: data.recipientDepartmentName,
+      });
+      router.push(`/app/call/${data.callId}`);
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to start call",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   function handleCall(id: string) {
-    router.push(`/app/call/new?recipient=${id}`);
+    initiate.mutate({ recipientDepartmentId: id });
   }
 
   if (departments.length === 0) {
