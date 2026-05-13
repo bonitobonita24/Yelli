@@ -72,6 +72,18 @@ module.exports = {
         'import/no-unresolved': 'off',
       },
     },
+    {
+      // Server-side tRPC and job files legitimately import from packages/db (Rule 13 exemption).
+      // Client-side code (src/app/, src/components/, src/lib/) must still use packages/api-client.
+      files: [
+        'apps/*/src/server/**/*.ts',
+        'apps/*/src/server/**/*.tsx',
+        'packages/jobs/src/**/*.ts',
+      ],
+      rules: {
+        'no-restricted-syntax': 'off',
+      },
+    },
   ],
   ignorePatterns: [
     'node_modules/',
