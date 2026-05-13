@@ -229,3 +229,49 @@
   defensively at the boundary; the rest of the code can then trust the narrowed value.
 
 # ---
+
+## 2026-05-13 — 🟤 Sonnet thrashing recovery — verify in-place before re-dispatch
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5b-2 (Video Call UI dispatch)
+- Files: apps/web/src/lib/livekit/*, apps/web/src/components/call/*, apps/web/src/app/api/livekit/token/route.ts
+- Concepts: subagent-recovery, autocompact, thrashing, architect-execute, validation-step
+- Narrative: Sonnet 4.6 hit autocompact thrashing during the typecheck/lint
+  validation step at the end of an 8-file dispatch. Per memory-governance.md §4
+  THRASHING protocol the instinct is to "stop and re-decompose" — but inspection
+  showed all 8 expected files were already on disk with substantive content
+  (lines 19/66/121/31/136/88/215/75 = total 751). The productive work completed;
+  only the validation iteration thrashed (Sonnet re-reading files to chase lint
+  fixes refilled the 60K context). Opus completed validation in-place:
+  typecheck PASS clean, lint FAIL on 12 import/order errors → eslint --fix
+  resolved 10, Opus manually reordered the remaining 2 in intercom-call.tsx.
+  Total Opus recovery cost: 4 minutes + ~5K tokens vs an estimated 8 minutes +
+  ~30K to re-dispatch.
+  Rule: when a Sonnet thrashes near the END of a multi-file dispatch, first
+  inventory disk state. If files are present with reasonable content, the
+  Opus-layer cost to finish validation is usually far cheaper than re-dispatch.
+  If files are missing or truncated/stub, re-decompose per §1 Step 2.5.
+  Telemetry to look for: Sonnet "DONE-equivalent" partial output before thrash,
+  short summaries written to disk, no contradicting half-edits.
+
+## 2026-05-13 — 🟤 Route Handlers for high-frequency setup endpoints — bypass tRPC deliberately
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5b-2 (LiveKit token endpoint)
+- Files: apps/web/src/app/api/livekit/token/route.ts
+- Concepts: route-handler, trpc-bypass, latency, security, manual-auth
+- Narrative: LiveKit token minting happens once per call setup, on the critical
+  path of the <150ms ring-to-connect SLA (PRODUCT.md Non-functional Requirements).
+  tRPC's batching + Zod parsing on the client side adds 5-15ms vs a direct
+  POST to a Route Handler. We chose a Route Handler with manual auth check +
+  rate limit + Zod body validation. Security implications per security.md
+  §AGENT PROHIBITIONS item 11 enforced inline: explicit "Non-tRPC: manual auth
+  required" comment + `auth()` invocation at top + rate limiter check + Zod
+  .strict() body schema + 401/429/503 generic error responses.
+  Rule: Route Handlers are valid for performance-critical setup endpoints,
+  webhook receivers, and auth callbacks. For everything else — CRUD, queries,
+  mutations — use tRPC procedures so L1/L3/rate-limiting are uniform. Document
+  the Route Handler with the §AGENT PROHIBITIONS item 11 comment so future
+  reviewers don't flag it.
+
+# ---

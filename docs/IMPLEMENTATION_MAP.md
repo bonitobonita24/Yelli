@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 5a complete — apps/web shell scaffolded (env, Auth.js v5, middleware, layout, Turnstile widget, 4 auth pages). 27 files added. Next: Part 5b (Speed Dial Board + Video Calling UI) in a new session.
+Phase: 4 Part 5b complete — apps/web Speed Dial Board (/app) + 1:1 Video Call UI (/app/call/[id]) + LiveKit token endpoint + IncomingCallDialog mounted globally on /app/* layout. 14 files added (41 total in apps/web). Next: Part 5c (call initiation flow + tRPC routers + Socket.IO server) in a new session.
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -116,6 +116,13 @@ Framework: Spec-Driven Platform V31
   - Verification: pnpm install (+108 packages, 32s) ✓; pnpm typecheck ✓ (7 packages, 0 errors); pnpm lint ✓ (7 packages, 0 errors, 0 warnings — 48 import/order auto-fixed + 1 unused-var removed + 1 eslint-disable for legitimate server-side @yelli/db import)
   - Dispatch efficiency: 4 Sonnet dispatches in 75-186s each, 6-11 tool uses, zero autocompact thrashing (Part 4a thrashing pattern avoided via tight scope + no inline templates)
 
+- ✅ Phase 4 Part 5b — Speed Dial Board + 1:1 Video Call UI (2026-05-13) — Architect-Execute (2 Sonnet sub-dispatches + Opus inline import-fix + layout stitch + thrashing-recovery)
+  - **6 Speed Dial Board files (5b-1 DONE clean)**: src/app/app/layout.tsx (auth guard + redirect /login + min-h-screen bg-background shell + global IncomingCallDialog mount), src/app/app/page.tsx (server-only Prisma findMany on departments scoped to session.user.organizationId — orderBy group_label/sort_order/name), src/components/speed-dial/speed-dial-grid.tsx (adaptive cols 1/2 → 2/3 → 2/3/4 → 2/3/4/5 ladder by count threshold ≤4/≤9/≤16/else, group_label bucketing with "Other" for nulls, admin-gated empty-state CTA), src/components/speed-dial/speed-dial-button.tsx (88/120/140 min-h tap targets + presence dot top-right with sr-only label + blue ⚡ Auto badge top-left + disabled state for offline/in_call), src/lib/presence/use-presence.ts (Socket.IO client at /api/socket with presence:subscribe + 30s presence:heartbeat per security.md §Realtime Connection Safety + graceful no-server fallback + cleanup), src/lib/presence/types.ts (PresenceState union + PresenceUpdate interface)
+  - **8 Video Call UI files (5b-2 partial-thrash, all files written, Opus completed validation)**: src/lib/livekit/types.ts (CallStatus + LiveKitTokenResponse + IncomingCallPayload), src/lib/livekit/client.ts (server-only HS256 JWT minter via crypto.createHmac — deliberate no-livekit-server-sdk decision for bundle leanness; LiveKit grant `{ video: { room, roomJoin, canPublish, canSubscribe, canPublishData } }`; nbf/exp 6h TTL + jti for replay protection), src/lib/livekit/use-livekit-room.ts (client hook with status state machine ringing→connecting→active→ended/failed + useRef Room instance + RoomEvent listeners + graceful 503 handling), src/app/app/call/[id]/page.tsx (Next.js 15 async params Promise<{id}> + auth guard with callbackUrl + notFound on empty id), src/components/call/intercom-call.tsx (RoomContext.Provider bridges manual Room into @livekit/components-react GridLayout + ParticipantTile + useTracks for Camera + ScreenShare sources + status-driven UI), src/components/call/call-controls.tsx (48×48 mobile-first toolbar with mic/cam/hangup buttons + useLocalParticipant toggle pattern + inline SVG icons — no lucide dependency added), src/components/call/incoming-call-dialog.tsx (Dialog from @yelli/ui + Socket.IO "call:incoming" listener + Web Audio API 2-tone ringtone 440Hz+523Hz at 600ms cadence + Accept→router.push + Reject→emit call:reject + cleanup), src/app/api/livekit/token/route.ts (POST Route Handler with `runtime = "nodejs"` + manual auth() per security.md §AGENT PROHIBITIONS item 11 + rateLimiters.api + Zod.strict body + 401/429/503 generic errors + mintLiveKitToken caller)
+  - Branch scaffold/part-5b → squash-merged to main
+  - Verification: pnpm install (+28 packages, 5.7s) ✓; pnpm typecheck ✓ (7 packages, 0 errors); pnpm lint ✓ (7 packages, 0 errors, 0 warnings — 10 import/order auto-fixed + 2 Opus manual reorder in intercom-call.tsx)
+  - Recovery efficiency: 5b-1 Sonnet returned DONE clean in ~10min; 5b-2 Sonnet thrashed during trailing validation but all 8 files were on disk (1,172 LoC across 14 Part 5b files) — Opus completed validation in-place per memory-governance.md §4 THRASHING protocol, saving an estimated 8min + 30K tokens vs re-dispatch
+
 ## Not Yet Built
 
 - Phase 4 Parts 5b-8 (scaffold continues)
@@ -173,14 +180,14 @@ prisma_studio=43522 · livekit_signal=43532 · livekit_turn_udp_start=43537 · c
 Staging: standard ports (postgres=5433, valkey=6380, minio=9010, pgadmin=5051, app=3000 behind Traefik)
 Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=3000 behind Traefik)
 
-## File Counts (as of 2026-05-13 Phase 4 Part 5a)
+## File Counts (as of 2026-05-13 Phase 4 Part 5b)
 
-- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5a entries appended)
+- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5b entries appended)
 - Spec files: inputs.yml + inputs.schema.json
 - Env files: 3 real (gitignored) + 1 example (committed)
 - Root config (Part 1): 8 + package.json + pnpm-lock.yaml
 - Bootstrap infrastructure files: 13
-- Source files (apps/, packages/): apps/web 27 (Part 5a) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 20 + packages/jobs 11 + packages/storage 7 = 98
+- Source files (apps/, packages/): apps/web 41 (27 Part 5a + 14 Part 5b) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 20 + packages/jobs 11 + packages/storage 7 = 112
 - Phase 4 task files: 8 (staged)
 
 ## ⏳ Pending Human Action Before Phase 5
