@@ -376,3 +376,96 @@
   it in BOTH configs with the appropriate relative pattern.
 
 # ---
+
+## 2026-05-13 — 🔴 Sonnet 30K budget can be silently exceeded by accumulated tool results across 6+ file ops
+
+- Type: 🔴 gotcha
+- Phase: Phase 4 Part 5d-1 (Sonnet dispatch via Agent tool)
+- Files: apps/web/src/server/trpc/routers/meetings.ts, apps/web/src/app/app/meetings/**, apps/web/src/components/speed-dial/speed-dial-grid.tsx
+- Concepts: subagent, thrashing, token-budget, architect-execute, decomposition
+- Narrative: Dispatch prompt was carefully scoped to 6 files (4 new + 4 modified, no shadcn
+  installs, no PRODUCT.md/lessons.md reads, integration facts pre-inlined). Estimated 30K-edge.
+  Actual outcome: Sonnet thrashed at 25 tool calls / ~13 minutes — produced 4/6 files (with
+  bugs: wrong Prisma relation names, `name` not `display_name`, bogus `server-only` import,
+  wrong link path), skipped _meeting-form.tsx entirely, skipped speed-dial-grid wiring. The
+  failure mode is NOT "task too complex" — it's accumulated tool-result context: each Read
+  result, each Edit confirmation, each typecheck/lint output adds to context. 6 file ops with
+  typecheck/lint runs and fix loops exceeded 30K in tool returns alone, regardless of how
+  tight the prompt was. The 🟤 decision from Part 5c-2 (dispatch prompts MUST include explicit
+  shell-command-level prohibitions) was followed perfectly here, and the thrash still happened
+  because that decision addresses scope creep, not budget overflow.
+  Rule: when dispatching Sonnet 4.6 for a multi-file scaffold task, plan as ≤4 file operations
+  per dispatch — NOT 6+. For 7+ file scopes, prefer one of:
+    (a) Split into 2 dispatches of ≤4 files each (research → execute, OR module-by-module)
+    (b) Direct Opus implementation per memory-governance.md §1 Step 2.5b ("genuinely atomic
+        + exceeds 30K + would require awkward splitting" — Opus 200K context comfortably handles)
+    (c) Skip typecheck/lint inside the dispatch; have Opus run those after the dispatch
+        returns and apply fixes itself
+  The recovery cost here was ~30 minutes (relation-name fixes, two-stage TS type errors,
+  missing _meeting-form, speed-dial wiring) — about as expensive as a Sonnet re-dispatch
+  would have been, with the added benefit that the work is now verifiably correct.
+  Cross-link: [[opus-step-2.5b-when-to-escalate]] (decision log entry to write next session
+  if this pattern repeats).
+
+# ---
+
+## 2026-05-13 — 🟤 tRPC v11 standalone middleware loses ctx narrowing across chain steps
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5d-1 (typecheck errors after ctx narrowing refactor)
+- Files: apps/web/src/server/trpc/trpc.ts
+- Concepts: trpc, middleware, type-narrowing, context, architecture
+- Narrative: First attempt at refactoring authMiddleware to propagate narrowed `user` defined
+  three standalone middleware identifiers (`authMiddleware`, `tenantMiddleware`,
+  `apiRateLimitMiddleware`) each via `middleware(async ({ctx, next}) => ...)` and then
+  chained them via `procedure.use(authMiddleware).use(tenantMiddleware).use(apiRateLimitMiddleware)`.
+  Result: TypeScript errors `Property 'user' does not exist on type {session, req}` at the
+  tenant + rate-limit middleware sites. Reason: standalone `middleware(fn)` declarations are
+  typed against the base Context only — they do NOT see the narrowed output of an upstream
+  middleware they're chained with at the call site. Type narrowing flows through .use(...)
+  chain composition, but only when middlewares are inlined into the chain (or built up
+  incrementally as `t.procedure.use(...)` returning a new procedure with augmented ctx, then
+  layering further .use on that procedure).
+  Rule: When propagating narrowed context through tRPC middleware steps, inline the chain:
+    export const protectedProcedure = procedure
+      .use(async ({ ctx, next }) => { /* guards + narrow */ return next({ctx: {...ctx, X}}); })
+      .use(async ({ ctx, next }) => { /* sees ctx.X */ ... })
+      .use(async ({ ctx, next }) => { /* sees ctx.X */ ... });
+  Avoid `middleware(fn)` standalone definitions when downstream middlewares need to see the
+  augmented ctx. They work fine for terminal-only middlewares (e.g. rate-limit that doesn't
+  return augmented ctx to subsequent steps).
+  Cross-link: [[trpc-v11-architecture]] (V31 stack baseline).
+
+# ---
+
+## 2026-05-13 — 🟤 Prisma strict create input + L6 $allOperations: cast pattern
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5d-1 / 5d-2 (Meeting.create + CallLog.create typecheck failures)
+- Files: apps/web/src/server/trpc/routers/meetings.ts, apps/web/src/server/lib/call-log.ts
+- Concepts: prisma, l6-tenant-guard, strict-create-input, type-safety
+- Narrative: The L6 tenant-guard extension uses Prisma `$allOperations` to inject
+  organization_id into both `data` (for create/update) and `where` (for reads) at runtime.
+  This is the framework's primary defense-in-depth mechanism (security.md L6). Problem:
+  Prisma's compile-time `MeetingCreateInput`/`CallLogCreateInput` types still require
+  organization_id because the schema declares the column as NOT NULL. Two options:
+    A) Use the loose Prisma.MeetingUncheckedCreateInput type and pass organization_id
+       explicitly from ctx.organizationId (which the protectedProcedure tenant middleware
+       already extracted from session). L6 will then "inject" the same value at runtime —
+       a redundant write but semantically identical, and TS is happy.
+    B) Use the strict input + `as Prisma.MeetingCreateInput` cast omitting organization_id.
+       L6 fills it at runtime, but TS sees the cast as a type-system bypass.
+  Chose option A: typed data binding via `const data: Prisma.MeetingUncheckedCreateInput = {
+    organization_id: ctx.organizationId, host_user_id: ctx.user.id, ... }`. Reasons:
+    - The explicit field is documentation: future readers see the L6 contract at the call site.
+    - Defense in depth: if L6 ever fails (extension removed, $allOperations name change in
+      Prisma upgrade), the explicit field still scopes the write correctly.
+    - Documents the dependency on ctx.organizationId (visible in code review).
+  Inline comment at the call site explains the cast: "L6 tenant-guard injects organization_id
+  at runtime — cast satisfies Prisma's strict create input type that demands organization_id
+  at compile time."
+  Rule: When writing through prisma.create with L6-scoped entities, declare `const data:
+  Prisma.{Entity}UncheckedCreateInput = {organization_id: ctx.organizationId, ...}` rather
+  than relying solely on L6 injection. Documents the security contract at the call site.
+
+# ---

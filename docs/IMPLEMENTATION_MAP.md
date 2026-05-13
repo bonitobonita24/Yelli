@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 5c complete — apps/web tRPC v11 server (initTRPC + superjson + auth/tenant/rate-limit middlewares) + departmentsRouter (L6-trusted list) + callsRouter (initiate mutation: validate recipient department → mintLiveKitToken → emit Socket.IO call:incoming → return {callId, roomName, token, wsUrl}; reject mutation: io emit, no persistence) + tRPC fetchRequestHandler at /api/trpc/[trpc] + TRPCReactProvider wrapping {children} in root layout + Socket.IO server skeleton (globalThis-cached io singleton + typed event maps + Route Handler stub at /api/socket returning 503 until Phase 6 custom server). 11 files added (52 total in apps/web). Next: Part 5d (Meeting Management UI per execution-plan: /app/meetings list + /new + /app/meeting/:id multi-participant LiveKit room up to 50) in a new session.
+Phase: 4 Part 5d complete — Meeting Management UI + multi-participant LiveKit room + CallLog persistence. apps/web now ships full meetings surface: meetings tRPC router (list/byId/create/getJoinToken/end — Zod-strict, L6 scoped, organization_id never leaked), /app/meetings RSC list (responsive Card grid sm:grid-cols-2 lg:grid-cols-3, status badge, link to /app/meeting/[id]), /app/meetings/new (server shell + client _meeting-form), /app/meeting/[id] (RSC fetches meeting via byId server-caller, notFound() on TRPCError NOT_FOUND for cross-tenant URLs), MeetingRoom client (RoomContext + GridLayout + ParticipantTile mirroring IntercomCall, header with title + live participant count + MM:SS duration tick), MeetingControls (TrackToggles for mic/camera/screen-share + Leave + host-only End-for-all). CallLog persistence helpers (recordIntercomCallLog + recordMeetingCallLog) wired to calls.end (1:1 hangup) and meetings.end (host-only end-for-all, idempotent). tRPC middleware chain inlined in protectedProcedure so ctx.user propagates → 4 advisory non-null-assertion warnings eliminated. Speed-dial onCall wired to trpc.calls.initiate.useMutation with sessionStorage stash. 13 files net (9 new + 4 modified). Next: Part 5e (admin pages — /admin dashboard with Recharts + /admin/departments CRUD+CSV+device-binding + /admin/users + /admin/settings + /admin/billing Xendit + /admin/reports + /superadmin/* via platformPrisma — Tier 3, prefer ≤4 files per Sonnet dispatch or direct Opus given platformPrisma complexity).
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -132,16 +132,22 @@ Framework: Spec-Driven Platform V31
   - Verification: pnpm install (+socket.io ^4.8.1 transitive deps) ✓; pnpm --filter @yelli/web typecheck ✓ (0 errors); pnpm --filter @yelli/web lint ✓ (0 errors, 4 advisory non-null-assertion warnings on `ctx.session!.user` pattern — accepted, parallel to Auth.js v5 JWT defensive narrowing in auth.ts session callback; refactor to propagate narrowed user via `next({ctx: {...ctx, user}})` deferred as cleanup task)
   - Dispatch efficiency: 5c-1 took ~20min/46 tools (includes the ESLint Rule 13 dual-config trouble + premature squash-merge); 5c-2 took ~14min/25 tools (clean, obeyed absolute-rules prohibition explicitly)
 
+- ✅ Phase 4 Part 5d — Meeting Management UI + multi-participant LiveKit room + CallLog persistence (2026-05-13) — Architect-Execute with Step 2.5b Opus escalation after Sonnet 5d-1 thrashed
+  - **9 new files**: src/server/trpc/routers/meetings.ts (list / byId / create / getJoinToken / end — Zod-strict, L6 scoped; create + end use `Prisma.MeetingUncheckedCreateInput` typed-data pattern with explicit organization_id from ctx so L6 runtime injection coexists with strict TS create input; getJoinToken status-gates ended/cancelled/locked-non-host and promotes scheduled→active on first join; end is host-only + idempotent + writes single CallLog), src/server/lib/call-log.ts (recordIntercomCallLog + recordMeetingCallLog helpers — same UncheckedCreateInput pattern), src/app/app/meetings/page.tsx (RSC list — responsive Card grid sm:grid-cols-2 lg:grid-cols-3 + status badge + link to /app/meeting/[id]), src/app/app/meetings/new/page.tsx (RSC create shell), src/app/app/meetings/new/_meeting-form.tsx (client form — React state + trpc.meetings.create.useMutation + toast), src/app/app/meeting/[id]/page.tsx (RSC meeting room shell — meetings.byId via createServerCaller + notFound() on TRPCError NOT_FOUND for cross-tenant URLs + generateMetadata), src/components/meeting/meeting-room.tsx (client — RoomContext.Provider + GridLayout + ParticipantTile pattern mirroring IntercomCall; header with live participant count + MM:SS duration tick; status states connecting/failed/ended/loading-room/active), src/components/meeting/meeting-controls.tsx (TrackToggles mic/camera/screen-share + Leave + host-only End-for-all), src/lib/livekit/use-meeting-room.ts (multi-participant hook — fetches token via trpc.meetings.getJoinToken.mutate (not REST), returns isHost for moderator gating)
+  - **4 modified**: src/server/trpc/trpc.ts (authMiddleware refactored — chain inlined in protectedProcedure with `procedure.use(...).use(...).use(...)` so ctx.user propagates through tenant + apiRateLimit middleware steps; eliminates 4 advisory non-null-assertion warnings), src/server/trpc/routers/calls.ts (ctx.session!.user.* → ctx.user.* + NEW `end` mutation persists intercom CallLog with caller-supplied startedAt + participantCount + status enum), src/server/trpc/router.ts (register meetingsRouter alongside departments + calls), src/components/speed-dial/speed-dial-grid.tsx (wire onCall → trpc.calls.initiate.useMutation; sessionStorage stash of {token, wsUrl, roomName, recipientDepartmentName} keyed by callId so /app/call/[id] can consume without a second token mint; toast success/error; router.push to /app/call/[id])
+  - Dispatch retrospective: 5d-1 was dispatched to Sonnet 4.6 with tight scope (6 files, integration facts pre-inlined, absolute shell-command-level prohibitions). Sonnet thrashed at 25 tools / ~770s — completed 4 files (with 3 bug classes: wrong Prisma relation names host_user/meeting_participants/role instead of host/participants/role_in_meeting; `name` instead of `display_name` on User selects; bogus `server-only` import + masking eslint-disable; wrong link path /app/meetings/[id] vs spec's /app/meeting/[id] singular). Opus took over per memory-governance.md §1 Step 2.5b (escalation when splitting is awkward + Opus budget is comfortable). Recovered 5d-1 (relation fixes, missing _meeting-form, speed-dial wiring) + implemented 5d-2 directly. Three new lessons.md entries written: 🔴 Sonnet 30K budget silently exceeded by accumulated tool results across 6+ file ops; 🟤 tRPC v11 standalone middleware loses ctx narrowing across chain; 🟤 Prisma strict create input + L6 cast pattern.
+  - Deferred to Phase 6+: mid-call moderator promotion (role change on existing participants), kick participant, force-mute participant — these require LiveKit Server SDK integration which arrives in Phase 7 alongside the Egress webhook for recording.
+  - Verification: pnpm -w typecheck PASS (7 tasks, FULL TURBO), pnpm -w lint PASS (7 tasks, FULL TURBO). Branch scaffold/part-5d squash-merged to main as ec50f4f and deleted.
+
 ## Not Yet Built
 
-- Phase 4 Parts 5d-8 (scaffold continues)
-  - Part 5d: Meeting Management (/app/meetings + /new + /app/meeting/:id LiveKit multi-participant up to 50, screen share, mute/unmute, host controls, moderator promotion) + speed-dial-button onClick wired to trpc.calls.initiate + CallLog persistence at call end
-  - Part 5e: In-call overlays (chat sidebar, file dropzone, whiteboard, recording) + call history + recordings library
-  - Part 5f: Admin pages (/admin dashboard + /admin/departments + /admin/users + /admin/settings + /admin/billing Xendit checkout + /admin/reports + /superadmin/* with platformPrisma)
+- Phase 4 Parts 5e-8 (scaffold continues)
+  - Part 5e: Admin pages (/admin dashboard with Recharts + /admin/departments CRUD+CSV+device-binding + /admin/users invite+role+deactivate + /admin/settings + /admin/billing Xendit checkout flow + /admin/reports CSV/PDF + /superadmin/* with platformPrisma — no L6 guard, per security.md "Super-admin queries" rule)
+  - Part 5f: In-call overlays (chat sidebar, file dropzone, whiteboard, recording) + call history + recordings library — DEFERRED to its own session
   - Part 6: apps/mobile — SKIP (Yelli is web-only)
   - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json, custom Next.js server for Socket.IO upgrade
   - Part 8: .github/workflows/ci.yml + docker-publish.yml, MANIFEST.txt, IMPLEMENTATION_MAP rewrite, SocratiCode initial index
-- Part 5d cleanup item: refactor tRPC authMiddleware to return narrowed `user` via `next({ctx: {...ctx, user}})` so downstream procedures use `ctx.user.id` instead of `ctx.session!.user.id`, eliminating the 4 advisory non-null-assertion warnings
+- Phase 6+ moderator features: mid-call role promotion, kick participant, force-mute participant (require LiveKit Server SDK)
 - Phase 5 Validation (9 commands — install/lint/typecheck/test/build/audit + 3 governance checks)
 - Phase 6 Docker services + Visual QA (Rule 16)
 
@@ -189,14 +195,14 @@ prisma_studio=43522 · livekit_signal=43532 · livekit_turn_udp_start=43537 · c
 Staging: standard ports (postgres=5433, valkey=6380, minio=9010, pgadmin=5051, app=3000 behind Traefik)
 Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=3000 behind Traefik)
 
-## File Counts (as of 2026-05-13 Phase 4 Part 5c)
+## File Counts (as of 2026-05-13 Phase 4 Part 5d)
 
-- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5b entries appended)
+- Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5d entries appended)
 - Spec files: inputs.yml + inputs.schema.json
 - Env files: 3 real (gitignored) + 1 example (committed)
 - Root config (Part 1): 8 + package.json + pnpm-lock.yaml
 - Bootstrap infrastructure files: 13
-- Source files (apps/, packages/): apps/web 41 (27 Part 5a + 14 Part 5b) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 20 + packages/jobs 11 + packages/storage 7 = 112
+- Source files (apps/, packages/): apps/web 61 (27 Part 5a + 14 Part 5b + 11 Part 5c + 9 Part 5d new) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 20 + packages/jobs 11 + packages/storage 7 = 132
 - Phase 4 task files: 8 (staged)
 
 ## ⏳ Pending Human Action Before Phase 5

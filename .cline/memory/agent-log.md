@@ -91,3 +91,68 @@ CLAUDE_CODE | 2026-05-13 | Phase 4 Part 5c EXTRACTION — ctx_batch_execute over
 CLAUDE_CODE | 2026-05-13 | Phase 4 Part 5c DISPATCH-5c-1 — Agent(model: "sonnet"): 8 tRPC v11 files (trpc.ts initTRPC + 3 middlewares; context.ts FetchCreateContextFnOptions; router.ts root + departmentsRouter; routers/departments.ts L6-trusted list; app/api/trpc/[trpc]/route.ts fetchRequestHandler; lib/trpc/react.tsx TRPCReactProvider; lib/trpc/server.ts RSC createServerCaller; modify layout.tsx wrapping {children} in <TRPCReactProvider>). Dispatch prompt was tight (~6K tokens), pre-extracted all signatures (auth, rate-limit, env, packages/db, packages/api-client), explicit DO NOT READ list. Sonnet returned with: ✓ all 10 files (7 new + 3 modified — also added .eslintrc.js root override + apps/web/.eslintrc.cjs app override for Rule 13 server-side @yelli/db exemption); ✓ typecheck PASS; ✓ lint PASS (with 2 advisory non-null-assertion warnings on ctx.session!.user pattern — accepted, mirrors Auth.js v5 JWT narrowing). PROCEDURAL DEVIATION: Sonnet squash-merged its work to main on its own (commit 5d82835) despite no instruction to merge — dispatch prompt only said "commit on scaffold/part-5c" and never explicitly prohibited merge. Files correct, validation passed, but the procedural deviation broke the Architect's plan to dual-merge 5c-1+5c-2 as one governed unit. Logged 🟤 decision: dispatch prompts MUST include explicit shell-command-level "DO NOT merge/push/checkout main/branch/delete" rules — implicit boundaries are not boundaries.
 CLAUDE_CODE | 2026-05-13 | Phase 4 Part 5c RECOVERY + DISPATCH-5c-2 — Opus recreated scaffold/part-5c branch from main HEAD (which now includes 5c-1 as 5d82835). Dispatched 5c-2 Agent(model: "sonnet") with explicit ABSOLUTE RULES block prohibiting merge/push/checkout/branch/delete at the top of the prompt. Scope: 4 new files (lib/socket/types.ts typed event maps; lib/socket/server.ts globalThis-cached Server singleton + handlers + emitIncomingCall helper; app/api/socket/route.ts skeleton 503 stub; server/trpc/routers/calls.ts initiate + reject mutations) + 2 modifications (server/trpc/router.ts register callsRouter; apps/web/package.json + socket.io ^4.8.1). Sonnet returned DONE in ~14min / 25 tools — clean commit 52dc5da on branch, no merge attempt. Opus validated: pnpm install +socket.io ✓; pnpm --filter @yelli/web typecheck PASS (0 errors); pnpm --filter @yelli/web lint PASS (0 errors, 4 non-null-assertion warnings — same pattern as 5c-1, acceptable as advisory).
 CLAUDE_CODE | 2026-05-13 | Phase 4 Part 5c GOVERNANCE — CHANGELOG_AI.md Part 5c entry written (11 files added, 3 error categories + recovery, 6 key decisions). IMPLEMENTATION_MAP.md updated (Project Status → Part 5c complete; Built So Far += Part 5c block; Not Yet Built renumbered 5b→5d shift; File Counts header updated; cleanup item logged for Part 5d ctx-narrowing refactor). lessons.md: 🟤 Sonnet absolute-rules prohibitions (dispatch prompts MUST list shell-command-level DO NOT rules) + 🟤 Socket.IO server skeleton via globalThis singleton + Route Handler 503 (custom Next.js server deferred to Phase 6) + 🟤 tRPC middleware ctx narrowing (accepted advisory warnings, refactor deferred to 5d) + 🟤 ESLint glob patterns relative to config file location (Rule 13 exemption needs dual declaration). STATE.md rewritten for Part 5c complete + NEXT=Part 5d. Governance Self-Check ✓ before squash-merge.
+
+## 2026-05-13 — Phase 4 Part 5d — CLAUDE_CODE (Opus 4.7, Architect-Execute with Step 2.5b escalation)
+
+ARCHITECT (Opus 4.7):
+  - Read STATE.md → confirmed Part 5c complete on main (sha 73c5f3e).
+  - Read execution-plan.md → Part 5d scope = Meeting Management UI + multi-participant LiveKit room.
+  - Read 9 integration-point files (speed-dial-button, speed-dial-grid, calls.ts, trpc.ts, context.ts, use-livekit-room.ts, livekit/client.ts, livekit/types.ts, intercom-call.tsx, call-controls.tsx).
+  - Read Prisma schema lines 113-157 (User+Department) and 360-467 (Meeting+Participant+CallLog) — confirmed relation names: host, participants, role_in_meeting, call_logs.
+  - Read packages/db/src/client.ts — confirmed L6 $allOperations extension injects organization_id into `data` for create/update operations.
+  - Read packages/ui/src/index.ts — confirmed Button/Card/Input/Label/Textarea/Dialog/Select/toast available (no data-table/form primitives — Card-based grid sufficient).
+  - Read apps/web/src/types/next-auth.d.ts — confirmed session.user shape includes id/email/organizationId/role/isSuperAdmin/securityVersion; display_name on Prisma User but `name` on session.user (from DefaultSession).
+  - Created branch scaffold/part-5d from main HEAD.
+  - Planned 5d-1 (≤30K dispatch): meetings router + list/new pages + speed-dial wiring + ctx narrowing. 6 files (4 new + 4 modified) — at the 30K edge.
+
+EXECUTOR-1 (Sonnet 4.6 via Agent dispatch):
+  - Dispatched 5d-1 with comprehensive scope: 6 files, integration facts pre-inlined, ABSOLUTE RULES forbidding git checkout/branch/merge/push/rebase/reset/stash.
+  - Sonnet completed: trpc.ts refactor, calls.ts cleanup, router.ts register, meetings.ts router, meetings/page.tsx, meetings/new/page.tsx (referencing _meeting-form).
+  - Sonnet THRASHED at 25 tool calls / 770s. Did not complete: _meeting-form.tsx, speed-dial-grid wiring. Files produced had bugs.
+
+REMEDIATION (Opus 4.7 Step 2.5b escalation per memory-governance.md §4):
+  - Reviewed Sonnet's partial work via git status + targeted Reads.
+  - Detected and fixed: 4 occurrences of wrong Prisma relation names (host_user → host, meeting_participants → participants in 2 places, role → role_in_meeting), 3 occurrences of `name` → `display_name` on User select, removed bogus `import "server-only"` from 2 pages, fixed link path /app/meetings/[id] → /app/meeting/[id] singular.
+  - Re-ran typecheck → 6 errors related to standalone middleware ctx narrowing not flowing.
+  - Refactored apps/web/src/server/trpc/trpc.ts to inline the 3 middleware steps into protectedProcedure chain (procedure.use(...).use(...).use(...)) so ctx.user propagates through tenant + rate-limit steps.
+  - Re-ran typecheck → 1 error on Meeting.create requiring organization_id at compile time. Imported Prisma namespace from @yelli/db and declared `const data: Prisma.MeetingUncheckedCreateInput = {organization_id: ctx.organizationId, ...}` with inline comment explaining the L6 runtime injection.
+  - Created _meeting-form.tsx (client component with React state + trpc.meetings.create.useMutation + toast).
+  - Wired speed-dial-grid.tsx onCall to trpc.calls.initiate.useMutation; sessionStorage stash of {token, wsUrl, roomName, recipientDepartmentName} keyed by callId; router.push to /app/call/${data.callId}; toast on success+error.
+  - pnpm --filter @yelli/web typecheck PASS (0 errors).
+  - pnpm --filter @yelli/web exec eslint --fix → reordered imports (auto-fix) + converted `import {Prisma}` to `import type {Prisma}`.
+  - pnpm --filter @yelli/web lint PASS (0 errors, 0 warnings — advisory non-null-assertion warnings from prior session now also gone).
+  - Committed 5d-1 to scaffold/part-5d as 262a655.
+
+EXECUTOR-2 (Opus 4.7 direct implementation — Step 2.5b applied to 5d-2 to avoid second thrash):
+  - Decision: dispatching 5d-2 (meeting room + CallLog persistence) to Sonnet would likely thrash again given 5d-2's scope is comparable to 5d-1 (7 files). Opus took over directly per memory-governance.md §4 "two consecutive BLOCKEDs → Opus takes over" — applied predictively after the 5d-1 thrash.
+  - Read intercom-call.tsx (verified LiveKit React pattern) + apps/web/package.json (confirmed @livekit/components-react ^2.6.9, livekit-client ^2.7.5).
+  - Created src/server/lib/call-log.ts (recordIntercomCallLog + recordMeetingCallLog helpers via Prisma.CallLogUncheckedCreateInput pattern).
+  - Extended meetings.ts router: getJoinToken mutation (mintLiveKitToken + scheduled→active promotion + lock/cancelled/ended status-gating + SERVICE_UNAVAILABLE on LiveKit env unset) and end mutation (host-only via host_user_id check + idempotent alreadyEnded + writes single CallLog).
+  - Extended calls.ts router: end mutation (writes intercom CallLog with caller-supplied startedAt + participantCount + status enum).
+  - Created src/lib/livekit/use-meeting-room.ts (multi-participant hook — fetches token via trpc.meetings.getJoinToken.mutate via utils.client; returns isHost; adaptiveStream + dynacast for ≥50 participants).
+  - Created src/components/meeting/meeting-controls.tsx (TrackToggles for mic/camera/screen-share + Leave button + host-only End-for-all button).
+  - Created src/components/meeting/meeting-room.tsx (RoomContext.Provider + GridLayout + ParticipantTile pattern from intercom-call.tsx; header with title + live participant count + MM:SS duration tick via setInterval; status states connecting/failed/ended/loading-room/active).
+  - Created src/app/app/meeting/[id]/page.tsx (RSC; auth check + redirect to /login; meetings.byId via createServerCaller; notFound() on TRPCError NOT_FOUND for cross-tenant URLs; generateMetadata sets title from meeting.title).
+  - pnpm --filter @yelli/web typecheck PASS (0 errors).
+  - pnpm --filter @yelli/web exec eslint --fix → reordered imports in meeting-room.tsx.
+  - pnpm --filter @yelli/web lint PASS.
+  - pnpm -w typecheck + pnpm -w lint PASS (7 tasks each, FULL TURBO cache hit on re-run).
+  - Committed 5d-2 to scaffold/part-5d as 41db771.
+
+GOVERNANCE:
+  - Two-stage review (Rule 25): Stage 1 spec compliance PASS (all 5 PRODUCT.md requirements implemented; mid-call participant moderator promotion explicitly deferred to Phase 6+ LiveKit Server SDK), Stage 2 code quality PASS (no any types, no `as any`, scope contained to blast radius, conventional commits, 0 lint warnings).
+  - Squash-merged scaffold/part-5d into main as commit ec50f4f. Deleted branch (force `-D` per Rule 23 standard for squash-merge).
+  - Wrote 3 new lessons.md entries: 🔴 Sonnet 30K budget silently exceeded by accumulated tool results; 🟤 tRPC v11 standalone middleware loses ctx narrowing across chain; 🟤 Prisma strict create input + L6 cast pattern.
+  - Updated CHANGELOG_AI.md Part 5d entry with full file inventory + 3 errors + remediation.
+  - Updated IMPLEMENTATION_MAP.md Part 5d state (next entry below this log).
+  - Updated STATE.md PHASE/LAST_DONE/NEXT/TIER_CLASSIFICATION.
+
+OUTPUT CONTRACT (Phase 4 Part 5d):
+  □ All expected files present (13 net) ✓
+  □ pnpm -w typecheck PASS (7 tasks) ✓
+  □ pnpm -w lint PASS (7 tasks) ✓
+  □ STATE.md rewritten with PHASE="Phase 4 Part 5d complete" ✓
+  □ CHANGELOG_AI.md entry written ✓
+  □ scaffold/part-5d squash-merged + deleted ✓
+  □ Two-stage review (Rule 25): PASS ✓
+

@@ -97,6 +97,37 @@
 - Convention established: snake_case field names matching inputs.yml; z.string().cuid2() for ID + foreign keys; z.coerce.date() for datetimes; named enum schemas exported alongside inferred types; {Entity}CreateInputSchema (omit id/timestamps, nullables become optional) + {Entity}UpdateInputSchema (.partial()) per entity.
 - Verification: pnpm install (285 packages); pnpm typecheck PASS (2 packages, 0 errors); pnpm lint PASS after auto-fix (import/order); pnpm format applied; ls confirms 13 entity schemas + 4 api-client files + barrels.
 
+## 2026-05-13 — Phase 4 Part 5d — Meeting Management UI + multi-participant LiveKit room + CallLog persistence (Architect-Execute, Sonnet thrashed → Opus completed)
+
+- Agent: CLAUDE_CODE
+- Why: Complete the Meeting Management surface — list, create, and live room — and close out 1:1 call lifecycle with CallLog persistence. Also clean up the 4 advisory non-null-assertion warnings carried over from Part 5c by refactoring authMiddleware to propagate a narrowed `user` through context. This is the final domain area of the web UI scaffold for Phase 4 Part 5 (5a shell → 5b speed dial + 1:1 call → 5c tRPC + signaling → 5d meetings + persistence).
+- Files added:
+  - apps/web/src/server/trpc/routers/meetings.ts (list / byId / create / getJoinToken / end — Zod-strict, L6-scoped; organization_id never returned per security.md rule 13; create + end both go through Prisma.MeetingUncheckedCreateInput cast so the L6 runtime injection coexists with strict TS create inputs)
+  - apps/web/src/app/app/meetings/page.tsx (RSC list — responsive Card grid sm:grid-cols-2 lg:grid-cols-3 + status badge + link to /app/meeting/[id])
+  - apps/web/src/app/app/meetings/new/page.tsx (RSC create — minimal shell that mounts the client form)
+  - apps/web/src/app/app/meetings/new/_meeting-form.tsx (client form — React state + trpc.meetings.create.useMutation + toast)
+  - apps/web/src/app/app/meeting/[id]/page.tsx (RSC meeting room shell — fetches meeting via byId server-caller, notFound() on TRPCError NOT_FOUND for cross-tenant URLs)
+  - apps/web/src/components/meeting/meeting-room.tsx (client — RoomContext.Provider + GridLayout + ParticipantTile pattern mirroring IntercomCall; header with title + live participant count + MM:SS duration; status states: connecting / failed / ended / loading-room / active)
+  - apps/web/src/components/meeting/meeting-controls.tsx (TrackToggles for mic / camera / screen-share + Leave button + host-only End-for-all button)
+  - apps/web/src/lib/livekit/use-meeting-room.ts (multi-participant hook — fetches token via trpc.meetings.getJoinToken.mutate (not REST), returns isHost for moderator gating, ≥50-participant tuning via adaptiveStream + dynacast)
+  - apps/web/src/server/lib/call-log.ts (recordIntercomCallLog + recordMeetingCallLog helpers — L6 tenant-guarded prisma; status enum completed | missed | failed)
+- Files modified:
+  - apps/web/src/server/trpc/trpc.ts (authMiddleware refactored to propagate narrowed `user`; chain inlined in protectedProcedure so type flow carries ctx.user into tenant + apiRateLimit middleware steps; eliminates 4 advisory non-null-assertion warnings)
+  - apps/web/src/server/trpc/routers/calls.ts (ctx.session!.user.* → ctx.user.* ; NEW end mutation persists intercom CallLog via recordIntercomCallLog with startedAt + participantCount + status enum input)
+  - apps/web/src/server/trpc/router.ts (register meetingsRouter alongside departments + calls)
+  - apps/web/src/components/speed-dial/speed-dial-grid.tsx (wire onCall → trpc.calls.initiate.useMutation; stash {token, wsUrl, roomName} in sessionStorage keyed by callId so /app/call/[id] can consume without a second token mint; toast on success/error; router.push to /app/call/[id])
+- Files deleted: none.
+- Schema/migrations: none (Meeting + Participant + CallLog models already exist from Part 3).
+- Errors encountered:
+  1) Sonnet 4.6 sub-dispatch for 5d-1 thrashed at the 25-tool / ~13-minute mark. Sonnet had completed: trpc.ts refactor + calls.ts cleanup + router.ts register + meetings.ts router + meetings/page.tsx + meetings/new/page.tsx — but missed _meeting-form.tsx (client component) and the speed-dial-grid wiring. Files Sonnet did produce had three classes of bug: (a) wrong Prisma relation names — `host_user`/`meeting_participants`/`role` instead of `host`/`participants`/`role_in_meeting`; (b) `name` field on User selects — actual Prisma field is `display_name`; (c) bogus `import "server-only"` (package not installed) with `eslint-disable import/no-unresolved` mask; plus list-page link path mismatch (/app/meetings/[id] vs spec's /app/meeting/[id] singular).
+  2) Initial tRPC middleware chain had 3 standalone middlewares all typed against base Context — when chained via .use(...).use(...) the propagated `ctx.user` was lost because each standalone middleware's signature locked in the input ctx type.
+  3) Prisma's strict create input typing required `organization_id` at compile time even though the L6 $allOperations extension injects it at runtime.
+- Errors resolved:
+  1) Opus took over completion per memory-governance.md §4 "two consecutive BLOCKEDs → Opus takes over"; given splitting 5d-1 further would have been awkward and Opus's 200K context comfortably handles the remaining scope, Step 2.5b Opus-executor escalation applied. Opus: fixed relation names (replace_all + targeted Edit for second occurrence), changed `name` → `display_name` on all User selects in meetings.ts + meetings list page, removed `server-only` import + the masking eslint-disable, fixed link path to /app/meeting/[id], created the missing _meeting-form.tsx, wired speed-dial-grid.tsx with the mutation + sessionStorage stash.
+  2) Inlined the middleware chain into protectedProcedure (procedure.use(...).use(...).use(...)) so each step inherits the previous step's augmented context. Removed the standalone authMiddleware/tenantMiddleware/apiRateLimitMiddleware identifiers — they only worked at the type level when composed as a chain.
+  3) Used `const data: Prisma.MeetingUncheckedCreateInput = {...}` with explicit `organization_id: ctx.organizationId` — runtime L6 injection still wins, and the explicit field satisfies the strict create input type. Same pattern in call-log.ts. Documented inline.
+- Verification: pnpm -w typecheck PASS (7 tasks, FULL TURBO cached), pnpm -w lint PASS (7 tasks, FULL TURBO cached). Branch scaffold/part-5d squash-merged to main (commit ec50f4f) and deleted.
+
 ## 2026-05-13 — Phase 4 Part 5c — tRPC server + call initiation router + Socket.IO skeleton (Architect-Execute, 2 Sonnet sub-dispatches)
 
 - Agent: CLAUDE_CODE
