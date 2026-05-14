@@ -68,3 +68,45 @@ export const protectedProcedure = procedure
     rateLimiters.api.check(ctx.user.id);
     return next();
   });
+
+/**
+ * Tenant Admin procedure — protectedProcedure + role gate.
+ * Authorises only users whose session role is "tenant_admin" for the active org.
+ * Runs inside L6 tenant context (writes/reads still org-scoped).
+ * Used by /admin/* routers (departments mutations, users, settings, billing, reports).
+ */
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  if (ctx.user.role !== "tenant_admin") {
+    // Generic message — never reveal whether role/permission is the failing dimension
+    throw new TRPCError({ code: "FORBIDDEN", message: "Access denied." });
+  }
+  return next();
+});
+
+/**
+ * Super Admin procedure — platform-level privilege, bypasses tenant guard.
+ * Per security.md §SUPERADMIN AND PLATFORM-LEVEL ROLES:
+ *   - Resolvers MUST use platformPrisma (no L6 extension) — not the guarded prisma.
+ *   - Runs OUTSIDE runWithTenantContext to make tenant-bypass explicit.
+ *   - All operations logged via writeAuditLog with "PLATFORM:*" action prefix.
+ *
+ * Auth chain: session present → isSuperAdmin flag set → strict rate limit (auth tier).
+ * NOTE: securityVersion staleness is already enforced in Auth.js session() callback
+ * (apps/web/src/server/auth.ts), so a stale token from a demoted user cannot reach here.
+ */
+export const superAdminProcedure = procedure
+  .use(async ({ ctx, next }) => {
+    if (typeof ctx.session?.user?.id !== "string") {
+      throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
+    if (ctx.session.user.isSuperAdmin !== true) {
+      // Same generic message as adminProcedure — no enumeration vector
+      throw new TRPCError({ code: "FORBIDDEN", message: "Access denied." });
+    }
+    const user = ctx.session.user;
+    return next({ ctx: { ...ctx, user } });
+  })
+  .use(async ({ ctx, next }) => {
+    rateLimiters.auth.check(`platform:${ctx.user.id}`);
+    return next();
+  });

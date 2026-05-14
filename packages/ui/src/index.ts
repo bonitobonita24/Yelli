@@ -68,4 +68,20 @@ export { Toaster as SonnerToaster } from './components/sonner';
 
 export { useToast, toast } from './components/use-toast';
 
+export { Badge, badgeVariants } from './components/badge';
+export type { BadgeProps } from './components/badge';
+
+export { Alert, AlertTitle, AlertDescription } from './components/alert';
+
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from './components/table';
+
 export { cn } from './lib/utils';

@@ -18,6 +18,9 @@
     "./toast": "./src/components/toast.tsx",
     "./toaster": "./src/components/toaster.tsx",
     "./sonner": "./src/components/sonner.tsx",
+    "./badge": "./src/components/badge.tsx",
+    "./alert": "./src/components/alert.tsx",
+    "./table": "./src/components/table.tsx",
     "./use-toast": "./src/components/use-toast.ts",
     "./utils": "./src/lib/utils.ts"
   },

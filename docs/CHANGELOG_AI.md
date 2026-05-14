@@ -325,3 +325,63 @@
   - planning: claude-code (Opus 4.7 — Architect role)
   - execution: claude-sonnet-4-6 via Claude Code (2 dispatches: 5b-1 DONE clean ~10min, 5b-2 partial-thrash all files written ~8min before thrash, Opus completed validation)
   - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked this session; Opus inline for all governance)
+
+## 2026-05-14 — Phase 4 Part 5e — Admin pages + Super-admin (platform) pages
+
+- Agent: CLAUDE_CODE
+- Why: Scaffold the Tenant Admin and Super-Admin surfaces per execution-plan.md Part 5e (originally row "5e" in Part 5 split). Delivers /admin (dashboard + departments CRUD + CSV + device-token, users invite/role/deactivate, settings, billing with Xendit checkout, reports CSV) and /superadmin (organizations list + suspend/unsuspend, platform-settings singleton form). All super-admin queries use platformPrisma per security.md §SUPERADMIN AND PLATFORM-LEVEL ROLES — bypass is explicit, never an inline if/else in tenant resolvers.
+- Files added:
+  - Backend tRPC routers (4):
+    - apps/web/src/server/trpc/routers/admin.ts (dashboard.stats + users.list/invite/updateRole/deactivate + settings.get/update + reports.exportCallLogsCsv)
+    - apps/web/src/server/trpc/routers/billing.ts (subscription.current + invoices.list cursor-paginated + checkout.createSession with Xendit Invoice API Basic auth, 503-graceful when XENDIT_SECRET_KEY env unset)
+    - apps/web/src/server/trpc/routers/superadmin.ts (organizations.list/byId/suspend/unsuspend via platformPrisma + platformSettings.get/update singleton; suspend bumps security_version on every active user → invalidates sessions per security.md §AUTH DEFAULTS item 6)
+  - Admin UI (7):
+    - apps/web/src/app/admin/layout.tsx (RSC auth + tenant_admin|isSuperAdmin gate + AdminSidebar mount, max-w-7xl content shell)
+    - apps/web/src/components/admin/admin-sidebar.tsx (client — dark sidebar per DESIGN.md, lucide-react icons, usePathname active state, conditional Super Admin shortcut)
+    - apps/web/src/app/admin/page.tsx (client dashboard — 4 StatCards + Recharts AreaChart driven by --chart-1..5 CSS vars + dense 30-day time series built in JS)
+    - apps/web/src/app/admin/departments/page.tsx (client — Table list + create/edit Dialog + RFC-4180 CSV parser + device-token rotation dialog with show-once + copy-clipboard)
+    - apps/web/src/app/admin/users/page.tsx (client — Table list + invite Dialog with temp-password show-once + inline Select role mutation + deactivate/reactivate toggle)
+    - apps/web/src/app/admin/settings/page.tsx (client — org name + billing_email form, slug locked, plan badge)
+    - apps/web/src/app/admin/billing/page.tsx (client — current plan + upgrade cards routing to Xendit hosted checkout + Alert variant=warning when 503 + paginated invoice history)
+    - apps/web/src/app/admin/reports/page.tsx (client — date-range form + CSV download via Blob/anchor; server-side 365-day max range + 10K row cap)
+  - Super-admin UI (3):
+    - apps/web/src/app/superadmin/layout.tsx (RSC isSuperAdmin gate + dark header nav + Organizations + Platform settings links)
+    - apps/web/src/app/superadmin/page.tsx (client — orgs table with name/slug/email search + suspend/unsuspend with confirm() guard)
+    - apps/web/src/app/superadmin/platform-settings/page.tsx (client — singleton form for tier limits, prices in centavos, recording quota)
+  - UI primitives (packages/ui — 3):
+    - packages/ui/src/components/badge.tsx (CVA — default/secondary/destructive/outline/success/warning/info)
+    - packages/ui/src/components/alert.tsx (default/destructive/warning/info/success variants — used for Xendit 503 fallback)
+    - packages/ui/src/components/table.tsx (HTML table styled per shadcn New York; no @tanstack/react-table dep)
+- Files modified:
+  - apps/web/src/server/trpc/trpc.ts (added adminProcedure + superAdminProcedure; superAdminProcedure deliberately skips runWithTenantContext so bypass is explicit per security.md)
+  - apps/web/src/server/trpc/router.ts (registered admin / billing / superadmin alongside calls / departments / meetings)
+  - apps/web/src/server/trpc/routers/departments.ts (extended with create/update/delete/csvImport/regenerateDeviceToken — all admin-only, all wrapped in $transaction with writeAuditLog)
+  - apps/web/package.json (+lucide-react ^0.460.0 + recharts ^2.13.3)
+  - packages/db/src/audit.ts (widened writeAuditLog parameter from Prisma.TransactionClient to AuditLogWriter structural type — accepts both base + L6-extended client's $transaction callback; the two diverge under exactOptionalPropertyTypes)
+  - packages/ui/package.json (subpath exports for badge/alert/table)
+  - packages/ui/src/index.ts (barrel exports for new primitives)
+  - packages/ui/src/styles/globals.css (added --chart-1..5 CSS vars for Recharts in :root + .dark)
+  - pnpm-lock.yaml (Recharts + transitive deps; +34 packages)
+- Files deleted: none
+- Schema/migrations: none (existing models sufficient — User.security_version field already in schema from Part 3 for L6 session invalidation)
+- Errors encountered:
+  - Initial typecheck: writeAuditLog's Prisma.TransactionClient parameter incompatible with L6-extended client's $transaction callback (extension types diverge under exactOptionalPropertyTypes); PlatformSettings.update rejected `{field?: number | undefined}` input under exactOptionalPropertyTypes
+  - Initial typecheck: lucide-react not declared in apps/web/package.json (was only in packages/ui's deps)
+  - Initial typecheck: NAV_ITEMS `as const` array narrowed `exact` property to literally-typed discriminated union; usage `item.exact` failed on items without the key
+  - Initial lint: Prisma import treated as runtime when only used as type → `consistent-type-imports` error
+- Errors resolved:
+  - Widened writeAuditLog to accept AuditLogWriter structural type (auditLog.create method only); preserved transactional-only contract via JSDoc + comment; affects both prisma and platformPrisma callers
+  - PlatformSettings.update: explicit Record<string, number> build that filters undefined keys before passing to Prisma — undefined values rejected by Prisma's strict update input under exactOptionalPropertyTypes
+  - Added lucide-react ^0.460.0 directly to apps/web/package.json (already in packages/ui — separate workspace declaration required)
+  - Reworked NAV_ITEMS to explicit `ReadonlyArray<NavItem>` with `exact?: boolean` optional property — type narrows uniformly across all items
+  - Split `import { Prisma, prisma, writeAuditLog }` into runtime `import { prisma, writeAuditLog }` + `import type { Prisma }` — type-only import keeps Prisma's runtime out of bundle
+- Decisions locked (added to lessons.md):
+  - 🟤 writeAuditLog signature widened to AuditLogWriter — extended-client tx incompatible with base Prisma.TransactionClient under exactOptionalPropertyTypes; structural type accepts both
+  - 🟤 superAdminProcedure deliberately skips runWithTenantContext — platform queries use platformPrisma exclusively; tenant bypass is explicit, never an inline if/else in resolvers
+  - 🟤 Xendit 503 graceful degradation pattern — billing.checkout.createSession throws SERVICE_UNAVAILABLE when XENDIT_SECRET_KEY env unset; client detects via err.data.code === "SERVICE_UNAVAILABLE" and renders Alert variant=warning. Parallel to LiveKit pattern from Part 5b.
+- Verification: pnpm -w typecheck PASS (7/7), pnpm -w lint PASS (7/7) at every bundle commit.
+- Dispatch retrospective: Direct Opus implementation chosen up-front (Step 2.5b escalation) — no Sonnet dispatch. Driven by 5d retrospective lesson "Sonnet 30K budget silently exceeded by accumulated tool results across 6+ file ops". Three commit-bundles on a single scaffold/part-5e branch for governance visibility: Bundle A (d8761bb — backend + UI primitives, 15 files), Bundle B (d61d383 — admin UI core, 9 files), Bundle C (e649403 — admin extras + superadmin, 5 files). All bundles passed typecheck + lint cleanly before commit. Total Opus context ~95K — well under 200K budget and below 5d session's 110K despite delivering equivalent file count.
+- Models used:
+  - planning: claude-code (Opus 4.7 — Architect role)
+  - execution: claude-opus-4-7 direct (Step 2.5b escalation — no Sonnet dispatch for Part 5e per the 5d ≤4-files-per-Sonnet-dispatch lesson)
+  - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)

@@ -156,3 +156,76 @@ OUTPUT CONTRACT (Phase 4 Part 5d):
   □ scaffold/part-5d squash-merged + deleted ✓
   □ Two-stage review (Rule 25): PASS ✓
 
+
+## 2026-05-14 — Phase 4 Part 5e: Admin pages + Super-admin pages (Direct Opus per Step 2.5b)
+
+CLAUDE_CODE (Opus 4.7) — direct implementation, no Sonnet dispatch this session.
+
+Architect-Execute decision: STATE.md (post-5d) noted "for 5e prefer ≤4 files per dispatch
+OR direct Opus given platformPrisma + Recharts integration complexity". Step 2.5b
+escalation chosen up-front to avoid Sonnet 30K budget overflow on 13+ file Tier 3 scope.
+
+Bundle A (d8761bb) — backend tRPC routers + UI primitives — 15 files
+  - trpc.ts: adminProcedure (role=tenant_admin) + superAdminProcedure (isSuperAdmin gate,
+    no runWithTenantContext — bypass is explicit)
+  - departments.ts: extended with create/update/delete/csvImport/regenerateDeviceToken,
+    all admin-only, all wrapped in $transaction with writeAuditLog
+  - admin.ts: dashboard.stats + users.* + settings.* + reports.exportCallLogsCsv
+  - billing.ts: subscription.current + invoices.list + checkout.createSession (Xendit 503)
+  - superadmin.ts: organizations.list/byId/suspend/unsuspend + platformSettings.get/update
+    via platformPrisma; suspend bumps security_version on every active user
+  - router.ts: registered admin/billing/superadmin alongside calls/departments/meetings
+  - packages/db/src/audit.ts: widened writeAuditLog param to AuditLogWriter structural
+    type (extended-client tx incompatible with base Prisma.TransactionClient under
+    exactOptionalPropertyTypes)
+  - packages/ui: badge.tsx + alert.tsx + table.tsx primitives + subpath exports + barrel
+  - globals.css: --chart-1..5 CSS vars (light + dark) for Recharts auto-theming
+  - apps/web: Recharts ^2.13.3 added
+  □ pnpm -w typecheck PASS (7/7), pnpm -w lint PASS (7/7) after $transaction refactor +
+    type-only Prisma import fix
+
+Bundle B (d61d383) — admin UI core — 9 files
+  - admin/layout.tsx (RSC auth + role gate + AdminSidebar mount)
+  - components/admin/admin-sidebar.tsx (client dark sidebar, lucide-react, conditional
+    Super Admin shortcut)
+  - admin/page.tsx (client dashboard with Recharts AreaChart driven by --chart-1..5)
+  - admin/departments/page.tsx (Table + Dialog + CSV parser + device-token rotation)
+  - admin/users/page.tsx (Table + invite Dialog with temp-password show-once + role/deactivate)
+  - admin/settings/page.tsx (org name + billing_email form, slug locked)
+  - admin.dashboard.stats query added to admin.ts (dense 30-day time series)
+  - apps/web: lucide-react ^0.460.0 added (was only in packages/ui)
+  □ pnpm -w typecheck PASS, pnpm -w lint PASS after NAV_ITEMS as ReadonlyArray<NavItem>
+    fix + unused FileText import removal
+
+Bundle C (e649403) — admin extras + super-admin — 5 files
+  - admin/billing/page.tsx (Plan + upgrade cards + Xendit 503 Alert + invoice history)
+  - admin/reports/page.tsx (date-range + CSV download via Blob/anchor)
+  - superadmin/layout.tsx (RSC isSuperAdmin gate + dark header nav)
+  - superadmin/page.tsx (orgs Table + search + suspend/unsuspend with confirm() guard)
+  - superadmin/platform-settings/page.tsx (singleton form)
+  □ pnpm -w typecheck PASS, pnpm -w lint PASS — clean first run
+
+Governance writes (Bundle D)
+  □ STATE.md rewritten — PHASE="Phase 4 Part 5e complete", NEXT=Part 5f OR Part 7
+  □ CHANGELOG_AI.md appended — Agent: CLAUDE_CODE, full file manifest, decision logs
+  □ IMPLEMENTATION_MAP.md updated — Phase line, Part 5e bullet, Not Yet Built shifted,
+    file counts updated (148 source files: apps/web 74 + packages/ui 23 + others 51)
+  □ lessons.md: 3 new 🟤 decisions
+    - writeAuditLog widened to AuditLogWriter structural type
+    - superAdminProcedure deliberately skips runWithTenantContext (explicit bypass)
+    - Xendit 503 graceful degradation via err.data.code in client
+  □ agent-log.md: this entry
+  □ scaffold/part-5e squash-merged + deleted (pending)
+  □ Two-stage review (Rule 25):
+    - Stage 1 spec compliance: PASS — every execution-plan.md Part 5e bullet implemented
+      (/admin dashboard, /admin/departments CRUD+CSV+device-binding, /admin/users
+      invite+role+deactivate, /admin/settings, /admin/billing Xendit, /admin/reports CSV,
+      /superadmin/* via platformPrisma)
+    - Stage 2 code quality: PASS — no any types, all mutations in $transaction with
+      audit log, RBAC at procedure level (not inline if/else), 503 graceful degradation
+      pattern documented in lessons.md, blast-radius scope respected
+
+Token estimate this session: ~95K Opus 4.7 — well under 200K budget; lower than 5d's
+110K despite delivering 24 files (vs 5d's 13) because no Sonnet dispatch overhead and
+no thrashing recovery. Architect-Execute model worked as designed when ratio was Opus
+planning + Opus direct execution (Step 2.5b path).

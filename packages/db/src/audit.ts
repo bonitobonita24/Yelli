@@ -48,16 +48,41 @@ export interface AuditLogEntry {
 }
 
 /**
+ * Minimal structural type for any Prisma client that can write AuditLog rows.
+ * Accepts both the base Prisma.TransactionClient AND the L6-extended client's
+ * transaction parameter (whose types diverge under Prisma extensions).
+ *
+ * AuditLog itself is in the L6 exempt list, so writes are unaffected by the
+ * extension at runtime — only the static types differ between the two clients.
+ */
+export interface AuditLogWriter {
+  auditLog: {
+    create: (args: {
+      data: {
+        organization_id: string | null;
+        user_id: string | null;
+        action: string;
+        entity: string;
+        entity_id: string;
+        before: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+        after: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+      };
+    }) => Promise<unknown>;
+  };
+}
+
+/**
  * Writes an immutable audit log entry within an existing Prisma transaction.
  *
  * Always call this INSIDE a $transaction to guarantee atomicity — if the
  * business operation rolls back, the audit entry rolls back with it.
  *
- * @param tx   Prisma transaction client (from $transaction callback)
+ * @param tx   Prisma transaction client (from $transaction callback) — works
+ *             with both the L6-guarded `prisma` and the unguarded `platformPrisma`.
  * @param entry Audit log data
  */
 export async function writeAuditLog(
-  tx: Prisma.TransactionClient,
+  tx: AuditLogWriter,
   entry: AuditLogEntry,
 ): Promise<void> {
   await tx.auditLog.create({

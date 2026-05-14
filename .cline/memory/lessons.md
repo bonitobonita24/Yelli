@@ -469,3 +469,95 @@
   than relying solely on L6 injection. Documents the security contract at the call site.
 
 # ---
+
+## 2026-05-14 — 🟤 writeAuditLog parameter widened from Prisma.TransactionClient → AuditLogWriter structural type
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5e Bundle A (writeAuditLog usage in admin/billing/superadmin routers)
+- Files: packages/db/src/audit.ts, apps/web/src/server/trpc/routers/{departments,admin,billing,superadmin}.ts
+- Concepts: prisma-extensions, l6-tenant-guard, exactoptionalpropertytypes, structural-typing, type-compat
+- Narrative: Part 5e was the first session to exercise `writeAuditLog` from the framework's
+  audit.ts helper (Part 5d's CallLog persistence used a separate path). The existing signature
+  required `tx: Prisma.TransactionClient` — the base unextended client's transaction type.
+  Problem: our `prisma` export from `packages/db/src/client.ts` is the L6-extended
+  `Prisma.defineExtension` $allOperations client, whose `$transaction` callback parameter is
+  typed as `Omit<DynamicClientExtensionThis<...>, "$extends" | ... >` — structurally similar
+  to but textually incompatible with `Prisma.TransactionClient` under
+  `exactOptionalPropertyTypes: true`. TS error:
+    "Type 'SelectSubset<T, SubscriptionFindUniqueArgs<DefaultArgs>>' is not assignable to type
+     'Exact<T, SubscriptionFindUniqueArgs<InternalArgs & {result:{}; model:{}; query:{}; client:{};}>>'"
+  Same issue affects `platformPrisma` (unguarded but still extended client).
+  Decision: widen the parameter to a minimal structural type `AuditLogWriter` that only
+  requires `auditLog.create(args)`. This accepts:
+    - The base `Prisma.TransactionClient` (legacy callers)
+    - The L6-extended client's `$transaction` callback param
+    - The platformPrisma client's `$transaction` callback param
+  Why this is safe: AuditLog itself is in the L6 exempt list (packages/db/src/client.ts) —
+  the extension's $allOperations does nothing on AuditLog writes. So even though the type is
+  structural, the runtime behavior is identical across all three clients. The JSDoc preserves
+  the "always call inside $transaction" atomicity contract that callers must honor.
+  Alternative considered + rejected: cast each call site to `Prisma.TransactionClient` with
+  `as unknown as`. This is ugly, spreads through every router, and fails on Prisma version
+  bumps that further specialize the type. The structural widening localises the workaround.
+  Rule: Helpers that touch only L6-exempt tables (AuditLog, Organization, PlatformSettings)
+  should use structural parameter types, not `Prisma.TransactionClient`. Helpers that touch
+  L6-scoped tables must still use the strict tx type to inherit the extension's runtime
+  scoping.
+
+# ---
+
+## 2026-05-14 — 🟤 superAdminProcedure deliberately skips runWithTenantContext
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5e Bundle A (trpc.ts middleware design)
+- Files: apps/web/src/server/trpc/trpc.ts, apps/web/src/server/trpc/routers/superadmin.ts
+- Concepts: rbac, super-admin, l6-tenant-guard, platform-prisma, explicit-bypass
+- Narrative: security.md §SUPERADMIN AND PLATFORM-LEVEL ROLES rule 1:
+    "Superadmin queries that bypass tenant scoping MUST use a dedicated Prisma client instance
+     WITHOUT the L6 tenant-guard extension — never an inline if/else in resolvers."
+  Two ways to implement super-admin queries:
+    A) protectedProcedure-based (runs inside runWithTenantContext, sets ALS tenant context,
+       but use `platformPrisma` in the resolver to bypass L6) — implicit bypass.
+    B) Separate procedure chain that NEVER calls runWithTenantContext + use platformPrisma —
+       explicit bypass at the procedure level.
+  Chose B. superAdminProcedure is `procedure.use(auth+gate).use(rateLimit)` with no tenant
+  context middleware. Even if a future engineer accidentally imports `prisma` (L6-guarded)
+  inside a superadmin resolver, the missing ALS tenant context means L6's `requireTenantContext`
+  would throw at runtime ("super-admin bypass via ALS" only works when isSuperAdmin is set in
+  the ALS context, which we never set here). This produces a loud failure instead of silent
+  cross-tenant data exposure.
+  Trade-off: superadmin routers cannot use `prisma` at all — they must use `platformPrisma`.
+  This is the desired constraint per security.md; the procedure chain enforces it
+  architecturally instead of via reviewer vigilance.
+  Cross-link: [[trpc-middleware-architecture]] (protectedProcedure middleware chain — V31 stack baseline).
+
+# ---
+
+## 2026-05-14 — 🟤 Xendit 503 graceful degradation pattern in tRPC + client
+
+- Type: 🟤 decision
+- Phase: Phase 4 Part 5e Bundle A (billing.checkout.createSession) + Bundle C (/admin/billing UI)
+- Files: apps/web/src/server/trpc/routers/billing.ts, apps/web/src/app/admin/billing/page.tsx
+- Concepts: payment-gateway, graceful-degradation, env-driven-feature-flags, trpc-error-codes
+- Narrative: STATE.md (post-5d) committed Part 5e to "Xendit checkout UI will be 503-graceful
+  when XENDIT_SECRET_KEY env unset, parallel to the existing LiveKit pattern". This locks in a
+  framework-wide pattern for env-driven third-party integrations.
+  Server side: `billing.checkout.createSession` checks `env.XENDIT_SECRET_KEY` first. If unset:
+    throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Billing is not configured ..." })
+  The TRPCError code is the wire-format signal (httpStatus 503 + data.code "SERVICE_UNAVAILABLE").
+  Client side: `/admin/billing/page.tsx` reads `checkout.error?.data?.code` after a failed
+  mutation and conditionally renders an `Alert variant="warning"` with a "Billing is not
+  configured" message instead of a destructive toast. The upgrade buttons remain enabled so
+  the user can still trigger the check — and immediately see the explanatory Alert.
+  Why this approach over hiding the buttons preemptively: the env state is server-side, not
+  exposed in clientEnv. The client doesn't know about XENDIT_SECRET_KEY. Sending a probing
+  mutation on page load would be wasteful; instead, the explanatory Alert appears on first
+  attempted upgrade. This matches the LiveKit token-mint pattern from Part 5b which throws
+  503 when LIVEKIT_API_KEY is unset and the call-initiation UI shows a graceful error.
+  Rule: For any third-party integration with optional env-driven configuration:
+    1. Server throws TRPCError code SERVICE_UNAVAILABLE when the env key is unset.
+    2. Client checks `err.data.code === "SERVICE_UNAVAILABLE"` on mutation error.
+    3. Render an explanatory Alert variant=warning, not a destructive toast.
+    4. Never expose the env state via clientEnv — keep the failure surface server-side.
+
+# ---
