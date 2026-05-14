@@ -14,7 +14,7 @@ Recommended order: 5f first (completes feature surface), then 8 (CI + final gove
 
 BLOCKERS: ⏳ CREDENTIALS.md placeholders must be filled before Phase 5 — GitHub PAT, Docker Hub token, SMTP, Komodo URL, Xendit keys, Turnstile prod keys, LiveKit API key/secret, Coturn static-auth-secret. pnpm tools:check-env currently reports 8 empty placeholders across .env.staging and .env.prod (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, COTURN_STATIC_AUTH_SECRET, XENDIT_SECRET_KEY, XENDIT_PUBLIC_KEY, XENDIT_WEBHOOK_TOKEN, NEXT_PUBLIC_TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY). This is the EXPECTED pre-Phase-5 state — fill from CREDENTIALS.md after Bootstrap human-fill phase, then re-run check-env to confirm clean. Phase 4 Parts 5f/8 still proceed without them.
 
-GIT_BRANCH: main (scaffold/part-7 squash-merged as [PENDING_SHA] and deleted)
+GIT_BRANCH: main (scaffold/part-7 squash-merged as aa14b9f and deleted)
 PORTS: APP=43512 DB=43502 CACHE=43504 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542 (dev — base 43502)
 TOKEN_ESTIMATE: ~80K Opus 4.7 — within 200K budget. Lower than 5e's 95K because the work was infrastructure-mechanical (compose YAML templates), no complex runtime logic.
 CHECKPOINT_TYPE: full

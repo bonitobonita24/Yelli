@@ -307,7 +307,7 @@ CLAUDE_CODE | 2026-05-14 Part 7 | Phase 4 Part 7 scaffold(tools+deploy) — dire
   complex runtime logic to reason about. Direct Opus continues to outperform Sonnet
   dispatch for monorepo-wide consistency tasks (Step 2.5b sweet spot).
 
-  Squash-merged scaffold/part-7 → main as commit [PENDING_SHA].
+  Squash-merged scaffold/part-7 → main as commit aa14b9f.
   Branch deleted post-merge.
 
 CLAUDE_CODE | 2026-05-14 governance | Part 7 governance updates committed.
