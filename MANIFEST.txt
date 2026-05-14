@@ -1,0 +1,420 @@
+================================================================================
+Yelli — File Manifest
+================================================================================
+Generated: 2026-05-14 (Phase 4 Part 8 completion)
+Framework: Spec-Driven Platform V31
+App: Yelli — Instant video intercom for offices, hospitals, government
+Slug: yelli  |  Repo: bonitobonita24/yelli  |  Domain: yelli.powerbyte.app
+--------------------------------------------------------------------------------
+Conventions:
+  [GIT]   tracked in git
+  [LOCAL] gitignored — machine-local only (CREDENTIALS, env files, SocratiCode index)
+  [SOFT]  optional, may be absent on fresh clone (build artifacts, lockfiles)
+--------------------------------------------------------------------------------
+
+PHASE 0 — BOOTSTRAP (2026-05-11)
+================================================================================
+[GIT]   CLAUDE.md                                  Master prompt, auto-loaded
+[GIT]   AGENTS.md                                  AGENTS.md alias
+[GIT]   .claude/rules/bootstrap.md                 Phase 0 details
+[GIT]   .claude/rules/phases.md                    Phase 1-8 details
+[GIT]   .claude/rules/security.md                  V25 hardening rules
+[GIT]   .claude/rules/ui-rules.md                  shadcn/ui ecosystem rules
+[GIT]   .claude/rules/templates.md                 File templates
+[GIT]   .claude/rules/scenarios.md                 Scenarios 1-34
+[GIT]   .claude/rules/memory-governance.md         Tiered Decomposition + Architect-Execute
+[GIT]   .claude/settings.json                      Claude Code project settings
+[GIT]   .clinerules                                Historical parity (Cline deprecated V31)
+[GIT]   .vscode/mcp.json                           MCP servers (SocratiCode, Context7, shadcn)
+[GIT]   .vscode/tasks.json                         "Log Lesson" VS Code task
+[GIT]   .vscode/settings.json                      Editor settings
+[GIT]   .cline/tasks/phase4-part1.md               Phase 4 Part 1 task brief
+[GIT]   .cline/tasks/phase4-part2.md               Phase 4 Part 2 task brief
+[GIT]   .cline/tasks/phase4-part3.md               Phase 4 Part 3 task brief
+[GIT]   .cline/tasks/phase4-part4.md               Phase 4 Part 4 task brief
+[GIT]   .cline/tasks/phase4-part5.md               Phase 4 Part 5 task brief
+[GIT]   .cline/tasks/phase4-part6.md               Phase 4 Part 6 task brief (SKIP — web-only)
+[GIT]   .cline/tasks/phase4-part7.md               Phase 4 Part 7 task brief
+[GIT]   .cline/tasks/phase4-part8.md               Phase 4 Part 8 task brief
+[GIT]   .cline/tasks/execution-plan.md             Phase 3.5 execution plan
+[GIT]   .cline/memory/lessons.md                   Rule 18 typed lessons
+[GIT]   .cline/memory/agent-log.md                 Action log
+[GIT]   .cline/STATE.md                            Session state — read first (Rule 24)
+[GIT]   .specstory/specs/v31-master-prompt.md      SpecStory injection spec
+[GIT]   .specstory/config.json                     SpecStory capture config
+[GIT]   .github/skills/spec-driven-core/SKILL.md   Cross-agent skill standard
+[GIT]   .github/agents/n8n-architect.agent.md      n8n skill (optional pack)
+[GIT]   scripts/log-lesson.sh                      Human quick-log to lessons.md
+
+PHASE 2 + 2.5 + 2.6 + 2.7 — DISCOVERY + SPEC LOCK
+================================================================================
+[GIT]   docs/PRODUCT.md                            Feature spec — HUMAN-OWNED (only edit point)
+[GIT]   docs/DESIGN.md                             Visual reference (Scenario 33)
+[GIT]   docs/YELLI_BUSINESS_MODEL.md               Business model reference
+[GIT]   docs/yelli-mockup-v2.jsx                   Phase 2.8 clickable mockup archive
+                                                   (Note: Phase 2.6 design-system/MASTER.md
+                                                   skipped — no UI UX Pro Max skill;
+                                                   DESIGN.md serves as fallback)
+
+PHASE 3 — SPEC FILE GENERATION (2026-05-11)
+================================================================================
+[GIT]   inputs.yml                                 Locked tech stack + config (v3)
+[GIT]   inputs.schema.json                         JSON Schema validation
+[GIT]   .env.example                               Placeholder template (only env file committed)
+[LOCAL] .env.dev                                   Dev credentials + non-standard ports
+[LOCAL] .env.staging                               Staging credentials (mostly placeholders)
+[LOCAL] .env.prod                                  Production credentials (mostly placeholders)
+[LOCAL] CREDENTIALS.md                             Master credential reference (gitignored)
+[GIT]   scripts/sync-credentials-to-env.sh         Propagate CREDENTIALS.md → .env files
+[GIT]   docs/DECISIONS_LOG.md                      Locked decisions (initial set)
+[GIT]   docs/CHANGELOG_AI.md                       Append-only change log (initial)
+[GIT]   docs/IMPLEMENTATION_MAP.md                 Current build state (initial)
+[GIT]   project.memory.md                          V14 rules + agent stack summary
+
+PHASE 4 PART 1 — ROOT CONFIG (2026-05-11)
+================================================================================
+[GIT]   .gitignore                                 Final gitignore (includes CREDENTIALS.md)
+[GIT]   .editorconfig                              LF + 2-space + UTF-8
+[GIT]   .prettierrc                                singleQuote + semi + trailing all + 100 cols
+[GIT]   .eslintrc.js                               @typescript-eslint + import/order + Rule 13
+[GIT]   .nvmrc                                     Node 22 pin
+[GIT]   package.json                               Root workspace + tools:* scripts
+[GIT]   pnpm-workspace.yaml                        apps/* + packages/* + tools
+[GIT]   pnpm-lock.yaml                             Locked dependency tree
+[GIT]   tsconfig.base.json                         Strict + noUncheckedIndexedAccess + EOPT
+[GIT]   turbo.json                                 build/lint/typecheck/test/dev/clean pipelines
+
+PHASE 4 PART 2 — packages/shared + packages/api-client (2026-05-12)
+================================================================================
+[GIT]   packages/shared/package.json
+[GIT]   packages/shared/tsconfig.json
+[GIT]   packages/shared/src/index.ts
+[GIT]   packages/shared/src/schemas/index.ts
+[GIT]   packages/shared/src/schemas/organization.ts
+[GIT]   packages/shared/src/schemas/user.ts
+[GIT]   packages/shared/src/schemas/department.ts
+[GIT]   packages/shared/src/schemas/meeting.ts
+[GIT]   packages/shared/src/schemas/callLog.ts
+[GIT]   packages/shared/src/schemas/participant.ts
+[GIT]   packages/shared/src/schemas/chatMessage.ts
+[GIT]   packages/shared/src/schemas/recording.ts
+[GIT]   packages/shared/src/schemas/sharedFile.ts
+[GIT]   packages/shared/src/schemas/whiteboardSnapshot.ts
+[GIT]   packages/shared/src/schemas/subscription.ts
+[GIT]   packages/shared/src/schemas/invoice.ts
+[GIT]   packages/shared/src/schemas/platformSettings.ts
+[GIT]   packages/shared/src/types/index.ts
+[GIT]   packages/api-client/package.json
+[GIT]   packages/api-client/tsconfig.json
+[GIT]   packages/api-client/src/index.ts
+[GIT]   packages/api-client/src/client.ts
+
+PHASE 4 PART 3 — packages/db (2026-05-13)
+================================================================================
+[GIT]   packages/db/package.json
+[GIT]   packages/db/tsconfig.json
+[GIT]   packages/db/src/index.ts
+[GIT]   packages/db/src/client.ts                  L6 tenant-guard via $allOperations
+[GIT]   packages/db/src/platform-client.ts         Unguarded — super-admin only
+[GIT]   packages/db/src/audit.ts                   L5 AuditLog writer
+[GIT]   packages/db/src/rls.ts                     L2 dormant (multi-tenant activation point)
+[GIT]   packages/db/src/tenant-context.ts          AsyncLocalStorage tenant ctx
+[GIT]   packages/db/prisma/schema.prisma           14 models, 12 enums
+[GIT]   packages/db/prisma/seed.ts                 Webmaster super-admin seed
+[GIT]   packages/db/prisma/migrations/migration_lock.toml
+[GIT]   packages/db/prisma/migrations/20260513000000_initial/migration.sql
+[GIT]   packages/db/prisma/migrations/20260513000000_initial/migration_down.sql
+
+PHASE 4 PART 4 — packages/ui + packages/jobs + packages/storage (2026-05-13)
+================================================================================
+packages/ui (shadcn New York workspace):
+[GIT]   packages/ui/package.json
+[GIT]   packages/ui/tsconfig.json
+[GIT]   packages/ui/tailwind.config.ts
+[GIT]   packages/ui/components.json
+[GIT]   packages/ui/src/index.ts
+[GIT]   packages/ui/src/lib/utils.ts
+[GIT]   packages/ui/src/styles/globals.css
+[GIT]   packages/ui/src/components/button.tsx
+[GIT]   packages/ui/src/components/card.tsx
+[GIT]   packages/ui/src/components/dialog.tsx
+[GIT]   packages/ui/src/components/input.tsx
+[GIT]   packages/ui/src/components/label.tsx
+[GIT]   packages/ui/src/components/select.tsx
+[GIT]   packages/ui/src/components/textarea.tsx
+[GIT]   packages/ui/src/components/toast.tsx
+[GIT]   packages/ui/src/components/toaster.tsx
+[GIT]   packages/ui/src/components/use-toast.ts
+[GIT]   packages/ui/src/components/sonner.tsx
+[GIT]   packages/ui/src/components/badge.tsx       (added Part 5e)
+[GIT]   packages/ui/src/components/alert.tsx       (added Part 5e)
+[GIT]   packages/ui/src/components/table.tsx       (added Part 5e)
+
+packages/jobs (BullMQ + Valkey):
+[GIT]   packages/jobs/package.json
+[GIT]   packages/jobs/tsconfig.json
+[GIT]   packages/jobs/src/index.ts
+[GIT]   packages/jobs/src/connection.ts            IORedis singleton
+[GIT]   packages/jobs/src/queues.ts                4 typed queues
+[GIT]   packages/jobs/src/workers/_validate.ts     TenantJobBase validator
+[GIT]   packages/jobs/src/workers/recording-processing.ts
+[GIT]   packages/jobs/src/workers/report-generation.ts
+[GIT]   packages/jobs/src/workers/usage-calculation.ts
+[GIT]   packages/jobs/src/workers/billing-cycle.ts
+
+packages/storage (S3-compatible MinIO/S3/R2):
+[GIT]   packages/storage/package.json
+[GIT]   packages/storage/tsconfig.json
+[GIT]   packages/storage/src/index.ts
+[GIT]   packages/storage/src/client.ts             upload/download/delete + presigned URLs
+[GIT]   packages/storage/src/keys.ts               buildStorageKey + verifyKeyOwnership
+[GIT]   packages/storage/src/mime.ts               MIME blocklist + size cap
+
+PHASE 4 PART 5a — apps/web shell (2026-05-13)
+================================================================================
+Config files (12):
+[GIT]   apps/web/package.json
+[GIT]   apps/web/tsconfig.json
+[GIT]   apps/web/next.config.ts                    Security headers + CSP for Turnstile + LiveKit
+[GIT]   apps/web/postcss.config.cjs
+[GIT]   apps/web/tailwind.config.ts                Extends @yelli/ui
+[GIT]   apps/web/components.json                   shadcn workspace pointer
+[GIT]   apps/web/.eslintrc.cjs                     Rule 13 server-side @yelli/db exemption
+[GIT]   apps/web/.gitignore
+[GIT]   apps/web/.dockerignore                     (added Part 7)
+[GIT]   apps/web/Dockerfile                        Multi-stage pnpm-workspace (Part 7)
+
+Server core (7):
+[GIT]   apps/web/src/env.ts                        Zod env validation
+[GIT]   apps/web/src/types/next-auth.d.ts
+[GIT]   apps/web/src/server/auth.ts                Auth.js v5 + bcrypt + securityVersion
+[GIT]   apps/web/src/server/lib/rate-limit.ts      LRU 5-tier
+[GIT]   apps/web/src/server/lib/sanitize.ts        DOMPurify wrappers
+[GIT]   apps/web/src/server/lib/turnstile.ts       Cloudflare siteverify
+[GIT]   apps/web/src/app/api/auth/[...nextauth]/route.ts
+
+Routing + theme (5):
+[GIT]   apps/web/src/middleware.ts                 Tenant + auth gate
+[GIT]   apps/web/src/app/layout.tsx                Inter + ThemeProvider + TRPCProvider
+[GIT]   apps/web/src/app/page.tsx                  Auth-aware redirect
+[GIT]   apps/web/src/components/theme-provider.tsx
+[GIT]   apps/web/src/components/turnstile-widget.tsx
+
+Auth pages (6):
+[GIT]   apps/web/src/app/(auth)/layout.tsx
+[GIT]   apps/web/src/app/(auth)/_components/form-card.tsx
+[GIT]   apps/web/src/app/(auth)/login/page.tsx
+[GIT]   apps/web/src/app/(auth)/register/page.tsx
+[GIT]   apps/web/src/app/(auth)/forgot-password/page.tsx
+[GIT]   apps/web/src/app/(auth)/join/[token]/page.tsx
+
+Styles (1):
+[GIT]   apps/web/src/styles/globals.css            Re-export from @yelli/ui
+
+PHASE 4 PART 5b — Speed Dial Board + 1:1 Video Call (2026-05-13)
+================================================================================
+Speed Dial Board (6):
+[GIT]   apps/web/src/app/app/layout.tsx
+[GIT]   apps/web/src/app/app/page.tsx              Server-only Prisma findMany
+[GIT]   apps/web/src/components/speed-dial/speed-dial-grid.tsx
+[GIT]   apps/web/src/components/speed-dial/speed-dial-button.tsx
+[GIT]   apps/web/src/lib/presence/use-presence.ts
+[GIT]   apps/web/src/lib/presence/types.ts
+
+Video Call UI (8):
+[GIT]   apps/web/src/lib/livekit/types.ts
+[GIT]   apps/web/src/lib/livekit/client.ts         Server-only HS256 JWT minter
+[GIT]   apps/web/src/lib/livekit/use-livekit-room.ts
+[GIT]   apps/web/src/app/app/call/[id]/page.tsx
+[GIT]   apps/web/src/components/call/intercom-call.tsx
+[GIT]   apps/web/src/components/call/call-controls.tsx
+[GIT]   apps/web/src/components/call/incoming-call-dialog.tsx
+[GIT]   apps/web/src/app/api/livekit/token/route.ts
+
+PHASE 4 PART 5c — tRPC server + call initiation + Socket.IO skeleton (2026-05-13)
+================================================================================
+tRPC v11 (8):
+[GIT]   apps/web/src/server/trpc/trpc.ts           init + middleware (auth, tenant, rateLimit)
+[GIT]   apps/web/src/server/trpc/context.ts
+[GIT]   apps/web/src/server/trpc/router.ts         appRouter registration
+[GIT]   apps/web/src/server/trpc/routers/departments.ts
+[GIT]   apps/web/src/app/api/trpc/[trpc]/route.ts
+[GIT]   apps/web/src/lib/trpc/react.tsx            Client provider
+[GIT]   apps/web/src/lib/trpc/server.ts            createServerCaller for RSC
+
+Call initiation (1):
+[GIT]   apps/web/src/server/trpc/routers/calls.ts  initiate/reject/end/listHistory
+
+Socket.IO skeleton (3):
+[GIT]   apps/web/src/lib/socket/types.ts
+[GIT]   apps/web/src/lib/socket/server.ts          Idempotent globalThis-cached io
+[GIT]   apps/web/src/app/api/socket/route.ts       503 stub (custom server needed)
+
+PHASE 4 PART 5d — Meeting Management UI + multi-participant (2026-05-13)
+================================================================================
+[GIT]   apps/web/src/server/trpc/routers/meetings.ts        list/byId/create/getJoinToken/end
+[GIT]   apps/web/src/server/lib/call-log.ts                 recordIntercomCallLog + recordMeetingCallLog
+[GIT]   apps/web/src/app/app/meetings/page.tsx              RSC list (Card grid)
+[GIT]   apps/web/src/app/app/meetings/new/page.tsx          RSC create shell
+[GIT]   apps/web/src/app/app/meetings/new/_meeting-form.tsx Client create form
+[GIT]   apps/web/src/app/app/meeting/[id]/page.tsx          RSC meeting room shell
+[GIT]   apps/web/src/components/meeting/meeting-room.tsx    RoomContext + GridLayout
+[GIT]   apps/web/src/components/meeting/meeting-controls.tsx
+[GIT]   apps/web/src/lib/livekit/use-meeting-room.ts        Multi-participant hook
+
+PHASE 4 PART 5e — Admin + Super-admin (2026-05-14)
+================================================================================
+Backend tRPC (3):
+[GIT]   apps/web/src/server/trpc/routers/admin.ts           dashboard + users + settings + reports
+[GIT]   apps/web/src/server/trpc/routers/billing.ts         Xendit checkout (503 graceful)
+[GIT]   apps/web/src/server/trpc/routers/superadmin.ts      Platform queries via platformPrisma
+
+Admin UI (7):
+[GIT]   apps/web/src/app/admin/layout.tsx                   Role gate
+[GIT]   apps/web/src/components/admin/admin-sidebar.tsx
+[GIT]   apps/web/src/app/admin/page.tsx                     Dashboard + Recharts
+[GIT]   apps/web/src/app/admin/departments/page.tsx
+[GIT]   apps/web/src/app/admin/users/page.tsx
+[GIT]   apps/web/src/app/admin/settings/page.tsx
+[GIT]   apps/web/src/app/admin/billing/page.tsx
+[GIT]   apps/web/src/app/admin/reports/page.tsx
+
+Super-admin UI (3):
+[GIT]   apps/web/src/app/superadmin/layout.tsx              isSuperAdmin gate
+[GIT]   apps/web/src/app/superadmin/page.tsx
+[GIT]   apps/web/src/app/superadmin/platform-settings/page.tsx
+
+PHASE 4 PART 7 — tools/ + deploy/ + Dockerfile + COMMANDS.md (2026-05-14)
+================================================================================
+Tools workspace (6):
+[GIT]   tools/package.json
+[GIT]   tools/.eslintrc.cjs
+[GIT]   tools/validate-inputs.mjs                  Ajv 2020-12 schema validation
+[GIT]   tools/check-env.mjs                        .env parity + placeholder detection
+[GIT]   tools/check-product-sync.mjs               Rule 9 + Rule 20 private-tag scan
+[GIT]   tools/hydration-lint.mjs                   SSR/CSR footgun scan
+
+Deploy/compose — dev (8):
+[GIT]   deploy/compose/dev/docker-compose.db.yml
+[GIT]   deploy/compose/dev/docker-compose.cache.yml
+[GIT]   deploy/compose/dev/docker-compose.storage.yml
+[GIT]   deploy/compose/dev/docker-compose.media.yml         LiveKit + Coturn
+[GIT]   deploy/compose/dev/docker-compose.infra.yml         MailHog (dev only)
+[GIT]   deploy/compose/dev/docker-compose.pgadmin.yml
+[GIT]   deploy/compose/dev/docker-compose.app.yml
+[GIT]   deploy/compose/dev/pgadmin-servers.json
+
+Deploy/compose — stage (7):
+[GIT]   deploy/compose/stage/docker-compose.db.yml
+[GIT]   deploy/compose/stage/docker-compose.cache.yml
+[GIT]   deploy/compose/stage/docker-compose.storage.yml
+[GIT]   deploy/compose/stage/docker-compose.media.yml
+[GIT]   deploy/compose/stage/docker-compose.pgadmin.yml
+[GIT]   deploy/compose/stage/docker-compose.app.yml         Image-only + Traefik labels
+[GIT]   deploy/compose/stage/pgadmin-servers.json
+
+Deploy/compose — prod (7):
+[GIT]   deploy/compose/prod/docker-compose.db.yml
+[GIT]   deploy/compose/prod/docker-compose.cache.yml
+[GIT]   deploy/compose/prod/docker-compose.storage.yml
+[GIT]   deploy/compose/prod/docker-compose.media.yml
+[GIT]   deploy/compose/prod/docker-compose.pgadmin.yml
+[GIT]   deploy/compose/prod/docker-compose.app.yml          Image-only + Traefik labels
+[GIT]   deploy/compose/prod/pgadmin-servers.json
+
+Deploy scripts (2):
+[GIT]   deploy/compose/start.sh                    Env-aware compose dispatcher (--build in dev)
+[GIT]   deploy/compose/push.sh                     Manual image promotion dev→staging→prod
+
+K8s placeholder (1):
+[GIT]   deploy/k8s-scaffold/README.md              INACTIVE per Rule 6
+
+Project-root reference (1):
+[GIT]   COMMANDS.md                                Master human-facing command reference
+
+SocratiCode MCP artifacts (1, gitignored):
+[LOCAL] .socraticodecontextartifacts.json          4 entries (schema, map, decisions, product)
+
+PHASE 4 PART 5f — Feature surface + in-call overlays (2026-05-14)
+================================================================================
+Backend tRPC (2 new + 1 wired):
+[GIT]   apps/web/src/server/trpc/routers/recordings.ts      list + getDownloadUrl + softDelete
+[GIT]   apps/web/src/server/trpc/routers/chat.ts            listByMeeting + send
+
+Pages (3):
+[GIT]   apps/web/src/app/app/history/page.tsx               Call history (RSC)
+[GIT]   apps/web/src/app/app/recordings/page.tsx            Recordings library (RSC)
+[GIT]   apps/web/src/app/app/chat/[id]/page.tsx             Meeting chat history (RSC)
+
+In-call overlays (4):
+[GIT]   apps/web/src/components/meeting/in-call-recording-indicator.tsx
+[GIT]   apps/web/src/components/meeting/in-call-chat.tsx                Right-aside, 3s poll
+[GIT]   apps/web/src/components/meeting/in-call-file-dropzone.tsx       Dialog + HTML5 dnd
+[GIT]   apps/web/src/components/meeting/in-call-whiteboard.tsx          Dialog + canvas
+
+Helper component (1):
+[GIT]   apps/web/src/components/recordings/recording-download-button.tsx
+
+PHASE 4 PART 8 — CI + governance closeout (2026-05-14)
+================================================================================
+[GIT]   .github/workflows/ci.yml                   Governance + Turbo matrix + audit
+[GIT]   .github/workflows/docker-publish.yml       Docker Hub push :latest + :staging-latest + :sha
+[GIT]   MANIFEST.txt                               This file
+[GIT]   README.md                                  Project root readme — service URLs + commands
+[GIT]   docs/IMPLEMENTATION_MAP.md                 Final Phase-4-complete rewrite
+
+================================================================================
+SUMMARY COUNTS
+================================================================================
+Source code (apps + packages):
+  apps/web ............... 78 .ts/.tsx + 12 config = 90 files
+  packages/shared ........ 16 files
+  packages/api-client .... 4 files
+  packages/db ............ 13 files (10 src + schema + 2 migrations + lock)
+  packages/ui ............ 21 files
+  packages/jobs .......... 10 files
+  packages/storage ....... 6 files
+  ──────────────────────────────────────
+  Source subtotal ........ 160 files
+
+Tools + deploy + scripts:
+  tools/ ................. 6 files
+  deploy/ ................ 25 files (8 dev + 7 stage + 7 prod + 2 scripts + 1 k8s)
+  scripts/ ............... 2 files (log-lesson + sync-credentials)
+  ──────────────────────────────────────
+  Infra subtotal ......... 33 files
+
+Governance + spec:
+  docs/ .................. 7 files (CHANGELOG, DECISIONS, IMPLEMENTATION_MAP,
+                                    PRODUCT, DESIGN, YELLI_BUSINESS_MODEL,
+                                    yelli-mockup-v2.jsx)
+  Root spec .............. inputs.yml + inputs.schema.json
+  Root config (Part 1) ... 8 files (.gitignore .editorconfig .prettierrc
+                                    .eslintrc.js .nvmrc + 3 ts/turbo configs)
+  Root meta .............. CLAUDE.md + AGENTS.md + COMMANDS.md + project.memory.md
+                                    + package.json + pnpm-lock.yaml + pnpm-workspace.yaml
+                                    + MANIFEST.txt + README.md
+  .claude/rules/ ......... 7 files (modular CLAUDE rules)
+  .cline/ ................ 12 files (9 tasks + STATE + lessons + agent-log)
+  .vscode/ ............... 3 files (mcp + tasks + settings)
+  .github/ ............... 4 files (ci.yml + docker-publish.yml + SKILL.md + n8n agent)
+  ──────────────────────────────────────
+  Governance subtotal .... ~62 files
+
+[LOCAL] CREDENTIALS.md, .env.dev, .env.staging, .env.prod, .socraticodecontextartifacts.json
+        — gitignored, machine-local only
+
+GRAND TOTAL (tracked in git): ~255 files
+================================================================================
+
+DEFERRED (out of Phase 4 scope — documented as follow-ups):
+- Socket.IO real-time chat delivery (replace 3s polling in in-call-chat.tsx)
+- In-call file upload pipeline (pre-signed S3 PUT + storage.uploadObject)
+- Whiteboard multiplayer broadcast over Socket.IO meeting:{id}:whiteboard
+- LiveKit Egress recording state feed (recording:started/stopped webhooks)
+- Kibo UI dropzone swap-in (npx shadcn add @kibo-ui/dropzone)
+- Mid-call moderator features (role promotion, kick, force-mute) — needs LiveKit Server SDK
+- Test harness (per Parts 5b-5f precedent — deferred to dedicated test-suite Part)
+
+NEXT PHASE: Phase 5 — Validation (9 commands). Blocked on CREDENTIALS.md placeholders.
+================================================================================

@@ -1,0 +1,137 @@
+name: CI
+
+# Spec-Driven Platform V31 — governance gates + Turbo quality matrix + dependency audit.
+# Runs on every push to main and every PR. Mirrors the 9-command Phase 5 local validation set
+# (minus `pnpm tools:check-env`, which validates local .env.<env> files against .env.example
+# and is a developer-machine concern, not a CI concern — CI gets runtime values from
+# GitHub Secrets, not committed env files).
+#
+# Security: all `run:` lines reference only project-controlled env vars and matrix values.
+# No untrusted inputs (PR titles, issue bodies, branch names) flow into shell commands.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.0.0"
+
+jobs:
+
+  governance:
+    name: Governance gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate inputs.yml against schema
+        run: pnpm tools:validate-inputs
+
+      - name: Check PRODUCT.md and inputs.yml sync (Rule 9 + Rule 20 private-tag leak scan)
+        run: pnpm tools:check-product-sync
+
+      - name: Hydration footgun scan
+        run: pnpm tools:hydration-lint
+
+  quality:
+    name: Turbo ${{ matrix.task }}
+    needs: governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [lint, typecheck, test, build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ matrix.task }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ matrix.task }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-${{ matrix.task }}-
+
+      - name: Run turbo task
+        run: pnpm turbo run ${{ matrix.task }} --cache-dir=.turbo
+        # NOTE: packages without a `test` script are skipped silently by turbo.
+        # Test harness is deferred per Parts 5b-5f precedent — added in a dedicated test-suite Part.
+
+  security:
+    name: Dependency vulnerability audit
+    needs: governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit for HIGH and CRITICAL vulnerabilities
+        # Blocks merge on HIGH or CRITICAL severity CVEs (V18 rule).
+        # To resolve: run `pnpm audit --fix` locally, or upgrade the affected package,
+        # or document mitigation in DECISIONS_LOG and add `audit-level=critical` to .npmrc
+        # (Phase 5 CVE resolution decision tree — phases.md).
+        run: pnpm audit --audit-level=high
