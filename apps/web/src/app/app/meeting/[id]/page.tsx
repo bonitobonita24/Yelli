@@ -39,11 +39,15 @@ export default async function MeetingPage({ params }: MeetingPageProps) {
     notFound();
   }
 
-  let meeting: { id: string; title: string };
+  let meeting: { id: string; title: string; recording_enabled: boolean };
   try {
     const caller = await createServerCaller();
     const fetched = await caller.meetings.byId({ id });
-    meeting = { id: fetched.id, title: fetched.title };
+    meeting = {
+      id: fetched.id,
+      title: fetched.title,
+      recording_enabled: fetched.recording_enabled,
+    };
   } catch (err) {
     if (err instanceof TRPCError && err.code === "NOT_FOUND") {
       notFound();
@@ -53,7 +57,11 @@ export default async function MeetingPage({ params }: MeetingPageProps) {
 
   return (
     <div className="fixed inset-0 bg-background">
-      <MeetingRoom meetingId={meeting.id} title={meeting.title} />
+      <MeetingRoom
+        meetingId={meeting.id}
+        title={meeting.title}
+        recordingEnabled={meeting.recording_enabled}
+      />
     </div>
   );
 }

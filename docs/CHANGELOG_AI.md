@@ -444,3 +444,54 @@
   - planning: claude-code (Opus 4.7 — Architect role)
   - execution: claude-opus-4-7 direct (Step 2.5b escalation)
   - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)
+
+## 2026-05-14 — Phase 4 Part 5f — Feature surface (call history, recordings, chat history, in-call overlays)
+
+- Agent: CLAUDE_CODE
+- Why: Complete the user-facing feature surface for Yelli before Phase 5 validation. Three standalone history/library pages (call history, recordings, chat history) + four in-call overlays (chat sidebar, file dropzone, whiteboard, recording indicator) round out the meeting room with the same conferencing affordances users expect from Zoom/Meet. Backend tRPC procedures added for each surface, all org-scoped via L6 tenant-guard.
+- Files added (12):
+  Backend tRPC (2 new + 1 wired):
+  - apps/web/src/server/trpc/routers/recordings.ts — list (paginated, excludes deleted_at), getDownloadUrl (verifyKeyOwnership + 1h pre-signed URL via packages/storage), softDelete (transactional + writeAuditLog L5)
+  - apps/web/src/server/trpc/routers/chat.ts — listByMeeting (oldest-first chronological, 200-default/500-max), send (sanitizePlainText XSS guard before persist, blocks on cancelled/ended meetings)
+  Pages (3):
+  - apps/web/src/app/app/history/page.tsx — RSC, calls.listHistory(limit:100), groups by status badge + type label, links into /app/chat/[id] for meeting rows
+  - apps/web/src/app/app/recordings/page.tsx — RSC, recordings.list(limit:100), file_size_bytes formatted from BigInt-as-string, download button rendered as client island
+  - apps/web/src/app/app/chat/[id]/page.tsx — RSC, fetches meetings.byId for title + chat.listByMeeting, NOT_FOUND → notFound() for cross-tenant
+  In-call overlays (4):
+  - apps/web/src/components/meeting/in-call-recording-indicator.tsx — pulsing red badge, driven by recording_enabled prop
+  - apps/web/src/components/meeting/in-call-chat.tsx — fixed-right aside (full-width mobile), 3s polling via trpc.chat.listByMeeting, auto-scroll on new messages, send mutation invalidates query
+  - apps/web/src/components/meeting/in-call-file-dropzone.tsx — Dialog with native HTML5 dnd + click-to-pick, 10MB cap, file_url=`pending://...` placeholder until upload endpoint wired
+  - apps/web/src/components/meeting/in-call-whiteboard.tsx — Dialog with HTML5 canvas, pointer-event drawing, clear button, local-only (Socket.IO multiplayer = follow-up)
+  Helper component (1):
+  - apps/web/src/components/recordings/recording-download-button.tsx — "use client" button, calls recordings.getDownloadUrl mutation, opens signed URL in new tab
+- Files modified (5):
+  - apps/web/src/server/trpc/router.ts — register chatRouter + recordingsRouter
+  - apps/web/src/server/trpc/routers/calls.ts — add listHistory procedure (CallLog with caller/department/meeting include)
+  - apps/web/src/components/meeting/meeting-room.tsx — wire 4 overlays, add header toggle buttons (Chat/Paperclip/PaintBucket icons), pass recording_enabled through
+  - apps/web/src/app/app/meeting/[id]/page.tsx — extract + pass meeting.recording_enabled to MeetingRoom
+  - apps/web/package.json — add @yelli/storage workspace dep (used by recordings.getDownloadUrl)
+- Schema/migrations: none (CallLog, Recording, ChatMessage models already exist from Part 3)
+- Errors encountered/resolved:
+  - tRPC error code `FAILED_PRECONDITION` did not exist in @trpc/server's TRPC_ERROR_CODES_BY_KEY union. Fix: switched to `PRECONDITION_FAILED` (the correct identifier per tRPC v11 — both refer to HTTP 412).
+  - Initial calls.listHistory built args as `Prisma.CallLogFindManyArgs` so `where: undefined` could be omitted to satisfy exactOptionalPropertyTypes. The widened arg-type erased the `select` literal-type narrowing, so the return type lost caller/recipient_department/meeting relations and downstream pages errored. Fix: conditional spread `...(input?.type ? { where: ... } : {})` keeps `where` absent without an explicit `undefined` AND preserves the literal-type inference into the return.
+  - Initial /app/recordings page had `@/components/recordings/...` import below `@/lib/trpc/server` — eslint import/order. Fix: --fix sorted by alias path prefix.
+- Decisions locked (no new lessons.md entries needed — all patterns are extensions of existing 5d/5e/7 patterns: L6 tenant-guard, sanitizePlainText for stored text, verifyKeyOwnership on storage paths, AuditLog for soft-deletes, RSC pages with createServerCaller, conditional spread for optional Prisma args).
+- Follow-ups deferred (out of Part 5f scope, documented inline in component JSDoc):
+  - In-call chat real-time delivery (currently 3s poll) → Socket.IO subscription on `meeting:{id}:chat` room
+  - File dropzone upload pipeline → S3 pre-signed PUT URL + storage.uploadObject + replace `pending://...` placeholder
+  - Whiteboard multiplayer → Socket.IO `meeting:{id}:whiteboard` stroke broadcast
+  - Recording indicator live state → Egress webhook `recording:started`/`recording:stopped` events (needs Part 8 webhook endpoint)
+  - Kibo UI swap-in for the file dropzone (currently native HTML5 dnd) — drop-in upgrade once `npx shadcn add @kibo-ui/dropzone` is run
+- Verification:
+  - pnpm --filter @yelli/web typecheck PASS
+  - pnpm --filter @yelli/web lint PASS (1 import/order auto-fixed)
+  - pnpm -w typecheck PASS (8/8)
+  - pnpm -w lint PASS (8/8)
+  - pnpm tools:validate-inputs PASS
+  - pnpm tools:hydration-lint PASS (76 files, 0 findings — 10 new files added to scan)
+  - Two-stage review: Stage 1 spec compliance PASS (all 7 surfaces present); Stage 2 code quality PASS (no `any`, L6 + L5 + sanitize + generic errors + scope discipline)
+- Dispatch retrospective: Direct Opus implementation again (Step 2.5b — same call as 5d/5e/7). Tier 3 score = 51.5 (>40 threshold → mandatory split per memory-governance §1 Step 3). Three sequential bundles in a single Opus session: Bundle A backend (4 files, ~18K tokens) → Bundle B pages (4 files inc helper, ~17K) → Bundle C overlays (4 + integration edits, ~22K). Total Opus context ~60K aggregate — well within the 200K budget. Sonnet dispatch was viable here (bundles are more independent than 5d/5e/7's cross-cutting work), but direct Opus chosen to keep the established 5d→5e→7 pattern and the within-budget margin. Verify after each bundle: typecheck+lint per bundle caught two errors early (PRECONDITION_FAILED, args-type widening) that would have cascaded if batched.
+- Models used:
+  - planning: claude-code (Opus 4.7 — Architect role; Tiered Decomposition + bundle split plan)
+  - execution: claude-opus-4-7 direct (Step 2.5b escalation, same as Parts 5d/5e/7)
+  - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)

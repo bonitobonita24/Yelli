@@ -15,6 +15,7 @@
     "@yelli/api-client": "workspace:*",
     "@yelli/db": "workspace:*",
     "@yelli/shared": "workspace:*",
+    "@yelli/storage": "workspace:*",
     "@yelli/ui": "workspace:*",
     "@auth/prisma-adapter": "^2.7.4",
     "@hookform/resolvers": "^3.9.1",

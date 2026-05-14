@@ -8,12 +8,17 @@ import {
   useTracks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { toast } from "@yelli/ui";
+import { Button, toast } from "@yelli/ui";
 import { Track } from "livekit-client";
+import { MessageSquare, PaintBucket, Paperclip } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 
+import { InCallChat } from "@/components/meeting/in-call-chat";
+import { InCallFileDropzone } from "@/components/meeting/in-call-file-dropzone";
+import { InCallRecordingIndicator } from "@/components/meeting/in-call-recording-indicator";
+import { InCallWhiteboard } from "@/components/meeting/in-call-whiteboard";
 import { MeetingControls } from "@/components/meeting/meeting-controls";
 import { useMeetingRoom } from "@/lib/livekit/use-meeting-room";
 import { trpc } from "@/lib/trpc/react";
@@ -21,6 +26,7 @@ import { trpc } from "@/lib/trpc/react";
 interface MeetingRoomProps {
   meetingId: string;
   title: string;
+  recordingEnabled?: boolean;
 }
 
 function MeetingInner({
@@ -28,6 +34,7 @@ function MeetingInner({
   title,
   isHost,
   startedAt,
+  recordingEnabled,
   onLeave,
   onEnded,
 }: {
@@ -35,6 +42,7 @@ function MeetingInner({
   title: string;
   isHost: boolean;
   startedAt: number;
+  recordingEnabled: boolean;
   onLeave: () => void;
   onEnded: () => void;
 }) {
@@ -46,6 +54,9 @@ function MeetingInner({
     ],
     { onlySubscribed: false },
   );
+  const [chatOpen, setChatOpen] = useState(false);
+  const [dropzoneOpen, setDropzoneOpen] = useState(false);
+  const [whiteboardOpen, setWhiteboardOpen] = useState(false);
 
   const endMutation = trpc.meetings.end.useMutation({
     onSuccess: () => {
@@ -72,20 +83,59 @@ function MeetingInner({
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold leading-tight">{title}</h1>
-          <p className="text-xs text-muted-foreground">
-            {participants.length} participant
-            {participants.length === 1 ? "" : "s"}
-            {" · "}
-            {formatDuration(Date.now() - startedAt)}
-          </p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-base font-semibold leading-tight">{title}</h1>
+            <p className="text-xs text-muted-foreground">
+              {participants.length} participant
+              {participants.length === 1 ? "" : "s"}
+              {" · "}
+              {formatDuration(Date.now() - startedAt)}
+            </p>
+          </div>
+          <InCallRecordingIndicator active={recordingEnabled} />
         </div>
-        {isHost ? (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-            Host
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setChatOpen((v) => !v);
+            }}
+            aria-label="Toggle chat"
+            aria-pressed={chatOpen}
+          >
+            <MessageSquare className="size-4" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDropzoneOpen(true);
+            }}
+            aria-label="Share file"
+          >
+            <Paperclip className="size-4" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setWhiteboardOpen(true);
+            }}
+            aria-label="Open whiteboard"
+          >
+            <PaintBucket className="size-4" aria-hidden />
+          </Button>
+          {isHost ? (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+              Host
+            </span>
+          ) : null}
+        </div>
       </header>
 
       <div className="flex-1 overflow-hidden bg-black">
@@ -104,6 +154,23 @@ function MeetingInner({
           onEndForAll={handleEndForAll}
         />
       </div>
+
+      <InCallChat
+        meetingId={meetingId}
+        open={chatOpen}
+        onClose={() => {
+          setChatOpen(false);
+        }}
+      />
+      <InCallFileDropzone
+        meetingId={meetingId}
+        open={dropzoneOpen}
+        onOpenChange={setDropzoneOpen}
+      />
+      <InCallWhiteboard
+        open={whiteboardOpen}
+        onOpenChange={setWhiteboardOpen}
+      />
     </div>
   );
 }
@@ -117,7 +184,11 @@ function formatDuration(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-export function MeetingRoom({ meetingId, title }: MeetingRoomProps) {
+export function MeetingRoom({
+  meetingId,
+  title,
+  recordingEnabled = false,
+}: MeetingRoomProps) {
   const router = useRouter();
   const { room, status, errorMessage, isHost, hangup } = useMeetingRoom({
     meetingId,
@@ -225,6 +296,7 @@ export function MeetingRoom({ meetingId, title }: MeetingRoomProps) {
         title={title}
         isHost={isHost}
         startedAt={startedAtRef.current}
+        recordingEnabled={recordingEnabled}
         onLeave={hangup}
         onEnded={hangup}
       />

@@ -129,4 +129,54 @@ export const callsRouter = router({
 
       return { ok: true, callLogId: result.id } as const;
     }),
+
+  /**
+   * List call history for the current tenant (most recent first).
+   * Powers /app/history. L6 tenant-guard auto-injects organization_id.
+   * Includes caller, recipient/caller department, and (if applicable) the
+   * meeting it belonged to. organization_id is never returned to the client.
+   */
+  listHistory: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(200).default(50),
+          type: z.enum(["intercom", "meeting"]).optional(),
+        })
+        .strict()
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      // Conditional spread keeps the literal type intact so the `select`
+      // narrowing flows into the return type, while still satisfying
+      // exactOptionalPropertyTypes (no `where: undefined`).
+      const logs = await prisma.callLog.findMany({
+        ...(input?.type ? { where: { call_type: input.type } } : {}),
+        take: input?.limit ?? 50,
+        orderBy: { started_at: "desc" },
+        select: {
+          id: true,
+          call_type: true,
+          status: true,
+          started_at: true,
+          ended_at: true,
+          participant_count: true,
+          meeting_id: true,
+          caller: {
+            select: { id: true, display_name: true, email: true },
+          },
+          caller_department: {
+            select: { id: true, name: true },
+          },
+          recipient_department: {
+            select: { id: true, name: true },
+          },
+          meeting: {
+            select: { id: true, title: true },
+          },
+        },
+      });
+
+      return logs;
+    }),
 });

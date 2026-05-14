@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: 4 Part 7 complete — Tools workspace + Docker Compose scaffolds + Dockerfile + manual image pipeline + COMMANDS.md. tools/ ships 4 governance scripts (validate-inputs Ajv-2020 against inputs.schema.json; check-env with DEV_ONLY_KEYS allowlist for LIVEKIT_TURN_UDP_START/COTURN_PORT/SMTP_UI_PORT — separates real failures from informational warnings, surfaces empty CREDENTIALS.md placeholders as Phase-5-blocking errors; check-product-sync with normalize() stripping connectors `[_\-&/,()[].:]` for snake_case ↔ Title-Case + Rule 20 private-tag leak scan; hydration-lint with SERVER_ONLY_PATH_SEGMENTS allowlist skipping /src/server/ /src/lib/ /src/middleware. /src/env. — 66 files scanned, 0 false positives). deploy/compose/ ships {dev,stage,prod}/{db,cache,storage,media,pgadmin,app}.yml (+ infra/MailHog in dev only) — 22 compose files across 3 envs all sharing COMPOSE_PROJECT_NAME=yelli_<env> namespace pattern; env_file at ../../../.env.<env> (3 levels up — corrected from templates.md 2-level assumption); volumes named yelli_<env>_<service>_data; LiveKit dev uses --dev single-UDP-port mode at LIVEKIT_TURN_UDP_START(43537→7882), stage/prod use --rtc-port-range-start/end=7882-7892 with explicit 11-UDP-port mapping + Traefik wss labels at livekit-{staging,}.powerbyte.app for signaling; Coturn UDP relay 49160-49200 (40 ports for max_participants_per_room=50). deploy/compose/start.sh dispatches the right compose files per env with dev `up` getting --build. deploy/compose/push.sh promotes dev→staging→prod image tags (refuses if not docker login'd, refuses if docker.publish≠true, warns dirty git tree). apps/web/Dockerfile is multi-stage pnpm-workspace-aware (deps stage copies pnpm-workspace.yaml + every workspace package.json BEFORE `pnpm install --frozen-lockfile` for layer caching → builder stage runs `pnpm --filter @yelli/db prisma generate` then `pnpm --filter @yelli/web... build` for transitive workspace build → runner stage is minimal node:22-alpine standalone-output with non-root nodejs:1001 user). COMMANDS.md is the project-root human-facing command reference. deploy/k8s-scaffold/README.md is the explicitly-INACTIVE placeholder per Rule 6. .socraticodecontextartifacts.json points the SocratiCode MCP at 4 context artifacts (database-schema, implementation-map, decisions-log, product-definition) — gitignored, machine-local. 32 files added + 4 modified (lockfile + 3 governance docs). Direct Opus implementation (Step 2.5b) — same approach as Part 5e; cross-file consistency requirements (Traefik labels + container_name patterns across 17 compose files) favor Opus over Sonnet dispatch. 5 new 🟤 decisions locked. Next: Part 5f (in-call overlays + history + recordings + chat library) OR Part 8 (CI workflows + MANIFEST + README + final IMPLEMENTATION_MAP rewrite).
+Phase: 4 Part 5f complete — Feature surface (call history, recordings library, chat history) + four in-call overlays (chat sidebar, file dropzone, whiteboard, recording indicator) wired into MeetingRoom. Three new tRPC routers (recordings, chat) + calls.listHistory procedure, all org-scoped via L6 tenant-guard with verifyKeyOwnership defence-in-depth on storage paths and writeAuditLog (L5) on soft-deletes. sanitizePlainText XSS guard on chat content. 12 new source files in 3 sequential bundles, single Opus session, Tier 3 score 51.5. pnpm -w typecheck/lint PASS (8/8). Phase 4 Part 7 complete — Tools workspace + Docker Compose scaffolds + Dockerfile + manual image pipeline + COMMANDS.md. tools/ ships 4 governance scripts (validate-inputs Ajv-2020 against inputs.schema.json; check-env with DEV_ONLY_KEYS allowlist for LIVEKIT_TURN_UDP_START/COTURN_PORT/SMTP_UI_PORT — separates real failures from informational warnings, surfaces empty CREDENTIALS.md placeholders as Phase-5-blocking errors; check-product-sync with normalize() stripping connectors `[_\-&/,()[].:]` for snake_case ↔ Title-Case + Rule 20 private-tag leak scan; hydration-lint with SERVER_ONLY_PATH_SEGMENTS allowlist skipping /src/server/ /src/lib/ /src/middleware. /src/env. — 66 files scanned, 0 false positives). deploy/compose/ ships {dev,stage,prod}/{db,cache,storage,media,pgadmin,app}.yml (+ infra/MailHog in dev only) — 22 compose files across 3 envs all sharing COMPOSE_PROJECT_NAME=yelli_<env> namespace pattern; env_file at ../../../.env.<env> (3 levels up — corrected from templates.md 2-level assumption); volumes named yelli_<env>_<service>_data; LiveKit dev uses --dev single-UDP-port mode at LIVEKIT_TURN_UDP_START(43537→7882), stage/prod use --rtc-port-range-start/end=7882-7892 with explicit 11-UDP-port mapping + Traefik wss labels at livekit-{staging,}.powerbyte.app for signaling; Coturn UDP relay 49160-49200 (40 ports for max_participants_per_room=50). deploy/compose/start.sh dispatches the right compose files per env with dev `up` getting --build. deploy/compose/push.sh promotes dev→staging→prod image tags (refuses if not docker login'd, refuses if docker.publish≠true, warns dirty git tree). apps/web/Dockerfile is multi-stage pnpm-workspace-aware (deps stage copies pnpm-workspace.yaml + every workspace package.json BEFORE `pnpm install --frozen-lockfile` for layer caching → builder stage runs `pnpm --filter @yelli/db prisma generate` then `pnpm --filter @yelli/web... build` for transitive workspace build → runner stage is minimal node:22-alpine standalone-output with non-root nodejs:1001 user). COMMANDS.md is the project-root human-facing command reference. deploy/k8s-scaffold/README.md is the explicitly-INACTIVE placeholder per Rule 6. .socraticodecontextartifacts.json points the SocratiCode MCP at 4 context artifacts (database-schema, implementation-map, decisions-log, product-definition) — gitignored, machine-local. 32 files added + 4 modified (lockfile + 3 governance docs). Direct Opus implementation (Step 2.5b) — same approach as Part 5e; cross-file consistency requirements (Traefik labels + container_name patterns across 17 compose files) favor Opus over Sonnet dispatch. 5 new 🟤 decisions locked. Next: Part 5f (in-call overlays + history + recordings + chat library) OR Part 8 (CI workflows + MANIFEST + README + final IMPLEMENTATION_MAP rewrite).
 App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
@@ -165,13 +165,45 @@ Framework: Spec-Driven Platform V31
   - Lessons learned (lessons.md — 5 new 🟤 decisions): Compose env_file = ../../../.env.<env> (3 levels up — templates.md ../../ was wrong for the actual deploy/compose/<env>/ depth); LiveKit dev --dev mode single UDP port vs stage/prod --rtc-port-range-start/end explicit 11-UDP-port range (Traefik can't proxy UDP; signal WS at 7880 DOES go through Traefik); check-env DEV_ONLY_KEYS allowlist distinguishes intentionally-absent keys from real failures (empty placeholders always remain errors → Phase 5 pre-flight gate); check-product-sync normalize() expanded to strip `[_\-&/,()[].:]` for "Reports & Export" ↔ `reports_export` matching; Dockerfile multi-stage build copies all workspace package.json files BEFORE pnpm install for layer caching, then `pnpm --filter @yelli/web... build` for transitive workspace build.
   - Verification: pnpm tools:validate-inputs PASS, pnpm tools:check-product-sync PASS, pnpm tools:hydration-lint PASS (66 files, 0 findings), pnpm tools:check-env FAIL by design (8 empty CREDENTIALS.md placeholders — matches Phase 5 pre-flight gate intent — BLOCKERS state since Bootstrap Step 18). pnpm -w typecheck PASS (8/8), pnpm -w lint PASS (8/8). docker compose config --services combined per env produces 11/10/10 valid services dev/stage/prod. Branch scaffold/part-7 squash-merged to main and deleted.
 
+- ✅ Phase 4 Part 5f — Feature surface: call history + recordings library + chat history + in-call overlays (2026-05-14) — Direct Opus implementation per Step 2.5b (no Sonnet dispatch)
+  - **12 new source files** delivered in 3 sequential bundles within one Opus session:
+    - Bundle A — Backend tRPC (3 new + 1 modified):
+      - apps/web/src/server/trpc/routers/recordings.ts — list (paginated, excludes soft-deleted; BigInt file_size_bytes → string for JSON transport), getDownloadUrl (verifyKeyOwnership + storage.getDownloadUrl 1h pre-signed; NOT_FOUND on tenant mismatch — no enumeration vector), softDelete (transactional + writeAuditLog L5 with before/after diff)
+      - apps/web/src/server/trpc/routers/chat.ts — listByMeeting (chronological asc, 200/500 max, validates meeting exists in tenant), send (sanitizePlainText before persist, rejects on cancelled/ended meeting, file_url validation when messageType=file)
+      - apps/web/src/server/trpc/routers/calls.ts — append listHistory procedure: CallLog with caller/caller_department/recipient_department/meeting includes, optional `type: "intercom"|"meeting"` filter, most-recent-first
+      - apps/web/src/server/trpc/router.ts — register chatRouter + recordingsRouter
+    - Bundle B — Standalone pages (3 + 1 helper):
+      - apps/web/src/app/app/history/page.tsx — RSC, calls.listHistory(100), status badges (completed/missed/failed), type chips (1:1 Call / Meeting), duration formatter, meeting rows link to /app/chat/[id]
+      - apps/web/src/app/app/recordings/page.tsx — RSC, recordings.list(100), formatBytes(BigInt-as-string), download button is "use client" island
+      - apps/web/src/app/app/chat/[id]/page.tsx — RSC, fetches meetings.byId for title (catch → notFound() for cross-tenant), chat.listByMeeting(500) chronological
+      - apps/web/src/components/recordings/recording-download-button.tsx — "use client", trpc.recordings.getDownloadUrl mutation, opens signed URL in new tab with noopener noreferrer
+    - Bundle C — In-call overlays (4 new + 2 modified):
+      - apps/web/src/components/meeting/in-call-recording-indicator.tsx — pulsing red badge driven by recording_enabled prop (Egress webhook live-state subscription is a follow-up)
+      - apps/web/src/components/meeting/in-call-chat.tsx — fixed-right aside (full-width mobile via inset-x-0/sm:right-0/sm:w-80), 3s polling via trpc.chat.listByMeeting refetchInterval, auto-scroll to bottom on new messages, send mutation invalidates query cache
+      - apps/web/src/components/meeting/in-call-file-dropzone.tsx — Dialog with native HTML5 dnd + click-to-pick, 10 MB cap matching storage.MAX_UPLOAD_BYTES, posts chat message with messageType=file + file_url=`pending://...` placeholder (upload pipeline = follow-up)
+      - apps/web/src/components/meeting/in-call-whiteboard.tsx — Dialog with HTML5 canvas (720×420), pointerdown/move/up drawing, blue stroke on white, Clear button (multiplayer broadcast = follow-up)
+      - apps/web/src/components/meeting/meeting-room.tsx — wire all 4 overlays, add header toggle buttons (MessageSquare/Paperclip/PaintBucket icons from lucide-react), accept recordingEnabled prop
+      - apps/web/src/app/app/meeting/[id]/page.tsx — extract meeting.recording_enabled and pass to MeetingRoom
+  - **Modifications**: apps/web/package.json (+ @yelli/storage workspace dep), pnpm-lock.yaml
+  - Schema/migrations: none — CallLog + Recording + ChatMessage models all exist from Part 3
+  - Dispatch retrospective: Direct Opus implementation again (Step 2.5b — same as 5d/5e/7). Tier 3 score = 51.5 per memory-governance §1. Three sequential bundles in one Opus session; verify (typecheck+lint) after each bundle caught two errors early — invalid `FAILED_PRECONDITION` (correct identifier is `PRECONDITION_FAILED`) and `Prisma.CallLogFindManyArgs` type-annotation widening that erased the `select` literal-narrowing into the return type (fixed via conditional spread `...(input?.type ? { where } : {})`). Sonnet dispatch was viable for these more-independent bundles, but Opus chosen to keep the 5d→5e→7 pattern and the within-budget margin.
+  - Follow-ups documented in component JSDoc + CHANGELOG: chat real-time push (3s poll → Socket.IO sub), dropzone upload (pre-signed PUT), whiteboard multiplayer, Egress live state, Kibo UI swap-in.
+  - Verification: pnpm --filter @yelli/web typecheck PASS, pnpm --filter @yelli/web lint PASS (1 import/order auto-fixed). pnpm -w typecheck PASS (8/8), pnpm -w lint PASS (8/8). pnpm tools:validate-inputs PASS, pnpm tools:hydration-lint PASS (76 files — +10 from Part 7, 0 findings). Two-stage review: Stage 1 spec compliance PASS (all 7 declared surfaces present); Stage 2 code quality PASS (no any, L6 + L5 + sanitize + generic errors + scope discipline; tests deferred per Parts 5b–5e precedent). Branch scaffold/part-5f squash-merged to main and deleted.
+
 ## Not Yet Built
 
-- Phase 4 Parts 5f-8 (scaffold continues)
-  - Part 5f: In-call overlays (chat sidebar, Kibo UI file dropzone, whiteboard canvas, recording indicator + start/stop) + call history (/app/history) + recordings library (/app/recordings) + chat history (/app/chat/[id]) — DEFERRED to its own session. Critical-path candidate to skip in favor of Part 7 deploy infra.
-  - Part 6: apps/mobile — SKIP (Yelli is web-only)
-  - Part 7: tools/, deploy/compose/{dev,stage,prod}/, push.sh, COMMANDS.md, .socraticodecontextartifacts.json, custom Next.js server for Socket.IO upgrade
-  - Part 8: .github/workflows/ci.yml + docker-publish.yml, MANIFEST.txt, IMPLEMENTATION_MAP rewrite, SocratiCode initial index
+- Phase 4 Part 8 (final scaffold):
+  - .github/workflows/ci.yml + docker-publish.yml
+  - MANIFEST.txt (full file inventory)
+  - Final README.md rewrite (when PRODUCT.md fully implemented)
+  - SocratiCode initial index trigger
+- Part 6 apps/mobile — SKIP (Yelli is web-only)
+- Part 5f follow-ups (out of Part 5f scope):
+  - Socket.IO real-time chat delivery (replace 3s polling)
+  - In-call file upload pipeline (pre-signed S3 PUT + storage.uploadObject)
+  - Whiteboard multiplayer broadcast
+  - LiveKit Egress recording state feed (recording:started/stopped events)
+  - Kibo UI dropzone swap-in
 - Phase 6+ moderator features: mid-call role promotion, kick participant, force-mute participant (require LiveKit Server SDK)
 - Phase 5 Validation (9 commands — install/lint/typecheck/test/build/audit + 3 governance checks)
 - Phase 6 Docker services + Visual QA (Rule 16)
@@ -220,14 +252,14 @@ prisma_studio=43522 · livekit_signal=43532 · livekit_turn_udp_start=43537 · c
 Staging: standard ports (postgres=5433, valkey=6380, minio=9010, pgadmin=5051, app=3000 behind Traefik)
 Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=3000 behind Traefik)
 
-## File Counts (as of 2026-05-14 Phase 4 Part 7)
+## File Counts (as of 2026-05-14 Phase 4 Part 5f)
 
 - Governance docs: 9 (all initialised + Phase 3 updates locked + Part 2-5e + Part 7 entries appended)
 - Spec files: inputs.yml + inputs.schema.json
 - Env files: 3 real (gitignored) + 1 example (committed)
 - Root config (Part 1): 8 + package.json + pnpm-lock.yaml + COMMANDS.md (Part 7)
 - Bootstrap infrastructure files: 13
-- Source files (apps/, packages/): apps/web 76 (27 Part 5a + 14 Part 5b + 11 Part 5c + 9 Part 5d + 13 Part 5e new + 3 Part 5e modified-only + Dockerfile + .dockerignore Part 7) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 23 + packages/jobs 11 + packages/storage 7 = 150
+- Source files (apps/, packages/): apps/web 88 (27 Part 5a + 14 Part 5b + 11 Part 5c + 9 Part 5d + 13 Part 5e new + 3 Part 5e modified-only + Dockerfile + .dockerignore Part 7 + 12 Part 5f new) + packages/shared 18 + packages/api-client 4 + packages/db 11 + packages/ui 23 + packages/jobs 11 + packages/storage 7 = 162
 - Tools workspace (Part 7 new): tools/ 6 files (package.json + .eslintrc.cjs + validate-inputs.mjs + check-env.mjs + check-product-sync.mjs + hydration-lint.mjs)
 - Deploy infrastructure (Part 7 new):
   - deploy/compose/dev/: 8 files (db/cache/storage/infra/media/pgadmin/app compose + pgadmin-servers.json)
@@ -237,7 +269,7 @@ Prod: standard ports (postgres=5432, valkey=6379, minio=9000, pgadmin=5050, app=
   - deploy/k8s-scaffold/README.md: 1 file (INACTIVE placeholder per Rule 6)
 - SocratiCode artifacts (Part 7): .socraticodecontextartifacts.json (gitignored, machine-local)
 - Phase 4 task files: 8 (staged)
-- Total tracked source + infra: 150 (apps/packages) + 6 (tools) + 25 (deploy) + 1 (COMMANDS.md) = 182
+- Total tracked source + infra: 162 (apps/packages) + 6 (tools) + 25 (deploy) + 1 (COMMANDS.md) = 194
 
 ## ⏳ Pending Human Action Before Phase 5
 

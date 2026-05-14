@@ -318,3 +318,77 @@ CLAUDE_CODE | 2026-05-14 governance | Part 7 governance updates committed.
     - .cline/memory/lessons.md appended 5 🟤 decisions (compose env_file 3-levels-up,
       LiveKit dev vs stage UDP strategy, DEV_ONLY_KEYS allowlist, normalize() punctuation
       strip, Dockerfile workspace-aware multi-stage)
+
+CLAUDE_CODE | 2026-05-14 10:45 GMT+8 | Phase 4 Part 5f — Feature surface complete
+  Branch: scaffold/part-5f (to be squash-merged to main after this entry).
+  Tier 3 Heavy classification per memory-governance §1 (score 51.5 > 40 threshold) —
+  mandatory split executed as 3 sequential bundles in a single Opus session.
+
+  Bundle A — Backend tRPC (verify: typecheck+lint PASS after fix):
+    - apps/web/src/server/trpc/routers/recordings.ts (NEW) — list / getDownloadUrl / softDelete
+    - apps/web/src/server/trpc/routers/chat.ts (NEW) — listByMeeting / send
+    - apps/web/src/server/trpc/routers/calls.ts (MODIFIED) — append listHistory
+    - apps/web/src/server/trpc/router.ts (MODIFIED) — register chat+recordings
+    - apps/web/package.json (MODIFIED) — add @yelli/storage workspace dep
+    Errors caught early:
+      1. FAILED_PRECONDITION not in tRPC v11 union → switched to PRECONDITION_FAILED
+      2. Prisma.CallLogFindManyArgs widened the literal-select return type → switched to
+         conditional spread `...(input?.type ? { where } : {})` to satisfy
+         exactOptionalPropertyTypes AND keep select narrowing into return type.
+
+  Bundle B — Standalone pages (verify: typecheck+lint PASS after 1 import-order auto-fix):
+    - apps/web/src/app/app/history/page.tsx (NEW) — call history RSC
+    - apps/web/src/app/app/recordings/page.tsx (NEW) — recordings library RSC
+    - apps/web/src/app/app/chat/[id]/page.tsx (NEW) — chat history RSC
+    - apps/web/src/components/recordings/recording-download-button.tsx (NEW) — client island
+
+  Bundle C — In-call overlays (verify: typecheck+lint PASS):
+    - apps/web/src/components/meeting/in-call-recording-indicator.tsx (NEW)
+    - apps/web/src/components/meeting/in-call-chat.tsx (NEW) — 3s polling + send mutation
+    - apps/web/src/components/meeting/in-call-file-dropzone.tsx (NEW) — native HTML5 dnd
+    - apps/web/src/components/meeting/in-call-whiteboard.tsx (NEW) — local-only canvas
+    - apps/web/src/components/meeting/meeting-room.tsx (MODIFIED) — wire 4 overlays + recording prop
+    - apps/web/src/app/app/meeting/[id]/page.tsx (MODIFIED) — pass meeting.recording_enabled
+
+  Final verification:
+    - pnpm --filter @yelli/web typecheck PASS
+    - pnpm --filter @yelli/web lint PASS
+    - pnpm -w typecheck PASS (8/8)
+    - pnpm -w lint PASS (8/8)
+    - pnpm tools:validate-inputs PASS
+    - pnpm tools:hydration-lint PASS (76 files, 0 findings — +10 from Part 7)
+
+  Two-stage review (Rule 25):
+    Stage 1 spec compliance: PASS — all 7 declared surfaces present (4 overlays + 3 pages
+      + 3 backend procedures via 2 new routers + 1 procedure append + 4 router registrations).
+    Stage 2 code quality: PASS — no `any`, L6 tenant-guard relied on for all reads/writes,
+      verifyKeyOwnership defence-in-depth on storage paths, writeAuditLog L5 inside
+      transaction for soft-delete, sanitizePlainText before chat persist (XSS guard),
+      NOT_FOUND for cross-tenant lookups (no enumeration), only blast-radius files
+      modified (meeting-room.tsx + meeting page extended; existing surfaces untouched).
+    Tests: deferred per Parts 5b-5e precedent (Phase 4 scaffold ships without test harness;
+      tests get added in a dedicated test-suite Part).
+
+  Token estimate this session: ~60K Opus 4.7 aggregate across 3 bundles — well within
+  200K budget. Lower than 5e (95K) and 7 (80K) because the 3 bundles share less context
+  than infrastructure work; each bundle reads only its own scope. Direct Opus continues
+  to be the right choice for Phase 4 Parts where cross-bundle consistency matters
+  (Step 2.5b sweet spot).
+
+  Follow-ups (documented in component JSDoc, not blocking Phase 5):
+    - Socket.IO real-time chat (replace 3s polling)
+    - In-call file upload pipeline (pre-signed PUT + storage.uploadObject)
+    - Whiteboard multiplayer broadcast (Socket.IO meeting:{id}:whiteboard)
+    - LiveKit Egress recording state feed (recording:started/stopped events)
+    - Kibo UI dropzone swap-in (`npx shadcn add @kibo-ui/dropzone`)
+
+  Squash-merge of scaffold/part-5f → main pending.
+
+CLAUDE_CODE | 2026-05-14 governance | Part 5f governance updates committed
+  Updated docs:
+    - .cline/STATE.md rewritten: PHASE=Phase 4 Part 5f complete, NEXT=Phase 4 Part 8
+    - docs/CHANGELOG_AI.md appended Part 5f entry
+    - docs/IMPLEMENTATION_MAP.md updated: Part 5f marked complete; file counts +12 (apps/web 76→88; total 182→194); Not-Yet-Built list trimmed (only Part 8 + follow-ups remain)
+    - .cline/memory/lessons.md: no new entries — all patterns extend existing 5b/5c/5d/5e/7
+      patterns (L6, sanitize, verifyKeyOwnership, writeAuditLog, RSC + createServerCaller,
+      conditional spread for optional Prisma args)
