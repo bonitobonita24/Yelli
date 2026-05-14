@@ -5,7 +5,7 @@ export {
   buildStorageKey,
   extractOrganizationId,
   verifyKeyOwnership,
-} from './keys.js';
+} from './keys';
 
 // MIME type validation
 export {
@@ -13,7 +13,7 @@ export {
   ALLOWED_PATTERNS,
   isAllowedMimeType,
   isWithinSizeLimit,
-} from './mime.js';
+} from './mime';
 
 // S3/MinIO client operations
 export {
@@ -22,7 +22,7 @@ export {
   getDownloadUrl,
   deleteObject,
   objectExists,
-} from './client.js';
+} from './client';
 
 // Type re-exports
 export type {
@@ -31,4 +31,4 @@ export type {
   GetDownloadUrlOutput,
   DeleteObjectInput,
   ObjectExistsInput,
-} from './client.js';
+} from './client';

@@ -12,7 +12,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx --env-file-if-exists=../../.env.dev prisma/seed.ts",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"prisma/*.ts\""
@@ -20,10 +20,10 @@
   "dependencies": {
     "@paralleldrive/cuid2": "^2.2.2",
     "@prisma/client": "^5.22.0",
-    "bcrypt": "^5.1.1"
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
-    "@types/bcrypt": "^5.0.2",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",

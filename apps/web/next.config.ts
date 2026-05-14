@@ -54,7 +54,13 @@ const nextConfig: NextConfig = {
     "@yelli/shared",
     "@yelli/api-client",
     "@yelli/db",
+    "@yelli/storage",
   ],
+  // isomorphic-dompurify → jsdom does fs.readFileSync(__dirname + "../../browser/default-stylesheet.css")
+  // at module load. Webpack bundles jsdom but flattens directory structure, so
+  // the relative read path breaks during page-data collection. Keep jsdom out
+  // of the bundle and let Node resolve it at runtime from node_modules.
+  serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
   experimental: {
     serverActions: {
       allowedOrigins: [],

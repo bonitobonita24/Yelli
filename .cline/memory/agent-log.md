@@ -481,3 +481,15 @@ CLAUDE_CODE | 2026-05-14 governance | Part 8 squash-merge SHA recorded
   Docker Desktop running, say "Index this codebase" — first use auto-pulls Qdrant + Ollama
   containers (~5 min one-time). Indexed corpus enables Rule 17 codebase_search for all
   future Phase 7 Feature Updates.
+
+## 2026-05-15 01:21 GMT+8 — CLAUDE_CODE | Post-Phase-4 dev bring-up session
+
+- Partial Phase 5 validation (8 of 9 commands pass; check-env skipped per CREDENTIALS.md ⏳ blockers)
+- Fixed 11 real Phase 4 scaffold bugs (see STATE.md PHASE_4_SCAFFOLD_BUGS_FIXED_THIS_SESSION)
+- Brought up 8 of 9 dev backing services in Docker (Coturn blocked on CREDENTIALS.md)
+- Prisma migrations applied (15 tables in yelli_dev); webmaster account seeded
+- Next dev server confirmed working on http://localhost:43512
+- pnpm build passes end-to-end (root cause was jsdom via isomorphic-dompurify, NOT LiveKit as initially framed)
+- Created scripts/seed-dev.sh — idempotent seed runner that reads CREDENTIALS.md via shell pipe so credentials never enter agent context
+- All 20 modified + 4 new files held in working tree on main (uncommitted) — next session should branch as fix/phase-4-dev-bringup, squash-merge per Rule 23
+- Outputs preserved: .env.local symlink, public/livekit-styles.css, three new TSX files under apps/web/src

@@ -6,7 +6,8 @@ import {
   ParticipantTile,
   useTracks,
 } from "@livekit/components-react";
-import "@livekit/components-styles";
+// @livekit/components-styles loaded via globals.css (relative file path).
+// Importing as a JS side-effect breaks SSR page-data collection.
 import { Track } from "livekit-client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";

@@ -73,7 +73,7 @@ export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
         <p className="text-muted-foreground">No departments configured yet.</p>
         {userRole === "tenant_admin" && (
           <a
-            href="/app/settings/departments/new"
+            href="/admin/departments"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             Add your first department →

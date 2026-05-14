@@ -6,8 +6,13 @@
  */
 
 import { NextResponse } from "next/server";
+import NextAuth from "next-auth";
 
-import { auth } from "@/server/auth";
+import { authConfig } from "@/server/auth.config";
+
+// Edge-safe Auth.js instance — uses the shell config without Credentials/bcrypt/Prisma.
+// The full server instance lives in @/server/auth and is used by route handlers + tRPC.
+const { auth } = NextAuth(authConfig);
 
 const PROTECTED_PREFIXES = ["/app", "/admin", "/superadmin"] as const;
 // Public prefixes (/login, /register, /forgot-password, /join, /api/auth) are

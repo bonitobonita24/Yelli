@@ -8,7 +8,7 @@ import { useToast } from "@yelli/ui/use-toast";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -25,7 +25,9 @@ const loginSchema = z.object({
 
 type LoginInput = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+// useSearchParams must be inside a Suspense boundary in App Router static
+// generation (Next 15). The exported LoginPage wraps LoginForm in <Suspense>.
+function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") ?? "/app";
@@ -149,5 +151,19 @@ export default function LoginPage() {
         </div>
       </form>
     </FormCard>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <FormCard title="Sign in" description="Welcome back. Sign in to your workspace.">
+          <div className="h-64" aria-busy />
+        </FormCard>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

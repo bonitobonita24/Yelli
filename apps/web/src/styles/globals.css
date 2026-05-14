@@ -1,4 +1,10 @@
 @import "@yelli/ui/styles";
+/* LiveKit prefab/participant styles are served as a static asset from
+   /public/livekit-styles.css and linked via <link> in src/app/layout.tsx.
+   Importing the package through webpack (either as JS side-effect or CSS
+   @import) breaks SSR page-data collection in Next 15.5 — the package's
+   exports map is incompatible with Next's CSS resolver. Refresh the file
+   via `pnpm sync:livekit-styles` if the package version is bumped. */
 
 /*
  * All design tokens (colors, typography, spacing, animations, CSS variables)

@@ -29,6 +29,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        {/* LiveKit prefab styles served as static asset — see globals.css for rationale. */}
+        <link rel="stylesheet" href="/livekit-styles.css" />
+      </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <TRPCReactProvider>
           <ThemeProvider

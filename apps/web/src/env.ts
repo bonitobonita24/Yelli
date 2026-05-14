@@ -79,8 +79,19 @@ function getClientEnv() {
   };
 }
 
-// Validate at startup — Next.js will surface boot-time errors immediately
-const _server = serverSchema.safeParse(getServerEnv());
+// SKIP_ENV_VALIDATION=1 bypasses env checks (Docker image build, Next route-collection,
+// CI lint/typecheck runs). Runtime use is always validated when this file is first imported
+// by a request path that reads env — the bypass only affects compile-time module evaluation.
+const SKIP_VALIDATION = process.env.SKIP_ENV_VALIDATION === "1";
+// Server validation only runs on the server. On the client, server-only env vars are
+// undefined by design (Next inlines NEXT_PUBLIC_* only), so validating would always fail.
+// Any client code that reads a server field is already a bug — it would get undefined.
+const IS_SERVER = typeof window === "undefined";
+
+const _server =
+  !IS_SERVER || SKIP_VALIDATION
+    ? { success: true as const, data: getServerEnv() as never }
+    : serverSchema.safeParse(getServerEnv());
 if (!_server.success) {
   console.error("❌ Invalid server environment variables:");
   console.error(
@@ -89,7 +100,9 @@ if (!_server.success) {
   throw new Error("Invalid server environment variables. See above.");
 }
 
-const _client = clientSchema.safeParse(getClientEnv());
+const _client = SKIP_VALIDATION
+  ? { success: true as const, data: getClientEnv() as never }
+  : clientSchema.safeParse(getClientEnv());
 if (!_client.success) {
   console.error("❌ Invalid client environment variables:");
   console.error(

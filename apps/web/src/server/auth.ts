@@ -1,5 +1,12 @@
 /**
- * Auth.js v5 (next-auth 5.0.0-beta.25) configuration.
+ * Auth.js v5 (next-auth 5.0.0-beta.25) full server configuration.
+ *
+ * Imports the edge-safe shell from auth.config.ts and extends it with:
+ *   - Credentials provider (bcrypt + platformPrisma — Node-only)
+ *   - session() override that re-validates user against the DB
+ *
+ * Middleware imports auth.config.ts directly (not this file) so the Edge
+ * bundle never sees bcrypt or @yelli/db.
  *
  * Security model:
  * - JWT strategy (not DB sessions) — enables securityVersion staleness check without round-trip per request
@@ -11,12 +18,12 @@
  */
 // eslint-disable-next-line no-restricted-syntax -- Server-side auth flow; Rule 13 only restricts client consumption of @yelli/db
 import { platformPrisma } from "@yelli/db";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
-import { env } from "@/env";
+import { authConfig } from "@/server/auth.config";
 
 const credentialsSchema = z.object({
   email: z.string().email().toLowerCase().trim(),
@@ -25,10 +32,7 @@ const credentialsSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: env.AUTH_SECRET,
-  trustHost: env.AUTH_TRUST_HOST,
-  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 7 },
-  pages: { signIn: "/login", error: "/login" },
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -98,27 +102,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        const u = user as unknown as {
-          id: string;
-          organizationId: string;
-          role: "tenant_admin" | "host" | "participant";
-          isSuperAdmin: boolean;
-          securityVersion: number;
-        };
-        (token as Record<string, unknown>).userId = u.id;
-        (token as Record<string, unknown>).organizationId = u.organizationId;
-        (token as Record<string, unknown>).role = u.role;
-        (token as Record<string, unknown>).isSuperAdmin = u.isSuperAdmin;
-        (token as Record<string, unknown>).securityVersion = u.securityVersion;
-      }
-      return token;
-    },
+    ...authConfig.callbacks,
     async session({ session, token }) {
       // Module augmentation for next-auth/jwt doesn't always flow through Auth.js v5 beta,
-      // so we narrow JWT fields at the boundary. The jwt() callback above writes these on
-      // login; we trust them to be present in subsequent calls but defensively narrow.
+      // so we narrow JWT fields at the boundary. The jwt() callback in auth.config.ts writes
+      // these on login; we trust them to be present in subsequent calls but defensively narrow.
       const t = token as Record<string, unknown>;
       const userId = typeof t.userId === "string" ? t.userId : null;
       const organizationId = typeof t.organizationId === "string" ? t.organizationId : null;
@@ -135,7 +123,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Re-validate on every session read — catches role changes, suspensions, deactivations
-      // without waiting for the JWT to expire (security.md §AUTH DEFAULTS item 6)
+      // without waiting for the JWT to expire (security.md §AUTH DEFAULTS item 6).
+      // Middleware never reaches this code path — it uses auth.config.ts's edge-safe session().
       const current = await platformPrisma.user.findUnique({
         where: { id: userId },
         include: { organization: { select: { suspended_at: true } } },

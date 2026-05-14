@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { notFound, redirect } from "next/navigation";
 
-import { MeetingRoom } from "@/components/meeting/meeting-room";
+import { MeetingRoom } from "@/components/meeting/meeting-room-loader";
 import { createServerCaller } from "@/lib/trpc/server";
 import { auth } from "@/server/auth";
 

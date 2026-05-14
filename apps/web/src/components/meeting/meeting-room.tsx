@@ -7,7 +7,9 @@ import {
   useParticipants,
   useTracks,
 } from "@livekit/components-react";
-import "@livekit/components-styles";
+// @livekit/components-styles loaded via globals.css (relative file path) —
+// see globals.css for the rationale. Importing here as a JS side-effect
+// pulls the package into the SSR chunk graph and breaks page-data collection.
 import { Button, toast } from "@yelli/ui";
 import { Track } from "livekit-client";
 import { MessageSquare, PaintBucket, Paperclip } from "lucide-react";

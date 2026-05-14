@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { prisma, writeAuditLog } from "@yelli/db";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import { adminProcedure, router } from "@/server/trpc/trpc";

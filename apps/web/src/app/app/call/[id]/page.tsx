@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { IntercomCall } from "@/components/call/intercom-call";
+import { IntercomCall } from "@/components/call/intercom-call-loader";
 import { auth } from "@/server/auth";
 
 interface CallPageProps {

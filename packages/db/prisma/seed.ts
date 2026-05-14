@@ -24,7 +24,7 @@
 // =============================================================
 
 import { PrismaClient } from '@prisma/client';
-import { hash } from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const BCRYPT_COST = 12;
 const MIN_PASSWORD_LENGTH = 22;
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
     // ── 2. Webmaster Account ───────────────────────────────────────
     // bcrypt the plaintext immediately and discard. The plaintext
     // never touches the database or any log line.
-    const passwordHash = await hash(webmasterPassword, BCRYPT_COST);
+    const passwordHash = await bcrypt.hash(webmasterPassword, BCRYPT_COST);
 
     const webmaster = await prisma.user.upsert({
       where: {
