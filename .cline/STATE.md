@@ -14,7 +14,7 @@ BLOCKERS: ⏳ CREDENTIALS.md placeholders must be filled before Phase 5 (8 categ
 
 POST-PHASE-4 HUMAN ACTION (non-blocking — does not gate Phase 5): SocratiCode initial codebase index. Open a Claude Code session with Docker Desktop running, say "Index this codebase". First use auto-pulls Qdrant + Ollama containers (~5 minutes one-time). Once indexed, Phase 7 Feature Updates use `codebase_search` (Rule 17) before opening any file — 61% fewer read tokens per session.
 
-GIT_BRANCH: main (scaffold/part-8 squash-merged + deleted; merge SHA to be captured below)
+GIT_BRANCH: main (scaffold/part-8 squash-merged as 2a308f7 and deleted; atomic source commit on the branch was d35642f)
 PORTS: APP=43512 DB=43502 CACHE=43504 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542 (dev — base 43502; staging/prod use standard ports behind Traefik)
 TOKEN_ESTIMATE: ~55K Opus 4.7 aggregate for Part 8 — Tier 2 single session. Lower than Parts 5d/5e/5f/7 (60-95K) because Part 8 is mostly documentation generation from the existing IMPLEMENTATION_MAP + CHANGELOG context already loaded.
 CHECKPOINT_TYPE: full

@@ -461,3 +461,23 @@ CLAUDE_CODE | 2026-05-14 governance | Part 8 governance updates committed
       Not-Yet-Built narrowed to Phase 5/6/7 + deferred follow-ups; SocratiCode initial-index human-action section added
     - .cline/memory/lessons.md: no new entries — all patterns extend existing V31 phases.md CI/CD template
       defaults (Rule 4 + Rule 18 + Rule 23 + Rule 28 priority order)
+
+CLAUDE_CODE | 2026-05-14 governance | Part 8 squash-merge SHA recorded
+  scaffold/part-8 squash-merged to main as commit 2a308f7 and branch deleted.
+  Atomic source commit on the branch was d35642f (1198 insertions, 203 deletions across 8 files).
+  STATE.md updated with both SHAs. Phase 4 is now fully complete (Parts 1, 2, 3, 4, 5a, 5b, 5c,
+  5d, 5e, 5f, 7, 8 — Part 6 mobile SKIPPED).
+
+  Next: human triggers Phase 5 in a fresh Claude Code session once CREDENTIALS.md placeholders
+  are filled. Phase 5 pre-flight (`pnpm tools:check-env`) will list each unfilled REQUIRED
+  field. Recommended sequence:
+    1. Fill ⏳ markers in CREDENTIALS.md (GitHub, Docker Hub, SMTP, Komodo, Xendit, Turnstile,
+       LiveKit, Coturn).
+    2. Run `bash scripts/sync-credentials-to-env.sh` to propagate values into .env.{staging,prod}.
+    3. Run `pnpm tools:check-env` — confirm 0 placeholder warnings.
+    4. Say "Start Phase 5" in a fresh Claude Code session.
+
+  Post-merge non-blocking action: SocratiCode initial index. Open a Claude Code session with
+  Docker Desktop running, say "Index this codebase" — first use auto-pulls Qdrant + Ollama
+  containers (~5 min one-time). Indexed corpus enables Rule 17 codebase_search for all
+  future Phase 7 Feature Updates.
