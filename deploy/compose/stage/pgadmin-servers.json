@@ -1,0 +1,24 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "yelli staging",
+      "Group": "Spec-Driven",
+      "Host": "yelli_staging_postgres",
+      "Port": 5432,
+      "MaintenanceDB": "yelli_staging",
+      "Username": "yelli_staging",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "2": {
+      "Name": "yelli staging (via pgbouncer)",
+      "Group": "Spec-Driven",
+      "Host": "yelli_staging_pgbouncer",
+      "Port": 5432,
+      "MaintenanceDB": "yelli_staging",
+      "Username": "yelli_staging",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    }
+  }
+}

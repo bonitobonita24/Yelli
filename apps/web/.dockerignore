@@ -1,0 +1,55 @@
+# Build context for apps/web/Dockerfile is the monorepo ROOT — this file
+# is referenced via Docker's default lookup (apps/web/.dockerignore is picked
+# up because the Dockerfile lives at apps/web/Dockerfile).
+
+# Dependencies and build artifacts (re-installed in image).
+**/node_modules
+**/.pnpm-store
+**/.next
+**/.turbo
+**/dist
+**/build
+**/coverage
+**/.tsbuildinfo
+
+# Local environment and credentials (NEVER ship into images).
+.env
+.env.*
+!.env.example
+CREDENTIALS.md
+
+# VCS, IDE, OS noise.
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.DS_Store
+
+# AI framework artifacts (machine-local).
+.cline
+.specstory
+.code-review-graph
+.socraticodecontextartifacts.json
+project.memory.md
+.github/skills/**/node_modules
+
+# Docs and design files (not needed at runtime).
+docs
+design-system
+deploy/compose
+AI
+
+# Tests.
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__
+**/__mocks__
+
+# Logs and temp.
+*.log
+npm-debug.log*
+pnpm-debug.log*
+*.tmp

@@ -1,0 +1,20 @@
+{
+  "name": "@yelli/tools",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Governance and validation tooling for Yelli (Spec-Driven Platform V31).",
+  "scripts": {
+    "validate-inputs": "node validate-inputs.mjs",
+    "check-env": "node check-env.mjs",
+    "check-product-sync": "node check-product-sync.mjs",
+    "hydration-lint": "node hydration-lint.mjs",
+    "lint": "eslint . --ext .mjs --max-warnings 0",
+    "typecheck": "node --check validate-inputs.mjs && node --check check-env.mjs && node --check check-product-sync.mjs && node --check hydration-lint.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0"
+  }
+}

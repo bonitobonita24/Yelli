@@ -1,0 +1,94 @@
+# =============================================================
+# PRODUCTION — LiveKit + LiveKit Egress + Coturn
+#
+# Same UDP-range approach as staging. Signaling at wss://livekit.yelli.powerbyte.app
+# via Traefik (TLS termination + Let's Encrypt). Media UDP exposed directly.
+# =============================================================
+
+networks:
+  app_network:
+    name: ${COMPOSE_PROJECT_NAME}_network
+    external: true
+  proxy:
+    name: ${TRAEFIK_NETWORK:-proxy}
+    external: true
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_livekit
+    hostname: ${COMPOSE_PROJECT_NAME}_livekit
+    env_file: ../../../.env.prod
+    command:
+      - --bind=0.0.0.0
+      - --keys
+      - "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      - --redis-host=${COMPOSE_PROJECT_NAME}_valkey:6379
+      - --redis-password=${REDIS_PASSWORD}
+      - --rtc-tcp-port=7881
+      - --rtc-port-range-start=7882
+      - --rtc-port-range-end=7892
+    ports:
+      - "7882-7892:7882-7892/udp"
+      - "7881:7881"
+    networks: [app_network, proxy]
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_livekit.rule=Host(`livekit.yelli.powerbyte.app`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_livekit.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_livekit.tls.certresolver=letsEncrypt"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}_livekit.loadbalancer.server.port=7880"
+
+  livekit-egress:
+    image: livekit/egress:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_livekit_egress
+    hostname: ${COMPOSE_PROJECT_NAME}_livekit_egress
+    env_file: ../../../.env.prod
+    environment:
+      EGRESS_CONFIG_BODY: |
+        log_level: info
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://${COMPOSE_PROJECT_NAME}_livekit:7880
+        redis:
+          address: ${COMPOSE_PROJECT_NAME}_valkey:6379
+          password: ${REDIS_PASSWORD}
+        s3:
+          access_key: ${STORAGE_ACCESS_KEY}
+          secret: ${STORAGE_SECRET_KEY}
+          bucket: ${STORAGE_BUCKET}
+          endpoint: http://${COMPOSE_PROJECT_NAME}_minio:9000
+          region: ${STORAGE_REGION}
+          force_path_style: true
+    networks: [app_network]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_started
+    cap_add:
+      - SYS_ADMIN
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_coturn
+    hostname: ${COMPOSE_PROJECT_NAME}_coturn
+    env_file: ../../../.env.prod
+    command:
+      - -n
+      - --lt-cred-mech
+      - --realm=${COTURN_REALM}
+      - --use-auth-secret
+      - --static-auth-secret=${COTURN_STATIC_AUTH_SECRET}
+      - --no-multicast-peers
+      - --no-cli
+      - --no-tlsv1
+      - --no-tlsv1_1
+      - --min-port=49160
+      - --max-port=49200
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+    networks: [app_network]
+    restart: unless-stopped

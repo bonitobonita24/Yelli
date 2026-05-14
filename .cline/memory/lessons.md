@@ -561,3 +561,132 @@
     4. Never expose the env state via clientEnv — keep the failure surface server-side.
 
 # ---
+
+## 2026-05-14 — 🟤 Compose env_file path is 3 levels up from deploy/compose/<env>/
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (deploy/compose scaffold)
+- Files:     deploy/compose/{dev,stage,prod}/docker-compose.*.yml
+- Concepts:  docker-compose, env_file, path-resolution, monorepo
+- Narrative: docker-compose's env_file path is resolved relative to the YAML file
+  location, not the project root or the `docker compose -f` invocation directory.
+  Yelli compose files live at deploy/compose/<env>/<file>.yml — to reach the root
+  .env.<env> requires `../../../.env.<env>` (3 hops up), NOT `../../.env.<env>`
+  as the V31 templates.md template suggests (that template assumed 2-level depth).
+  Wrong path silently passes `docker compose config` but fails at runtime with
+  obscure "variable is not set" warnings. Always use the 3-level path; verify
+  with `docker compose --env-file .env.<env> -f <file> config` from project root.
+
+# ---
+
+## 2026-05-14 — 🟤 LiveKit dev mode vs stage/prod UDP exposure strategy
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (deploy/compose/{dev,stage,prod}/docker-compose.media.yml)
+- Files:     deploy/compose/dev/docker-compose.media.yml, deploy/compose/stage/docker-compose.media.yml, deploy/compose/prod/docker-compose.media.yml
+- Concepts:  livekit, webrtc, udp, port-range, --dev, rtc-port-range
+- Narrative: LiveKit needs UDP exposure for media. Two distinct dev/prod strategies:
+  DEV: use `--dev` flag (binds RTC to a single UDP port = 7882). Map host
+       LIVEKIT_TURN_UDP_START (43537) → container 7882/udp. Single-machine WSL2
+       dev has loopback NAT — single UDP port suffices for local clients.
+  STAGE/PROD: drop --dev, use explicit `--rtc-port-range-start=7882
+       --rtc-port-range-end=7892` (11-port UDP range). Map host 7882-7892 →
+       container 7882-7892/udp. Real clients across NAT need port diversity;
+       Traefik canNOT proxy UDP, so direct port mapping is the only option.
+       LiveKit signaling WebSocket (7880 TCP) DOES go through Traefik for WSS
+       termination at livekit-staging.powerbyte.app / livekit.yelli.powerbyte.app.
+  Coturn UDP relay range 49160-49200 (40 ports) sized for max_participants_per_room=50
+  with a small reserve. Hardcoded in compose files — not env vars — because changing
+  these requires Coturn restart and matching firewall changes (not a per-deploy knob).
+
+# ---
+
+## 2026-05-14 — 🟤 check-env DEV_ONLY_KEYS allowlist for env-specific keys
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (tools/check-env.mjs)
+- Files:     tools/check-env.mjs
+- Concepts:  governance-tools, env-validation, dev-only-keys, allowlist
+- Narrative: .env.example acts as the master key list (driven by dev needs).
+  Some keys are legitimately dev-only:
+    LIVEKIT_TURN_UDP_START — dev maps a single UDP port (43537), stage/prod
+                              use a hardcoded 7882-7892 range in the compose
+    COTURN_PORT             — dev maps Coturn (43542), stage/prod use 3478
+    SMTP_UI_PORT            — MailHog web UI is dev-only (stage/prod use real SMTP)
+  A strict "every .env.example key must exist in every env file" check is wrong —
+  it would mask the real signal (empty CREDENTIALS.md placeholders that BLOCK Phase 5).
+  Solution: DEV_ONLY_KEYS Set in check-env.mjs — a missing key in stage/prod yields
+  an INFORMATIONAL warning if the key is in the allowlist; otherwise it's an error.
+  Empty/placeholder values are ALWAYS errors regardless of env (this is the actual
+  BLOCKERS signal that needs to fail Phase 5 pre-flight until CREDENTIALS.md is filled).
+
+# ---
+
+## 2026-05-14 — 🟤 check-product-sync normalize() strips connectors
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (tools/check-product-sync.mjs)
+- Files:     tools/check-product-sync.mjs
+- Concepts:  governance-tools, snake_case, title-case, normalization, substring-match
+- Narrative: inputs.yml uses snake_case module/entity names (`reports_export`,
+  `speed_dial_board`). PRODUCT.md uses Title Case section headings and prose
+  ("Reports & Export", "Speed Dial Board"). Naive lowercase-substring fails
+  because of connector chars: `reports_export` normalized → `reports export`
+  but PRODUCT.md "Reports & Export" lowercased → `reports & export` — substring
+  miss. Fix: normalize() strips `[_\-&/,()[].:]` AND collapses whitespace on
+  BOTH sides before substring check. Trade-off accepted: false-negative risk
+  rises slightly (e.g. an unrelated mention of "reports" + later "export" in
+  the same sentence could match). For 13 modules × the rich PRODUCT.md text,
+  the false-positive cost was massive (10 false sync violations) — false-negative
+  cost is theoretical. Move on; tighten if it ever produces a real missed sync.
+
+# ---
+
+## 2026-05-14 — 🟤 hydration-lint excludes /src/server/ /src/lib/ /src/middleware. /src/env.
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (tools/hydration-lint.mjs)
+- Files:     tools/hydration-lint.mjs
+- Concepts:  ssr-hydration, lint-scope, false-positive-suppression, server-only
+- Narrative: Hydration footguns matter ONLY for code that renders into HTML on
+  the server AND re-renders on the client. tRPC routers (apps/web/src/server/
+  trpc/routers/*.ts), auth callbacks, route handlers, server libraries, the
+  middleware, and the env validator never render HTML. They run in handlers/
+  callbacks where `new Date()` and `Date.now()` are correct and necessary.
+  Initial scan flagged 8 footguns — ALL false positives in src/server/* or src/lib/*.
+  Solution: SERVER_ONLY_PATH_SEGMENTS allowlist that skips files whose path
+  contains `/src/server/`, `/src/lib/`, `/src/middleware.`, `/src/env.`. Result:
+  66 files scanned, 0 findings. Genuine hydration footguns in src/app/* or
+  src/components/* still get flagged. Add a directory to the allowlist if a
+  new server-only convention emerges (e.g. /src/actions/ for server actions).
+
+# ---
+
+## 2026-05-14 — 🟤 Dockerfile multi-stage build for pnpm workspace monorepo
+
+- Type:      🟤 decision
+- Phase:     Phase 4 Part 7 (apps/web/Dockerfile)
+- Files:     apps/web/Dockerfile, apps/web/.dockerignore
+- Concepts:  dockerfile, multi-stage, pnpm, workspace, monorepo, turborepo, caching
+- Narrative: Yelli's monorepo has apps/web depending on packages/{shared,api-client,
+  db,jobs,storage,ui}. A naïve Dockerfile (`COPY . . && pnpm build`) means any
+  source change invalidates the deps layer and triggers full `pnpm install` on
+  every build. Solution: three stages.
+    Stage 1 (deps): COPY pnpm-workspace.yaml + ALL package.json files first
+      (one COPY per workspace package), THEN `pnpm install --frozen-lockfile`.
+      This layer is cached as long as no manifest changes.
+    Stage 2 (builder): bring deps + COPY . . + `pnpm --filter @yelli/db prisma generate`
+      (must precede build — Prisma client is compiled into Next.js bundle) +
+      `pnpm --filter @yelli/web... build` (the `...` syntax builds web AND all
+      its transitive workspace deps via Turborepo).
+    Stage 3 (runner): node:22-alpine minimal, COPY only .next/standalone +
+      .next/static + public. Runs as nextjs:1001 non-root user. `output: standalone`
+      in next.config.ts produces the apps/web/server.js entrypoint.
+  Build context = monorepo ROOT (not apps/web) — required so the Dockerfile can
+  COPY packages/* and pnpm-workspace.yaml. Build command:
+    docker build -f apps/web/Dockerfile -t bonitobonita24/yelli:dev-latest .
+  (the trailing `.` is monorepo root). Dev compose wires `context: ../../..` so
+  the same Dockerfile is used by `docker-compose.app.yml` with `build: { context, dockerfile }`.
+
+# ---
+

@@ -1,0 +1,54 @@
+# =============================================================
+# DEV — Yelli web app
+#
+# Rebuilds from source on every `up` (start.sh adds --build for dev).
+# Tags the local image as bonitobonita24/yelli:dev-latest so push.sh dev
+# can push the freshly-built image without re-building.
+#
+# Note: Yelli's typical dev loop runs the app NATIVELY via `pnpm dev` (faster
+# HMR, easier debugging). This compose service is here for parity testing
+# (verify the production image runs against backing services) and for the
+# Docker image build pipeline.
+# =============================================================
+
+networks:
+  app_network:
+    name: ${COMPOSE_PROJECT_NAME}_network
+    external: true
+
+services:
+  app:
+    build:
+      context: ../../..
+      dockerfile: apps/web/Dockerfile
+    image: ${DOCKERHUB_USERNAME}/${IMAGE_NAME}:dev-latest
+    container_name: ${COMPOSE_PROJECT_NAME}_app
+    hostname: ${COMPOSE_PROJECT_NAME}_app
+    env_file: ../../../.env.dev
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      # Override URLs to use container hostnames (the .env.dev values point at
+      # localhost which is correct for native `pnpm dev` but wrong inside Docker).
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@${COMPOSE_PROJECT_NAME}_pgbouncer:5432/${DB_NAME}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${COMPOSE_PROJECT_NAME}_valkey:6379
+      STORAGE_ENDPOINT: http://${COMPOSE_PROJECT_NAME}_minio:9000
+      LIVEKIT_URL: ws://${COMPOSE_PROJECT_NAME}_livekit:7880
+      SMTP_HOST: ${COMPOSE_PROJECT_NAME}_mailhog
+      SMTP_PORT: "1025"
+    ports:
+      - "${APP_PORT}:3000"
+    networks: [app_network]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

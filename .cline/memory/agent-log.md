@@ -229,3 +229,92 @@ Token estimate this session: ~95K Opus 4.7 — well under 200K budget; lower tha
 110K despite delivering 24 files (vs 5d's 13) because no Sonnet dispatch overhead and
 no thrashing recovery. Architect-Execute model worked as designed when ratio was Opus
 planning + Opus direct execution (Step 2.5b path).
+
+
+CLAUDE_CODE | 2026-05-14 Part 7 | Phase 4 Part 7 scaffold(tools+deploy) — direct Opus implementation.
+  Approach: Direct Opus 4.7 execution (Step 2.5b escalation, no Sonnet dispatch). Reason:
+  high cross-file consistency requirements (COMPOSE_PROJECT_NAME pattern, volume/network
+  naming, Traefik label format across 17 compose files) and the per-Part-5e lesson that
+  ≤4 files per Sonnet dispatch — Part 7 has ~30 files. Direct Opus avoids dispatch overhead
+  and ensures Traefik labels + container_name patterns stay consistent across envs.
+
+  Files added (32 total, all on scaffold/part-7 branch):
+    Bundle A — tools/ (6 files):
+      tools/package.json (workspace pkg, ajv + ajv-formats + js-yaml deps)
+      tools/.eslintrc.cjs (root extension, disables no-console + Ajv/js-yaml default-import warnings)
+      tools/validate-inputs.mjs (Ajv 2020-12 against inputs.schema.json)
+      tools/check-env.mjs (.env.{dev,staging,prod} key-parity + placeholder detection,
+                          DEV_ONLY_KEYS allowlist for LIVEKIT_TURN_UDP_START/COTURN_PORT/SMTP_UI_PORT)
+      tools/check-product-sync.mjs (entity/module sync + private-tag leak scan;
+                                    normalize() strips _-&/,()[].: for snake_case ↔ "Title & Case")
+      tools/hydration-lint.mjs (SSR footgun heuristic; skips /src/server/, /src/lib/,
+                                /src/middleware., /src/env. — those never render to HTML)
+
+    Bundle B — deploy/compose/dev/ + start.sh (9 files):
+      docker-compose.{db,cache,storage,infra,media,pgadmin,app}.yml
+      pgadmin-servers.json
+      start.sh (--build flag for dev app on `up`; loads .env.{env}; mailhog dev-only)
+
+    Bundle C — deploy/compose/{stage,prod}/ (14 files, 7 per env):
+      docker-compose.{db,cache,storage,media,pgadmin,app}.yml + pgadmin-servers.json
+      No MailHog. Traefik labels on app and livekit. LiveKit UDP range 7882-7892
+      explicit (not --dev mode). Coturn UDP relay 49160-49200.
+
+    Bundle D — Docker image pipeline (3 files):
+      apps/web/Dockerfile (multi-stage: deps → builder → runner; pnpm@10, Node 22-alpine,
+                            Next.js standalone output, non-root nodejs user)
+      apps/web/.dockerignore
+      deploy/compose/push.sh (manual dev→staging→prod tag promotion; refuses if
+                              docker.publish≠true; refuses if not docker login'd)
+      COMMANDS.md (project-root master command reference)
+
+    Bundle E — Inactive K8s + SocratiCode (2 files):
+      deploy/k8s-scaffold/README.md (explicitly INACTIVE per Rule 6, locked off)
+      .socraticodecontextartifacts.json (4 entries: database-schema, implementation-map,
+                                          decisions-log, product-definition;
+                                          gitignored — machine-local for MCP)
+
+  Verification (Bundle F):
+    pnpm install: +4 packages (ajv@8.17.1, ajv-formats@3.0.1, ajv/2020 entry, js-yaml@4.1.0)
+    pnpm tools:validate-inputs:   ✓ PASS
+    pnpm tools:check-env:         ✗ FAIL with 8 empty placeholders (EXPECTED — BLOCKERS state
+                                   per STATE.md; matches Phase 5 pre-flight gate intent)
+                                   + 4 informational warnings (dev-only keys absent in stage/prod)
+    pnpm tools:check-product-sync: ✓ PASS (after normalize() fix — was matching `reports_export`
+                                   against "Reports & Export" section heading)
+    pnpm tools:hydration-lint:    ✓ PASS (66 server/shared files, 0 false positives after
+                                   path-segment exclusion of /src/server/ /src/lib/)
+    pnpm -w typecheck:             ✓ 8/8 PASS (cache-hit on 6; tools = node --check syntax)
+    pnpm -w lint:                  ✓ 8/8 PASS
+    docker compose config --services (combined per env):
+      dev:   11 services (postgres pgbouncer valkey minio minio-init mailhog livekit
+                          livekit-egress coturn pgadmin app)
+      stage: 10 services (no mailhog; all others same)
+      prod:  10 services (same as stage)
+
+  Two-stage review:
+    Stage 1 spec compliance: ✓ PASS — every Part 7 deliverable from phase4-part7.md
+      present: tools/ × 4 + tools/package.json + deploy/compose/{dev,stage,prod}/ ×
+      backing-services + start.sh + push.sh + COMMANDS.md + k8s-scaffold/ +
+      .socraticodecontextartifacts.json (with all 4 required entries).
+    Stage 2 code quality: ✓ PASS — no any types, no .js in src/, all secrets sourced from
+      env files (never inlined), Traefik labels consistent across envs, Compose
+      project name pattern (yelli_<env>) applied uniformly, push.sh refuses dirty
+      git tree without confirmation, Dockerfile uses non-root user + alpine base.
+
+  Token estimate this session: ~80K Opus 4.7 — well under 200K budget. Lower than 5e's
+  95K because the work was infrastructure-mechanical (compose YAML templates), no
+  complex runtime logic to reason about. Direct Opus continues to outperform Sonnet
+  dispatch for monorepo-wide consistency tasks (Step 2.5b sweet spot).
+
+  Squash-merged scaffold/part-7 → main as commit [PENDING_SHA].
+  Branch deleted post-merge.
+
+CLAUDE_CODE | 2026-05-14 governance | Part 7 governance updates committed.
+  Updated docs:
+    - .cline/STATE.md rewritten: PHASE=Phase 4 Part 7 complete, NEXT=Phase 4 Part 5f OR Phase 4 Part 8
+    - docs/CHANGELOG_AI.md appended Part 7 entry
+    - docs/IMPLEMENTATION_MAP.md updated: file counts +32, Phase 4 Part 7 marked complete
+    - .cline/memory/lessons.md appended 5 🟤 decisions (compose env_file 3-levels-up,
+      LiveKit dev vs stage UDP strategy, DEV_ONLY_KEYS allowlist, normalize() punctuation
+      strip, Dockerfile workspace-aware multi-stage)

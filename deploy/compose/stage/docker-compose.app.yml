@@ -1,0 +1,50 @@
+# =============================================================
+# STAGING — Yelli web app
+#
+# ⚠ NO build: key — image pulled from Docker Hub ONLY.
+# Image tag controlled by APP_IMAGE_TAG in .env.staging (default :staging-latest).
+# Komodo auto_update: true polls Docker Hub and re-pulls on new image digest.
+#
+# Traffic routed via Traefik reverse proxy at https://yelli-staging.powerbyte.app
+# — no host port mapping. APP_PORT is the internal container port only.
+# =============================================================
+
+networks:
+  app_network:
+    name: ${COMPOSE_PROJECT_NAME}_network
+    external: true
+  proxy:
+    name: ${TRAEFIK_NETWORK:-proxy}
+    external: true
+
+services:
+  app:
+    image: ${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${APP_IMAGE_TAG:-staging-latest}
+    container_name: ${COMPOSE_PROJECT_NAME}_app
+    hostname: ${COMPOSE_PROJECT_NAME}_app
+    env_file: ../../../.env.staging
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@${COMPOSE_PROJECT_NAME}_pgbouncer:5432/${DB_NAME}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${COMPOSE_PROJECT_NAME}_valkey:6379
+      STORAGE_ENDPOINT: http://${COMPOSE_PROJECT_NAME}_minio:9000
+      LIVEKIT_URL: wss://livekit-staging.powerbyte.app
+    networks: [app_network, proxy]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_app.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_app.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}_app.tls.certresolver=letsEncrypt"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}_app.loadbalancer.server.port=3000"

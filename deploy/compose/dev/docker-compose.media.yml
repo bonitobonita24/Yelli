@@ -1,0 +1,95 @@
+# =============================================================
+# DEV — LiveKit (SFU) + LiveKit Egress (recording) + Coturn (TURN/STUN)
+#
+# Yelli-specific WebRTC stack. Self-hosted to avoid LiveKit Cloud per-minute fees
+# (DECISIONS_LOG.md — OSS-first posture, Rule 14).
+#
+# Requires:
+#   - docker-compose.db.yml (creates network)
+#   - docker-compose.cache.yml (Valkey for LiveKit signal coordination + Egress queue)
+#   - docker-compose.storage.yml (MinIO bucket for Egress recordings)
+#
+# Dev mode uses LiveKit's built-in --dev flag which enables a single UDP port
+# (7882) for RTC. Production-style multi-port UDP ranges are configured in
+# stage/prod compose files only.
+# =============================================================
+
+networks:
+  app_network:
+    name: ${COMPOSE_PROJECT_NAME}_network
+    external: true
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_livekit
+    hostname: ${COMPOSE_PROJECT_NAME}_livekit
+    env_file: ../../../.env.dev
+    command:
+      - --dev
+      - --bind=0.0.0.0
+      - --keys
+      - "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      - --redis-host=${COMPOSE_PROJECT_NAME}_valkey:6379
+      - --redis-password=${REDIS_PASSWORD}
+    ports:
+      - "${LIVEKIT_SIGNAL_PORT}:7880"
+      - "${LIVEKIT_TURN_UDP_START}:7882/udp"
+    networks: [app_network]
+    restart: unless-stopped
+    depends_on:
+      valkey:
+        condition: service_healthy
+
+  livekit-egress:
+    image: livekit/egress:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_livekit_egress
+    hostname: ${COMPOSE_PROJECT_NAME}_livekit_egress
+    env_file: ../../../.env.dev
+    environment:
+      EGRESS_CONFIG_BODY: |
+        log_level: info
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://${COMPOSE_PROJECT_NAME}_livekit:7880
+        redis:
+          address: ${COMPOSE_PROJECT_NAME}_valkey:6379
+          password: ${REDIS_PASSWORD}
+        s3:
+          access_key: ${STORAGE_ACCESS_KEY}
+          secret: ${STORAGE_SECRET_KEY}
+          bucket: ${STORAGE_BUCKET}
+          endpoint: http://${COMPOSE_PROJECT_NAME}_minio:9000
+          region: ${STORAGE_REGION}
+          force_path_style: true
+    networks: [app_network]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    # Egress requires CAP_SYS_ADMIN for chromium recording sandboxing
+    cap_add:
+      - SYS_ADMIN
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_coturn
+    hostname: ${COMPOSE_PROJECT_NAME}_coturn
+    env_file: ../../../.env.dev
+    command:
+      - -n
+      - --lt-cred-mech
+      - --realm=${COTURN_REALM}
+      - --use-auth-secret
+      - --static-auth-secret=${COTURN_STATIC_AUTH_SECRET}
+      - --no-multicast-peers
+      - --no-cli
+      - --no-tlsv1
+      - --no-tlsv1_1
+    ports:
+      - "${COTURN_PORT}:3478"
+      - "${COTURN_PORT}:3478/udp"
+    networks: [app_network]
+    restart: unless-stopped

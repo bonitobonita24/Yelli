@@ -1,0 +1,22 @@
+# =============================================================
+# DEV — MailHog (SMTP capture for local email testing)
+# DEV ONLY — staging and prod use real SMTP. Not generated for those envs.
+# Requires docker-compose.db.yml to be started first (creates network).
+# Web UI: http://localhost:${SMTP_UI_PORT}
+# =============================================================
+
+networks:
+  app_network:
+    name: ${COMPOSE_PROJECT_NAME}_network
+    external: true
+
+services:
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_mailhog
+    hostname: ${COMPOSE_PROJECT_NAME}_mailhog
+    ports:
+      - "${SMTP_PORT}:1025"
+      - "${SMTP_UI_PORT}:8025"
+    networks: [app_network]
+    restart: unless-stopped

@@ -385,3 +385,62 @@
   - planning: claude-code (Opus 4.7 — Architect role)
   - execution: claude-opus-4-7 direct (Step 2.5b escalation — no Sonnet dispatch for Part 5e per the 5d ≤4-files-per-Sonnet-dispatch lesson)
   - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)
+
+
+## 2026-05-14 — Phase 4 Part 7: tools/ + deploy/compose/ + Dockerfile + push.sh + COMMANDS.md + k8s-scaffold + SocratiCode artifacts
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct — no Sonnet dispatch, Step 2.5b escalation)
+- Why: Generate the Phase 5 validation surface (4 governance tools), Docker Compose
+  scaffolds for dev/staging/prod (LiveKit + Coturn self-hosted WebRTC stack),
+  Dockerfile for image build, manual image promotion pipeline (push.sh), human-facing
+  command reference (COMMANDS.md), inactive K8s placeholder per Rule 6, and the
+  SocratiCode context artifact pointer file. Part 7 unblocks Phase 5.
+- Files added (32):
+  Tools workspace (6):
+  - tools/package.json — workspace package (ajv@8.17.1, ajv-formats@3.0.1, js-yaml@4.1.0)
+  - tools/.eslintrc.cjs — extends root, disables no-console + Ajv/js-yaml default-import warnings for CLI scripts
+  - tools/validate-inputs.mjs — Ajv 2020-12 against inputs.schema.json
+  - tools/check-env.mjs — .env.{dev,staging,prod} key-parity + placeholder detection; DEV_ONLY_KEYS allowlist (LIVEKIT_TURN_UDP_START, COTURN_PORT, SMTP_UI_PORT)
+  - tools/check-product-sync.mjs — entity/module sync (Rule 9) + private-tag leak scan (Rule 20); normalize() strips `[_\-&/,()[].:]` for snake_case ↔ "Title & Section" matching
+  - tools/hydration-lint.mjs — SSR/CSR hydration footgun heuristic; SERVER_ONLY_PATH_SEGMENTS allowlist skips /src/server/ /src/lib/ /src/middleware. /src/env. (those never render HTML)
+  Dev compose (9):
+  - deploy/compose/dev/docker-compose.{db,cache,storage,infra,media,pgadmin,app}.yml
+  - deploy/compose/dev/pgadmin-servers.json (auto-registers yelli_dev_postgres + yelli_dev_pgbouncer servers)
+  - deploy/compose/start.sh — convenience starter (adds --build on dev `up`; loads .env.<env>; MailHog dev-only)
+  Stage + prod backing services (14):
+  - deploy/compose/{stage,prod}/docker-compose.{db,cache,storage,media,pgadmin,app}.yml + pgadmin-servers.json (no MailHog)
+  - Stage app: Traefik labels routing to yelli-staging.powerbyte.app, image tag :staging-latest (Komodo auto_update: true polls this)
+  - Prod app: Traefik labels routing to yelli.powerbyte.app, image tag :latest (Komodo auto_update: false — human deploy)
+  - LiveKit stage/prod: `--rtc-port-range-start=7882 --rtc-port-range-end=7892` (11 UDP ports exposed directly — Traefik can't proxy UDP). Signal WS at livekit-{staging,}.powerbyte.app via Traefik.
+  - Coturn stage/prod: UDP relay 49160-49200 (40-port range, sized for max_participants_per_room=50)
+  Dockerfile + image pipeline (3):
+  - apps/web/Dockerfile — multi-stage pnpm workspace build: deps→builder→runner. node:22-alpine, pnpm@10. Builder runs `pnpm --filter @yelli/db prisma generate` then `pnpm --filter @yelli/web... build` (transitive workspace build). Runner is minimal standalone-output with non-root nodejs:1001 user.
+  - apps/web/.dockerignore — excludes node_modules, .next, .turbo, .env*, CREDENTIALS.md, .cline, .specstory, design-system, deploy/compose, docs, tests.
+  - deploy/compose/push.sh — manual image promotion: dev (build+push :dev-latest+:dev-sha-{hash}), staging (re-tag → :staging-latest+:staging-sha-{hash}), prod (re-tag → :latest+:prod-sha-{hash}). Refuses if docker.publish≠true; refuses if `docker login` not run; warns on dirty git tree.
+  - COMMANDS.md — project-root master command reference (docker, push.sh, db, test, lint, governance tools, git, AI triggers, service URLs, credentials, utilities).
+  K8s + SocratiCode (2):
+  - deploy/k8s-scaffold/README.md — explicitly INACTIVE per Rule 6, deploy.k8s.enabled: false. Activation procedure documented (Feature Update on PRODUCT.md NFR change).
+  - .socraticodecontextartifacts.json — 4 entries (database-schema, implementation-map, decisions-log, product-definition) with descriptions for MCP context search. Gitignored (machine-local per Bootstrap .gitignore).
+- Files modified (4):
+  - pnpm-lock.yaml — adds ajv@8.17.1, ajv-formats@3.0.1, ajv/2020 entry, js-yaml@4.1.0
+  - .cline/STATE.md — PHASE=Phase 4 Part 7 complete, NEXT=Phase 4 Part 5f OR Phase 4 Part 8
+  - docs/IMPLEMENTATION_MAP.md — file counts updated (180 source files; Phase 4 Part 7 ✅)
+  - .cline/memory/agent-log.md + .cline/memory/lessons.md — Part 7 entries appended (5 new 🟤 decisions)
+- Schema/migrations: none
+- Errors encountered/resolved:
+  - First check-env run flagged "missing keys" for LIVEKIT_TURN_UDP_START + COTURN_PORT in .env.staging/.env.prod. Root cause: those keys are dev-only by design (stage/prod hardcode UDP port ranges in compose, not env). Fix: DEV_ONLY_KEYS Set in check-env downgrades these to informational warning, preserving real-failure signal for unfilled CREDENTIALS.md placeholders.
+  - First check-product-sync run flagged `reports_export` module not in PRODUCT.md. Root cause: PRODUCT.md uses "Reports & Export" heading; normalize() didn't strip `&`. Fix: expanded character class to `[_\-&/,()[].:]`. Result: 1 false positive eliminated; 0 sync violations.
+  - First hydration-lint run flagged 8 footguns in apps/web/src/server/trpc/routers/*.ts and src/lib/livekit/client.ts. Root cause: tRPC routers + server libs never render HTML — false positives. Fix: SERVER_ONLY_PATH_SEGMENTS allowlist. Result: 66 files scanned, 0 findings.
+  - First @yelli/tools lint failed with 12 warnings (no-console, Ajv/js-yaml default-import). Root cause: CLI tools require console output as their interface; Ajv2020 and js-yaml load are documented default-import patterns. Fix: tools/.eslintrc.cjs disables no-console + import/no-named-as-default[-member] for the tools workspace only.
+- Decisions locked (added to lessons.md, 5 new 🟤):
+  - Compose env_file path = ../../../.env.<env> (3 levels up from deploy/compose/<env>/) — templates.md ../../.env.<env> assumption was wrong for the actual depth.
+  - LiveKit dev mode uses --dev single UDP 7882 (mapped LIVEKIT_TURN_UDP_START); stage/prod use explicit --rtc-port-range-start/end=7882-7892 with direct UDP port mapping (Traefik can't proxy UDP). Signal WS at 7880 goes through Traefik for WSS termination.
+  - check-env DEV_ONLY_KEYS allowlist distinguishes intentionally-absent keys from real failures; placeholder values are always errors regardless of env.
+  - check-product-sync normalize() strips connector chars `[_\-&/,()[].:]` on both sides for snake_case ↔ Title-Case substring matching.
+  - hydration-lint SERVER_ONLY_PATH_SEGMENTS skips paths that never render HTML.
+- Verification: pnpm -w typecheck PASS (8/8), pnpm -w lint PASS (8/8). docker compose config --services combined per env: dev=11 services, stage=10, prod=10. pnpm tools:validate-inputs PASS; pnpm tools:check-product-sync PASS; pnpm tools:hydration-lint PASS (66 files, 0 findings); pnpm tools:check-env FAILS by design (8 empty CREDENTIALS.md placeholders — matches Phase 5 pre-flight gate intent; same BLOCKERS state STATE.md tracked since Bootstrap Step 18).
+- Dispatch retrospective: Direct Opus implementation up-front (Step 2.5b escalation) — no Sonnet dispatch. Same approach as Part 5e. Driven by Part 7's cross-file consistency requirements (17 compose files must share identical COMPOSE_PROJECT_NAME / volume / network / Traefik label patterns; Dockerfile must coordinate with all packages/* + apps/web). Single scaffold/part-7 branch with one atomic squash-merge. Total Opus context ~80K — well under 200K budget and lower than 5e's 95K despite delivering more files (32 vs 24) because Part 7 work is infrastructure-mechanical (no runtime-logic reasoning load).
+- Models used:
+  - planning: claude-code (Opus 4.7 — Architect role)
+  - execution: claude-opus-4-7 direct (Step 2.5b escalation)
+  - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)

@@ -1,0 +1,24 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "yelli dev",
+      "Group": "Spec-Driven",
+      "Host": "yelli_dev_postgres",
+      "Port": 5432,
+      "MaintenanceDB": "yelli_dev",
+      "Username": "yelli_dev",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "2": {
+      "Name": "yelli dev (via pgbouncer)",
+      "Group": "Spec-Driven",
+      "Host": "yelli_dev_pgbouncer",
+      "Port": 5432,
+      "MaintenanceDB": "yelli_dev",
+      "Username": "yelli_dev",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    }
+  }
+}
