@@ -382,7 +382,7 @@ CLAUDE_CODE | 2026-05-14 10:45 GMT+8 | Phase 4 Part 5f — Feature surface compl
     - LiveKit Egress recording state feed (recording:started/stopped events)
     - Kibo UI dropzone swap-in (`npx shadcn add @kibo-ui/dropzone`)
 
-  Squash-merge of scaffold/part-5f → main pending.
+  Squash-merged scaffold/part-5f → main as commit ae2f2bc. Branch deleted post-merge.
 
 CLAUDE_CODE | 2026-05-14 governance | Part 5f governance updates committed
   Updated docs:

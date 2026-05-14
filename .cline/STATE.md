@@ -12,7 +12,7 @@ NEXT: Phase 4 Part 8 — CI workflows (.github/workflows/ci.yml + docker-publish
 
 BLOCKERS: ⏳ Same as Part 7 — CREDENTIALS.md placeholders must be filled before Phase 5 (GitHub PAT, Docker Hub token, SMTP, Komodo URL, Xendit keys, Turnstile prod keys, LiveKit API key/secret, Coturn static-auth-secret). 8 empty placeholders flagged by pnpm tools:check-env across .env.staging and .env.prod. This is the EXPECTED pre-Phase-5 state. Phase 4 Part 8 proceeds without them.
 
-GIT_BRANCH: main (scaffold/part-5f squash-merged and deleted)
+GIT_BRANCH: main (scaffold/part-5f squash-merged as ae2f2bc and deleted)
 PORTS: APP=43512 DB=43502 CACHE=43504 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542 (dev — base 43502)
 TOKEN_ESTIMATE: ~60K Opus 4.7 aggregate across 3 bundles — well within 200K budget. Lower than 5e (95K) and 7 (80K) because the 3 bundles share less context than infrastructure work; each bundle reads only its own scope.
 CHECKPOINT_TYPE: full
