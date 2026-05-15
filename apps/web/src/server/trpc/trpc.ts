@@ -28,7 +28,7 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
-export const { router, middleware, procedure } = t;
+export const { router, middleware, procedure, createCallerFactory } = t;
 
 // ---------------------------------------------------------------------------
 // Procedures

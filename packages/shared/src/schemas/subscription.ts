@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { PlanTierSchema, SubscriptionStatusSchema } from './organization.js';
+import { PlanTierSchema, SubscriptionStatusSchema } from './organization';
 
 export const SubscriptionSchema = z.object({
   id: z.string().cuid(),

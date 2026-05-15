@@ -1,4 +1,5 @@
 import { adminRouter } from "@/server/trpc/routers/admin";
+import { authRouter } from "@/server/trpc/routers/auth";
 import { billingRouter } from "@/server/trpc/routers/billing";
 import { callsRouter } from "@/server/trpc/routers/calls";
 import { chatRouter } from "@/server/trpc/routers/chat";
@@ -9,6 +10,7 @@ import { superadminRouter } from "@/server/trpc/routers/superadmin";
 import { router } from "@/server/trpc/trpc";
 
 export const appRouter = router({
+  auth: authRouter,
   calls: callsRouter,
   chat: chatRouter,
   departments: departmentsRouter,

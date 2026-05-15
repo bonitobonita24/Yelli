@@ -1,50 +1,56 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { registerInputSchema, type RegisterInput } from "@yelli/shared/schemas";
 import { Button } from "@yelli/ui/button";
 import { Input } from "@yelli/ui/input";
 import { Label } from "@yelli/ui/label";
 import { useToast } from "@yelli/ui/use-toast";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
-
 
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { trpc } from "@/lib/trpc/react";
 
 import { FormCard } from "../_components/form-card";
 
-const registerSchema = z.object({
-  displayName: z.string().trim().min(2, "Display name must be at least 2 characters."),
-  email: z.string().email("Enter a valid email."),
-  password: z
-    .string()
-    .min(12, "Password must be at least 12 characters.")
-    .refine((v) => /[A-Z]/.test(v), "Must include at least one uppercase letter.")
-    .refine((v) => /[0-9]/.test(v), "Must include at least one number."),
-  organizationName: z.string().trim().min(2, "Organization name must be at least 2 characters."),
-  organizationSlug: z
-    .string()
-    .trim()
-    .min(2, "Workspace slug must be at least 2 characters.")
-    .regex(/^[a-z0-9-]+$/, "Only lowercase letters, numbers, and hyphens allowed."),
-});
-
-type RegisterInput = z.infer<typeof registerSchema>;
+// Client-side form schema = server schema minus turnstileToken (form handles that
+// separately via the widget callback).
+const registerSchema = registerInputSchema.omit({ turnstileToken: true });
+type RegisterFormInput = Omit<RegisterInput, "turnstileToken">;
 
 export default function RegisterPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<RegisterInput>({ resolver: zodResolver(registerSchema) });
+  } = useForm<RegisterFormInput>({ resolver: zodResolver(registerSchema) });
 
-  async function onSubmit(_values: RegisterInput) {
+  const registerMutation = trpc.auth.register.useMutation({
+    onSuccess: ({ slug }) => {
+      toast({
+        title: "Workspace created",
+        description: "Sign in to continue.",
+      });
+      router.push(`/login?org=${encodeURIComponent(slug)}`);
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not create workspace",
+        description: error.message,
+        variant: "destructive",
+      });
+      setCaptchaToken(null);
+    },
+  });
+
+  async function onSubmit(values: RegisterFormInput) {
     if (!captchaToken) {
       toast({
         title: "Verification required",
@@ -53,15 +59,10 @@ export default function RegisterPage() {
       });
       return;
     }
-    setSubmitting(true);
-    // TODO Part 5e: wire to trpc.auth.register.mutate({ ...values, turnstileToken: captchaToken })
-    await new Promise((r) => setTimeout(r, 400));
-    setSubmitting(false);
-    toast({
-      title: "Registration coming soon",
-      description: "Part 5e wires this to tRPC.",
-    });
+    registerMutation.mutate({ ...values, turnstileToken: captchaToken });
   }
+
+  const submitting = registerMutation.isPending;
 
   return (
     <FormCard
