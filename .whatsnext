@@ -1,6 +1,6 @@
 Phase 7 #6 — user picks from queued candidates (coverage threshold gate live since Phase 7 #5; TDD mandatory per Rule 25)
 
-Phase 7 #5 shipped on 2026-05-16 as `<SHA>`:
+Phase 7 #5 shipped on 2026-05-16 as `78fc022`:
 - apps/web/vitest.config.ts — added `coverage.thresholds` block: global floor (statements ≥ 12, branches ≥ 6, functions ≥ 12, lines ≥ 12 — matches measured baseline) + per-file gate src/server/trpc/routers/auth.ts (statements 100, branches 75, functions 100, lines 100). Added lcov reporter alongside text + html.
 - turbo.json — new `test:coverage` task (dependsOn ^build, outputs coverage/**).
 - package.json (root) — new `test:coverage` script delegating to turbo.

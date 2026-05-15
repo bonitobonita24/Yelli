@@ -47,7 +47,7 @@
   - `pnpm tools:check-product-sync` PASS (no leaks, no drift)
   - `pnpm audit --audit-level=high` FAIL — pre-existing on main (not regression)
 - Outstanding: nodemailer CVE follow-up (separate ticket; pin/upgrade path constrained by Auth.js v5 peer). Visual QA Rule 16 carryover from Phase 7 #3 + #4 still pending dev-up smoke.
-- Commit SHA: <SHA> (squash-merged from feat/coverage-threshold-gate)
+- Commit SHA: 78fc022 (squash-merged from feat/coverage-threshold-gate)
 
 ## 2026-05-16 — Phase 7 #4: forgot-password + reset-password tRPC + UI
 

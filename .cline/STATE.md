@@ -12,7 +12,7 @@ LAST_DONE: 2026-05-16 Phase 7 #5 (Opus 4.7 direct, single-session, ~25K context 
   (3) package.json (root) — new `test:coverage` script delegating to `turbo run test:coverage`.
   (4) .github/workflows/ci.yml — new `coverage` job under needs: governance; runs `pnpm test:coverage` and uploads apps/web/coverage/ as 14-day artifact via actions/upload-artifact@v4 (HTML + lcov).
 Gate-engagement verified inline: temporarily set auth.ts branches threshold to 99 (above measured 78.94) → confirmed exit 1 with explicit failure message → restored to 75. No test files modified — this is a config-only safety net.
-Squash-merged to main as SHA `<SHA>`. 4 files modified, 0 created. Visual QA (Rule 16) not applicable (no UI changes).
+Squash-merged to main as SHA `78fc022`. 4 files modified, 0 created. Visual QA (Rule 16) not applicable (no UI changes).
 
 NEXT: Phase 7 #6 candidates (any order, user picks):
   (c) JWT org-slug encoding — middleware foundation, high-risk; reserve for fresh-context careful session (Tier 3 split likely needed)
@@ -32,7 +32,7 @@ BLOCKERS:
 - nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v, addressparser DoS, affects <=7.0.10) — pre-existing on main; we run pinned 6.9.16 for Auth.js v5 peer compat. Three resolution paths documented in lessons.md. Flagged as Phase 7 #6 candidate (j). Does NOT block Phase 7 work — `pnpm audit` already failed on main before this branch.
 - Rule 16 Visual QA deferred for /forgot-password + /reset-password — manual smoke pending next dev-up session. /forgot-password is public so this CAN be smoked without credentials.
 
-GIT_BRANCH: main (2cdc3c3..<SHA>)
+GIT_BRANCH: main (2cdc3c3..78fc022)
 
 PORTS: APP=43512 DB=43502 PGBOUNCER=43503 CACHE=43504 MINIO=43505 MINIO_CONSOLE=43506 MAILHOG_SMTP=43507 MAILHOG_UI=43508 PGADMIN=43509 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542
 
