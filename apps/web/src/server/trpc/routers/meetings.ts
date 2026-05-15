@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { prisma } from "@yelli/db";
+import { MeetingCreateClientInputSchema } from "@yelli/shared";
 import { z } from "zod";
 
 import { mintLiveKitToken } from "@/lib/livekit/client";
@@ -112,17 +113,7 @@ export const meetingsRouter = router({
    * Generates meeting_link_token and livekit_room_name server-side.
    */
   create: protectedProcedure
-    .input(
-      z
-        .object({
-          title: z.string().min(1).max(300),
-          description: z.string().max(2000).optional(),
-          scheduled_at: z.coerce.date().nullable().optional(),
-          recording_enabled: z.boolean().default(false),
-          lobby_enabled: z.boolean().default(false),
-        })
-        .strict(),
-    )
+    .input(MeetingCreateClientInputSchema)
     .mutation(async ({ ctx, input }) => {
       // L6 tenant-guard injects organization_id at runtime — cast satisfies
       // Prisma's strict create input type that demands organization_id at compile time.

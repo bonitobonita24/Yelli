@@ -39,3 +39,17 @@ export type MeetingCreateInput = z.infer<typeof MeetingCreateInputSchema>;
 
 export const MeetingUpdateInputSchema = MeetingCreateInputSchema.partial();
 export type MeetingUpdateInput = z.infer<typeof MeetingUpdateInputSchema>;
+
+// Client-facing input for the /app/meetings/new form and meetings.create tRPC procedure.
+// Server-only fields (organization_id, host_user_id, meeting_link_token, livekit_room_name,
+// status) are NEVER provided by the client — the router derives them from ctx + crypto.
+export const MeetingCreateClientInputSchema = z
+  .object({
+    title: z.string().min(1, 'Title is required').max(300),
+    description: z.string().max(2000).optional(),
+    scheduled_at: z.coerce.date().nullable().optional(),
+    recording_enabled: z.boolean().default(false),
+    lobby_enabled: z.boolean().default(false),
+  })
+  .strict();
+export type MeetingCreateClientInput = z.infer<typeof MeetingCreateClientInputSchema>;

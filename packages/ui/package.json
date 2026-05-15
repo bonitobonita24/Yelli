@@ -20,6 +20,7 @@
     "./sonner": "./src/components/sonner.tsx",
     "./badge": "./src/components/badge.tsx",
     "./alert": "./src/components/alert.tsx",
+    "./form": "./src/components/form.tsx",
     "./table": "./src/components/table.tsx",
     "./use-toast": "./src/components/use-toast.ts",
     "./utils": "./src/lib/utils.ts"
@@ -54,6 +55,7 @@
   },
   "peerDependencies": {
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "react-hook-form": "^7.53.0"
   }
 }

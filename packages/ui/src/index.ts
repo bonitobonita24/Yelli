@@ -74,6 +74,17 @@ export type { BadgeProps } from './components/badge';
 export { Alert, AlertTitle, AlertDescription } from './components/alert';
 
 export {
+  Form,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormDescription,
+  FormMessage,
+  FormField,
+  useFormField,
+} from './components/form';
+
+export {
   Table,
   TableHeader,
   TableBody,

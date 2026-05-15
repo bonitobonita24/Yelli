@@ -1,25 +1,54 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
   Input,
   Label,
   Textarea,
   toast,
 } from "@yelli/ui";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import { trpc } from "@/lib/trpc/react";
 
+// Local form shape: scheduled_at is the datetime-local string (or "") emitted
+// by <input type="datetime-local">. We translate to Date | null at submit time
+// before invoking the tRPC mutation, which validates against
+// MeetingCreateClientInputSchema (the wire-level source of truth).
+const formSchema = z
+  .object({
+    title: z.string().trim().min(1, "Title is required").max(300),
+    description: z.string().max(2000).default(""),
+    scheduled_at: z.string().default(""),
+    recording_enabled: z.boolean().default(false),
+    lobby_enabled: z.boolean().default(false),
+  })
+  .strict();
+
+type FormValues = z.input<typeof formSchema>;
+
 export function MeetingForm() {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [recordingEnabled, setRecordingEnabled] = useState(false);
-  const [lobbyEnabled, setLobbyEnabled] = useState(false);
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      scheduled_at: "",
+      recording_enabled: false,
+      lobby_enabled: false,
+    },
+  });
 
   const create = trpc.meetings.create.useMutation({
     onSuccess: (meeting) => {
@@ -35,120 +64,137 @@ export function MeetingForm() {
     },
   });
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedTitle = title.trim();
-    if (trimmedTitle.length === 0) {
-      toast({
-        title: "Title required",
-        description: "Please enter a meeting title.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  function onSubmit(values: FormValues) {
+    const descriptionTrimmed = (values.description ?? "").trim();
+    const scheduledAtRaw = values.scheduled_at ?? "";
     create.mutate({
-      title: trimmedTitle,
-      description: description.trim() === "" ? undefined : description.trim(),
-      scheduled_at: scheduledAt === "" ? undefined : new Date(scheduledAt),
-      recording_enabled: recordingEnabled,
-      lobby_enabled: lobbyEnabled,
+      title: values.title.trim(),
+      description: descriptionTrimmed === "" ? undefined : descriptionTrimmed,
+      scheduled_at: scheduledAtRaw === "" ? null : new Date(scheduledAtRaw),
+      recording_enabled: values.recording_enabled ?? false,
+      lobby_enabled: values.lobby_enabled ?? false,
     });
   }
 
+  const isPending = create.isPending;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-2">
-        <Label htmlFor="title">
-          Title <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="title"
-          type="text"
-          required
-          maxLength={300}
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-          }}
-          disabled={create.isPending}
-          placeholder="Weekly standup"
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="title"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Title <span className="text-destructive">*</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="text"
+                  maxLength={300}
+                  placeholder="Weekly standup"
+                  disabled={isPending}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          maxLength={2000}
-          value={description}
-          onChange={(e) => {
-            setDescription(e.target.value);
-          }}
-          disabled={create.isPending}
-          placeholder="Optional details for participants"
-          rows={4}
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Description</FormLabel>
+              <FormControl>
+                <Textarea
+                  maxLength={2000}
+                  rows={4}
+                  placeholder="Optional details for participants"
+                  disabled={isPending}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="scheduled_at">Scheduled at</Label>
-        <Input
-          id="scheduled_at"
-          type="datetime-local"
-          value={scheduledAt}
-          onChange={(e) => {
-            setScheduledAt(e.target.value);
-          }}
-          disabled={create.isPending}
+        <FormField
+          control={form.control}
+          name="scheduled_at"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Scheduled at</FormLabel>
+              <FormControl>
+                <Input type="datetime-local" disabled={isPending} {...field} />
+              </FormControl>
+              <FormDescription>
+                Leave blank to start an ad-hoc meeting immediately.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-        <p className="text-xs text-muted-foreground">
-          Leave blank to start an ad-hoc meeting immediately.
-        </p>
-      </div>
 
-      <div className="space-y-3">
-        <Label className="flex items-center gap-2 font-normal">
-          <input
-            type="checkbox"
-            checked={recordingEnabled}
-            onChange={(e) => {
-              setRecordingEnabled(e.target.checked);
-            }}
-            disabled={create.isPending}
-            className="size-4 rounded border-input"
+        <div className="space-y-3">
+          <FormField
+            control={form.control}
+            name="recording_enabled"
+            render={({ field }) => (
+              <Label className="flex items-center gap-2 font-normal">
+                <input
+                  type="checkbox"
+                  checked={field.value}
+                  onChange={(e) => {
+                    field.onChange(e.target.checked);
+                  }}
+                  disabled={isPending}
+                  className="size-4 rounded border-input"
+                />
+                <span>Enable recording</span>
+              </Label>
+            )}
           />
-          <span>Enable recording</span>
-        </Label>
-        <Label className="flex items-center gap-2 font-normal">
-          <input
-            type="checkbox"
-            checked={lobbyEnabled}
-            onChange={(e) => {
-              setLobbyEnabled(e.target.checked);
-            }}
-            disabled={create.isPending}
-            className="size-4 rounded border-input"
+          <FormField
+            control={form.control}
+            name="lobby_enabled"
+            render={({ field }) => (
+              <Label className="flex items-center gap-2 font-normal">
+                <input
+                  type="checkbox"
+                  checked={field.value}
+                  onChange={(e) => {
+                    field.onChange(e.target.checked);
+                  }}
+                  disabled={isPending}
+                  className="size-4 rounded border-input"
+                />
+                <span>Enable lobby (host must admit guests)</span>
+              </Label>
+            )}
           />
-          <span>Enable lobby (host must admit guests)</span>
-        </Label>
-      </div>
+        </div>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={create.isPending}>
-          {create.isPending ? "Creating..." : "Create meeting"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            router.push("/app/meetings");
-          }}
-          disabled={create.isPending}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Creating..." : "Create meeting"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              router.push("/app/meetings");
+            }}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Form>
   );
 }
