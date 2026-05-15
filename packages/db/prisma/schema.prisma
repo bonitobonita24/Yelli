@@ -135,11 +135,34 @@ model User {
   sent_chat_messages  ChatMessage[]
   recorded_recordings Recording[]
   uploaded_files      SharedFile[]
+  password_reset_tokens PasswordResetToken[]
 
   @@unique([organization_id, email])
   @@index([organization_id])
   @@index([email])
   @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────
+// PasswordResetToken
+// Single-use, time-limited tokens for password reset flow.
+// Plaintext token is emailed once; only sha256(token) stored.
+// Phase 7 #4.
+// ─────────────────────────────────────────────────────────────
+
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  user_id     String
+  token_hash  String    @unique
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("password_reset_tokens")
 }
 
 // -- RLS (DORMANT):

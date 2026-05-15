@@ -10,8 +10,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { trpc } from "@/lib/trpc/react";
 
 import { FormCard } from "../_components/form-card";
 
@@ -24,7 +24,6 @@ type ForgotInput = z.infer<typeof forgotSchema>;
 export default function ForgotPasswordPage() {
   const { toast } = useToast();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
 
   const {
@@ -33,7 +32,23 @@ export default function ForgotPasswordPage() {
     formState: { errors },
   } = useForm<ForgotInput>({ resolver: zodResolver(forgotSchema) });
 
-  async function onSubmit(_values: ForgotInput) {
+  // Always-ok response from the server (no enumeration). The same generic
+  // confirmation copy renders whether the email matched or not.
+  const requestReset = trpc.auth.requestPasswordReset.useMutation({
+    onSuccess: () => {
+      setSent(true);
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not send reset link",
+        description: error.message,
+        variant: "destructive",
+      });
+      setCaptchaToken(null);
+    },
+  });
+
+  function onSubmit(values: ForgotInput) {
     if (!captchaToken) {
       toast({
         title: "Verification required",
@@ -42,13 +57,10 @@ export default function ForgotPasswordPage() {
       });
       return;
     }
-    setSubmitting(true);
-    // TODO Part 5e: wire to trpc.auth.requestPasswordReset.mutate({ email: values.email, turnstileToken: captchaToken })
-    await new Promise((r) => setTimeout(r, 400));
-    setSubmitting(false);
-    // Generic response regardless of whether email exists — security.md §PRODUCTION ERROR HANDLING
-    setSent(true);
+    requestReset.mutate({ email: values.email, turnstileToken: captchaToken });
   }
+
+  const submitting = requestReset.isPending;
 
   return (
     <FormCard

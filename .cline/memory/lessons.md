@@ -8,6 +8,46 @@
 
 # ---
 
+## 2026-05-16 — 🔴 `prisma migrate dev` needs DATABASE_URL exported
+
+- Type: 🔴 gotcha
+- Phase: Phase 7 #4 forgot-password
+- Files: packages/db/package.json, .env.dev
+- Concepts: prisma, migrate, env, dotenv
+- Narrative: Prisma CLI 5.22.0 reads only `process.env.DATABASE_URL` and does not auto-load `.env.dev` at the project root. Running `pnpm prisma migrate dev` from `packages/db/` errors with `P1012: Environment variable not found: DATABASE_URL`. Workaround used in Phase 7 #4: `env $(grep -v '^#' /abs/path/.env.dev | grep -E '^(DATABASE_URL|DB_)' | xargs) pnpm prisma migrate dev --name <slug>`. The `db:seed` script uses `tsx --env-file-if-exists=../../.env.dev` for the same reason but Prisma CLI itself doesn't accept that flag. If a long-term fix is wanted, wrap `db:migrate` in a script that runs `dotenv -e ../../.env.dev --` before `prisma migrate dev`. Don't try to set `DATABASE_URL` permanently in shell rc — defeats per-env isolation.
+
+# ---
+
+## 2026-05-16 — 🔴 nodemailer 8.x breaks Auth.js v5 peer deps — pin to 6.9.x
+
+- Type: 🔴 gotcha
+- Phase: Phase 7 #4 forgot-password
+- Files: apps/web/package.json
+- Concepts: nodemailer, auth.js, peer-deps, pnpm
+- Narrative: `pnpm add nodemailer` pulled 8.0.7. next-auth 5.0.0-beta.25 wants `nodemailer ^6.6.5` and @auth/core 0.37.2 wants `^6.8.0` — two peer conflicts immediately. We don't use Auth.js's email provider (Credentials provider only) so runtime is fine, but the warnings are noisy and a future Auth.js upgrade could break. Pin to `nodemailer@^6.9.16` + `@types/nodemailer@^6`. One residual warning remains from @auth/prisma-adapter 2.11.2 wanting ^7.0.7 — harmless because email provider isn't used. If we ever wire the email provider, revisit and pick a single major aligned to whichever Auth.js version is current.
+
+# ---
+
+## 2026-05-16 — 🟤 vi.mock("@/env") for routers reading NEXT_PUBLIC_\*
+
+- Type: 🟤 decision
+- Phase: Phase 7 #4 forgot-password
+- Files: apps/web/src/server/trpc/routers/auth.test.ts
+- Concepts: vitest, env, trpc, testing
+- Narrative: The `requestPasswordReset` procedure builds a reset URL from `env.NEXT_PUBLIC_APP_URL`. In vitest, `env.ts` validates server schema at import time but `NEXT_PUBLIC_APP_URL` is `undefined` — `.replace()` then throws `Cannot read properties of undefined`. Fix: `vi.mock("@/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://yelli.test" } }))`. This extends the [[trpc-test-pattern]] established in Phase 7 #2: anytime a router reads `env.*`, mock `@/env` in addition to the data dependencies. Don't try to set `process.env.NEXT_PUBLIC_APP_URL` before import — Vitest hoists `vi.mock` above imports, but plain assignments don't help because env.ts runs zod validation at module-load time.
+
+# ---
+
+## 2026-05-16 — 🟤 Reset token storage: separate `password_reset_tokens` table
+
+- Type: 🟤 decision
+- Phase: Phase 7 #4 forgot-password
+- Files: packages/db/prisma/schema.prisma, packages/db/prisma/migrations/20260515162430_add_password_reset_tokens/
+- Concepts: prisma, password-reset, security, schema
+- Narrative: Chose a separate `PasswordResetToken` model over ephemeral fields on `User` (reset_token_hash + reset_expires_at). Reasons: (1) auditable — can keep consumed tokens for forensics by leaving `consumed_at` set instead of deleting; (2) supports multiple outstanding tokens if a user requests resets repeatedly; (3) Cascade-on-delete from User keeps cleanup automatic; (4) makes the "single-use" invariant explicit via `consumed_at` rather than implicit by deleting the row. Plaintext token (32 bytes → 43-char base64url) never touches the DB — only `sha256(token)` is stored. `token_hash` is `@unique` so `findUnique` works; `expires_at` is indexed for periodic cleanup queries. TTL = 1 hour (security.md AUTH DEFAULTS max). Reset operation runs in a transaction that updates `password_hash` + bumps `security_version` (invalidates all Auth.js sessions per security.md AUTH DEFAULTS #6) + marks token consumed.
+
+# ---
+
 ## BOOTSTRAP — 🔴 WSL2 + Docker Desktop known pitfalls
 
 - Type: 🔴 gotcha

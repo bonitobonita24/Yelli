@@ -22,6 +22,41 @@
 
 # ---
 
+## 2026-05-16 — Phase 7 #4: forgot-password + reset-password tRPC + UI
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 2 — well-scoped, deterministic)
+- Why: Close the auth quartet (register ✓, password reset ←, login ✓, logout ✓). Wire the unstubbed forgot-password page (TODO line 46) to a real tRPC mutation, add the missing /reset-password/[token] consumer page, and lock the security defaults from security.md AUTH DEFAULTS (1h TTL, single-use, sha256-only storage, no enumeration, security_version bump on reset).
+- Files added:
+  - packages/db/prisma/migrations/20260515162430_add_password_reset_tokens/migration.sql
+  - apps/web/src/server/lib/email.ts (lazy nodemailer transport + sendPasswordResetEmail; MailHog fallback in dev)
+  - apps/web/src/app/(auth)/reset-password/[token]/page.tsx (server page, awaits params, renders client form)
+  - apps/web/src/app/(auth)/reset-password/[token]/\_reset-form.tsx (client form — shadcn Form + RHF + Zod per UI Rule #4)
+- Files modified:
+  - packages/db/prisma/schema.prisma (new PasswordResetToken model + User back-relation)
+  - packages/shared/src/schemas/auth.ts (extract passwordSchema for reuse; add requestPasswordResetInputSchema + resetPasswordInputSchema, both .strict())
+  - apps/web/src/server/trpc/routers/auth.ts (add requestPasswordReset + resetPassword procedures)
+  - apps/web/src/server/trpc/routers/auth.test.ts (+8 tests: 3 request, 5 reset; vi.mock @/env added)
+  - apps/web/src/app/(auth)/forgot-password/page.tsx (replace TODO with trpc.auth.requestPasswordReset.useMutation)
+  - apps/web/package.json (nodemailer ^6.9.16 + @types/nodemailer ^6 — pinned to satisfy Auth.js v5 peer constraint)
+  - pnpm-lock.yaml
+- Files deleted: none
+- Schema/migrations: 1 new migration `20260515162430_add_password_reset_tokens` — creates `password_reset_tokens` (id, user_id FK Cascade, token_hash @unique, expires_at, consumed_at?, created_at) with indexes on user_id and expires_at. Applied to yelli_dev via `pnpm prisma migrate dev`.
+- Errors encountered:
+  1. `prisma migrate dev` failed with `P1012: Environment variable not found: DATABASE_URL` — Prisma CLI 5.22.0 doesn't auto-load .env.dev.
+  2. `pnpm add nodemailer` pulled 8.0.7 — peer-dep conflict with `next-auth ^6.6.5` and `@auth/core ^7.0.7`.
+  3. RED test for `resetPassword` Zod-weak-password case returned `NOT_FOUND` instead of `BAD_REQUEST` — procedures didn't exist yet (expected RED behaviour).
+  4. After GREEN, one test failed with `Cannot read properties of undefined (reading 'replace')` — router reads `env.NEXT_PUBLIC_APP_URL` and the test env didn't have it.
+  5. Lint: `_reset-form.tsx` imported `z` as value but only used `z.infer` (type-only); `auth.test.ts` had a leftover unused `TOKEN_HASH_OF_A43` constant; email.ts had two non-null-assertion warnings.
+- Errors resolved:
+  1. Ran `env $(grep -v '^#' .env.dev | grep -E '^(DATABASE_URL|DB_)' | xargs) pnpm prisma migrate dev --name add_password_reset_tokens`. Logged as 🔴 gotcha to lessons.md.
+  2. Pinned to `nodemailer@^6.9.16` + `@types/nodemailer@^6`. One residual @auth/prisma-adapter warning accepted (email provider unused). Logged as 🔴 gotcha to lessons.md.
+  3. Expected RED — implemented procedures and re-ran.
+  4. Added `vi.mock("@/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://yelli.test" } }))`. Logged as 🟤 decision (test pattern extension) to lessons.md.
+  5. Converted `import { z }` → `import type { z }`; removed unused constant; replaced `env.SMTP_USER!` non-null bangs with const locals after a truthy check.
+- Tier classification: 2 — moderate (10 files modified/created, 3 modules: @yelli/db, @yelli/shared, apps/web). Single Opus 4.7 session, est. ~45K context, well under 80K SAFE zone. No Sonnet dispatch (same reasoning as #2 and #3 — deterministic, well-scoped infra work).
+- Quality gates: 20/20 tests pass in 313ms (was 12 before, +8 new); typecheck 0 errors across 8 packages; lint 0 errors (1 pre-existing warning in layout.tsx); build 27 routes (added /reset-password/[token] at 2.41 kB / 223 kB first-load; /forgot-password grew from 0 kB stub to 7.01 kB / 175 kB now that it has a real mutation client) in ~45s.
+- Squash-merge: feat/forgot-password → main as <SHA> (set at merge time).
+
 ## 2026-05-15 — Phase 7 #2: vitest infrastructure + auth.register smoke coverage
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 2 — well-scoped, deterministic)

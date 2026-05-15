@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: **Phase 7 active — three Feature Updates merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. Phase 7 #1 (auth.register tRPC wire-up + register page submit) squash-merged as `ce709ff`. Phase 7 #2 (vitest@4 infrastructure + 5-case auth.register smoke coverage) squash-merged as `81c0279` — closes Rule 25 TDD deferral. Phase 7 #3 (/app/meetings/new — 7-case meetings.test.ts + react-hook-form + zodResolver port + shadcn Form primitive in @yelli/ui + shared MeetingCreateClientInputSchema) squash-merged as `8709595` — closes UI Rule #4 gap for the meetings creation flow. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
+Phase: **Phase 7 active — four Feature Updates merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. Phase 7 #1 (auth.register tRPC wire-up + register page submit) squash-merged as `ce709ff`. Phase 7 #2 (vitest@4 infrastructure + 5-case auth.register smoke coverage) squash-merged as `81c0279` — closes Rule 25 TDD deferral. Phase 7 #3 (/app/meetings/new — 7-case meetings.test.ts + react-hook-form + zodResolver port + shadcn Form primitive in @yelli/ui + shared MeetingCreateClientInputSchema) squash-merged as `8709595` — closes UI Rule #4 gap for the meetings creation flow. Phase 7 #4 (forgot-password + reset-password tRPC + UI — new PasswordResetToken Prisma model + migration, 8 new test cases bringing the suite to 20/20, /forgot-password page wired to mutation, new /reset-password/[token] server + client form using shadcn Form + RHF + Zod, lazy nodemailer transport wrapper, security_version invalidation on successful reset) squash-merged as `<SHA>` — closes the auth quartet (register/login/forgot/reset). Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
 
 Prior status: **4 Part 8 complete — Phase 4 fully done.** CI/CD workflows + MANIFEST.txt + README.md
 + final IMPLEMENTATION_MAP rewrite all generated. Repository is now structurally complete and
@@ -274,7 +274,7 @@ Governance + spec + meta (tracked):
 - .github/: 4 files (ci.yml + docker-publish.yml + skills/SKILL.md + agents/n8n-architect.agent.md)
 - **Governance subtotal: ~62 files**
 
-**Tracked total: ~257 files** (Phase 7 #3 added `apps/web/src/server/trpc/routers/meetings.test.ts` + `packages/ui/src/components/form.tsx`)
+**Tracked total: ~261 files** (Phase 7 #4 added `apps/web/src/server/lib/email.ts`, `apps/web/src/app/(auth)/reset-password/[token]/page.tsx`, `apps/web/src/app/(auth)/reset-password/[token]/_reset-form.tsx`, and the `password_reset_tokens` Prisma migration directory)
 
 Local-only (gitignored — never committed): CREDENTIALS.md, .env.dev, .env.staging, .env.prod, .socraticodecontextartifacts.json, .specstory/history/*, .code-review-graph/*
 

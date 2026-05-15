@@ -1,28 +1,19 @@
-Phase 7 #4 — user picks from queued candidates (vitest infrastructure live; TDD mandatory per Rule 25)
+Phase 7 #5 — user picks from queued candidates (vitest infrastructure live; TDD mandatory per Rule 25)
 
-Phase 7 #3 shipped on 2026-05-15 as `8709595`:
-- 7-case meetings.test.ts (happy path + minimal-input defaults + Zod rejections + UNAUTHORIZED)
-- meetingsRouter.create refactored to import MeetingCreateClientInputSchema from @yelli/shared
-- _meeting-form.tsx ported to react-hook-form + zodResolver + shadcn Form primitive
-- shadcn Form primitive installed in @yelli/ui (closes UI Rule #4 gap — all future forms use this path)
-- 4 new lessons documented: shared schema split, namespace-import lint gotcha, vi.mocked Prisma `as never` cast extension, shadcn Form scoping
-- Visual QA Rule 16 deferred — auth-gated route, manual smoke pending next dev-up session
+Phase 7 #4 shipped on 2026-05-16 as `<SHA>`:
+- New PasswordResetToken Prisma model + migration `20260515162430_add_password_reset_tokens` applied to yelli_dev
+- passwordSchema extracted in @yelli/shared (reused by register + reset)
+- requestPasswordReset + resetPassword tRPC procedures with security defaults locked: 1h TTL, single-use, sha256-only storage, no enumeration, security_version++ on reset, rate-limited both endpoints
+- email.ts lazy nodemailer wrapper (MailHog fallback in dev); pinned nodemailer to ^6.9.16 for Auth.js v5 peer compat
+- forgot-password page wired to mutation (TODO replaced)
+- New /reset-password/[token] server + client form using shadcn Form + RHF + Zod (UI Rule #4)
+- 8 new test cases bringing the suite to 20/20 in 313ms
+- 4 new lessons documented: prisma migrate dev DATABASE_URL gap, nodemailer/Auth.js peer pin, vi.mock @/env extension, separate password_reset_tokens table rationale
+- Visual QA Rule 16 deferred — public auth pages (/forgot-password + /reset-password) pending manual smoke on next dev-up
 
 ----------------------------------------------------------------------
 Candidates (any order, user picks):
 ----------------------------------------------------------------------
-
-(a) forgot-password tRPC procedure         [pairs with auth.register]
-    Scope: Tier 2 (~6 files)
-    - apps/web/src/server/trpc/routers/auth.ts — add `requestPasswordReset` + `resetPassword`
-    - packages/shared/src/schemas/auth.ts — add request/reset input schemas
-    - apps/web/src/server/lib/email.ts — new SMTP wrapper (deferred actual delivery test)
-    - apps/web/src/app/(auth)/forgot-password/page.tsx — wire form to mutation (RHF + shadcn Form per UI Rule #4)
-    - apps/web/src/app/(auth)/reset-password/[token]/page.tsx — token consumer
-    - auth.test.ts: 3+ test cases (request issues token, invalid token rejected, valid token resets + invalidates session)
-    Blocker: SMTP credentials ⏳ — email delivery itself untestable until filled
-    Tests: mock @yelli/db + mocked SMTP transport (nodemailer) for unit coverage
-    Bonus: now that shadcn Form is wired (Phase 7 #3), forgot-password forms can reuse the same pattern as meetings/new
 
 (c) JWT org-slug encoding                   [middleware foundation — high-risk]
     Scope: Tier 3 (~10 files, middleware + auth.config + session callback + all consumers)
@@ -45,17 +36,31 @@ Candidates (any order, user picks):
     Likely Tier 1
 
 (g) Coverage threshold gate                 [housekeeping — ~1 file]
-    `vitest run --coverage` works (12 tests cover authRouter.register + meetingsRouter.create)
+    `vitest run --coverage` works (20 tests cover authRouter.register + authRouter.requestPasswordReset + authRouter.resetPassword + meetingsRouter.create)
     No minimum % gate yet — add to vitest.config.ts and CI workflow
     Should land before Phase 8 — quick win to lock the safety net
+
+(h) NEW: Tighten request-password-reset rate limiting   [hardening — ~2 files]
+    Currently uses rateLimiters.auth (in-memory LRU, ~5/min per IP+key).
+    Could add a per-user 24h cap (e.g. ≤5 reset emails per user per day) to prevent
+    a targeted user from receiving spam reset emails when an attacker repeatedly
+    fires off the endpoint. Cost: another small Prisma query per request.
+    Tests would assert the cap engages at request #6 (returns ok still — no enumeration — but
+    skips email send + token mint).
+
+(i) NEW: Periodic cleanup of expired/consumed password_reset_tokens
+    A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
+    expired tokens > 7 days. Keeps the table from growing unboundedly.
+    Pairs with the Coverage gate (g) — both are housekeeping.
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
   → Write failing test FIRST (RED), then implementation (GREEN), then refactor.
-  → Test patterns: [[trpc-test-pattern]] (Phase 7 #2) + [[meetings-protected-route-test]] (Phase 7 #3).
-  → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` as reference impl).
+  → Test patterns: [[trpc-test-pattern]] (Phase 7 #2) + [[meetings-protected-route-test]] (Phase 7 #3) + [[trpc-test-with-env-mock]] (Phase 7 #4).
+  → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` and `_reset-form.tsx` as reference impls).
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
+  → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file (extends Phase 7 #4 pattern).
 
-Recommended next: (a) forgot-password — closes the auth quartet (register ✓, password reset, login ✓, logout). Reuses meetings/new RHF pattern. SMTP unit tests via mocked transport unblock the work even while SMTP credentials remain ⏳.
+Recommended next: (g) Coverage threshold gate — quick housekeeping win that locks the test safety net before Phase 8. The 20-test suite is currently lint-and-pray; one accidental skip(skip)(skip) and we'd never notice. Then (h) hardening of request-password-reset before (c) JWT middleware (which is the riskiest open ticket).
 
-Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up. The RHF refactor is unit-test + build covered but the actual page render under SSR + hydration hasn't been verified in a logged-in session.
+Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). NEW: also smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed.
