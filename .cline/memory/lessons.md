@@ -747,3 +747,53 @@
 - Files:     apps/web/vitest.config.ts, apps/web/src/env.ts
 - Concepts:  vitest, env-validation, server-only, zod-parse-on-import, test-config
 - Narrative: apps/web/src/env.ts parses `process.env` against a Zod schema at module-load when `typeof window === "undefined"` AND `process.env.SKIP_ENV_VALIDATION !== "1"`. Any test that transitively imports the auth router (which imports the turnstile module which imports env) would trigger this parse with vitest's empty `process.env`, throwing on the first missing required field. Fix: set `test.env: { SKIP_ENV_VALIDATION: "1" }` in vitest.config.ts. vitest injects this into `process.env` BEFORE the test files are loaded — earlier than any vi.mock factory, earlier than any import. The mocked turnstile module never reads env at all (we mock the whole module), but the safety net is still needed for any future test that doesn't mock the full transitive chain. **Rule**: every vitest.config.ts in this monorepo must set `test.env.SKIP_ENV_VALIDATION=1` unless the test specifically wants to verify env validation behavior.
+
+# ---
+
+## 2026-05-15 — 🟤 Shared schema split — Client input vs entity-projection schemas
+- Type:      🟤 decision
+- Phase:     Phase 7 #3 (/app/meetings/new tests + RHF polish)
+- Files:     packages/shared/src/schemas/meeting.ts
+- Concepts:  zod, shared-schemas, client-server-boundary, prisma-input-types, security
+- Narrative: packages/shared had `MeetingCreateInputSchema` derived from `MeetingSchema.omit(...).extend(...)` — it included server-stamped fields (`organization_id`, `host_user_id`, `meeting_link_token`, `livekit_room_name`, `status`). That shape is wrong for client form input — those fields MUST come from `ctx` or `crypto.randomUUID()` on the server, never the client. Hidden risk: a future developer wiring a form to `MeetingCreateInputSchema` would have given the client power to set `host_user_id` or `organization_id`, bypassing L1 tenant scoping. **Pattern (lock for all future entities)**: name client-facing schemas `<Entity>CreateClientInputSchema` (only fields the client legitimately provides) — distinct from `<Entity>CreateInputSchema` (entity projection for admin/internal contexts where server fields are visible too) and `<Entity>UpdateInputSchema` (partial). The two schemas can coexist in the same `meeting.ts` file — different consumers import the right one. Inline comment documents the boundary. Cross-link: [[trpc-v11-architecture]], [[security-md-route-handlers]].
+
+# ---
+
+## 2026-05-15 — 🔴 @typescript-eslint/consistent-type-imports + namespace imports
+- Type:      🔴 gotcha
+- Phase:     Phase 7 #3 (shadcn Form primitive)
+- Files:     packages/ui/src/components/form.tsx
+- Concepts:  eslint, type-imports, namespace-imports, react, label-primitive, lint-rule
+- Narrative: `import * as React from "react"` is fine when you call React.forwardRef etc as JSX/values (label.tsx works). But in form.tsx I had `import * as LabelPrimitive from "@radix-ui/react-label"` and only used it in `typeof LabelPrimitive.Root` positions (no JSX render). Lint fail: "All imports in the declaration are only used as types. Use `import type`." Namespace imports cannot be `import type * as ...` so the fix is structural, not stylistic. **Two fixes that work together**:
+  (1) Convert React namespace to named imports: `import { createContext, forwardRef, useContext, useId, type ComponentPropsWithoutRef, type ElementRef, type HTMLAttributes } from "react"`. Now value imports (createContext etc.) and type imports are clearly delineated, and the lint rule passes.
+  (2) Drop type-only namespace imports entirely. If `LabelPrimitive` was only used as `typeof LabelPrimitive.Root`, replace with `typeof Label` where `Label` is the local re-export (a forwardRef from `./label.tsx`). Same type information, no namespace import.
+  **Rule for future UI primitives in @yelli/ui**: if you find yourself writing `typeof X.Y` for a Radix primitive that you don't render in JSX, you don't need the import — reference the local @yelli/ui re-export instead.
+
+# ---
+
+## 2026-05-15 — 🟡 vi.mocked Prisma create mock — `as never` on the function, not the return
+- Type:      🟡 fix
+- Phase:     Phase 7 #3 (meetings.test.ts)
+- Files:     apps/web/src/server/trpc/routers/meetings.test.ts
+- Concepts:  vitest, prisma, fluent-api, mock-implementation, type-narrowing, dynamic-extension
+- Narrative: Phase 7 #2 lessons documented `mockResolvedValueOnce(payload as never)` for static returns (the findUnique single-field select case). Phase 7 #3 needed dynamic returns based on input shape, so I used `mockImplementation(async args => {...})`. Typecheck failed with "Argument of type '(args: unknown) => Promise<never>' is not assignable to parameter of type '...DynamicModelExtensionFluentApi & PrismaPromise<...>...'". Prisma's `create` (and similar) does NOT return `Promise<T>` — it returns `DynamicModelExtensionFluentApi<...> & PrismaPromise<...>` so you can chain `.then(...)` AND `.organization.findMany(...)` on it. The fluent thing is a Prisma-specific intersection. **Fix**: cast the WHOLE arrow function `as never`, not just the return value:
+```
+vi.mocked(prisma.meeting.create).mockImplementation((async (args: unknown) => {
+  // ...build dynamic return from args.data
+  return {...};  // plain object — TypeScript infers, no inner `as` needed
+}) as never);
+```
+The outer `as never` satisfies the DynamicModelExtensionFluentApi parameter type. The function still returns a plain Promise — Vitest only ever calls it like a regular async function, so the fluent-api intersection is structurally irrelevant at runtime. **Extends [[trpc-test-pattern]] from Phase 7 #2**: use `mockResolvedValue(x as never)` for static returns, `mockImplementation((async (args) => {...}) as never)` for dynamic returns. Both bypass the Prisma fluent type.
+
+# ---
+
+## 2026-05-15 — 🟤 shadcn Form primitive scoped to @yelli/ui — UI Rule #4 closure
+- Type:      🟤 decision
+- Phase:     Phase 7 #3 (form refactor + UI primitive install)
+- Files:     packages/ui/src/components/form.tsx, packages/ui/package.json, packages/ui/src/index.ts
+- Concepts:  shadcn-ui, react-hook-form, form-primitive, monorepo-ui, peer-deps, ui-rule-4
+- Narrative: UI Rule #4 mandates "use shadcn/ui Form component with React Hook Form + Zod validation" for all forms. Before #3, the only form in apps/web (`/app/meetings/new`) used a useState chain — direct violation. Resolution: install the canonical shadcn Form primitive in `packages/ui/src/components/form.tsx` so every future form can `import { Form, FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from '@yelli/ui'`. Three setup steps for the monorepo:
+  (1) `form.tsx` itself — canonical shadcn code, adapted for the lint rule (named React imports, `typeof Label` instead of `typeof LabelPrimitive.Root` — see the lint gotcha entry above).
+  (2) `packages/ui/package.json`: add `"./form": "./src/components/form.tsx"` to exports + add `"react-hook-form": "^7.53.0"` to peerDependencies (apps must provide it — apps/web already had 7.53.2 as a direct dep).
+  (3) `packages/ui/src/index.ts`: barrel re-export the 7 components + the `useFormField` hook.
+  pnpm install wires the peer dep cleanly (3-line lockfile diff). **Pattern for all future forms in apps/web**: `useForm<FormShape>({ resolver: zodResolver(formSchema) })` + `<Form {...form}><FormField control={form.control} name="..." render={({ field }) => (<FormItem><FormLabel>...</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />`. See `_meeting-form.tsx` for the reference implementation. Forms that need datetime-local inputs: define a local `formSchema` with `scheduled_at: z.string()` (matching the input element's string value), then transform to `Date | null` in `onSubmit` before invoking the tRPC mutation — the wire schema (`MeetingCreateClientInputSchema`) still validates the transformed shape server-side. Cross-link: [[trpc-test-pattern]] for Zod consistency across client + server.

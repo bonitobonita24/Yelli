@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: **Phase 7 active — two Feature Updates merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. Phase 7 #1 (auth.register tRPC wire-up + register page submit) squash-merged as `ce709ff`. Phase 7 #2 (vitest@4 infrastructure + 5-case auth.register smoke coverage) squash-merged as `81c0279` — closes Rule 25 TDD deferral. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
+Phase: **Phase 7 active — three Feature Updates merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. Phase 7 #1 (auth.register tRPC wire-up + register page submit) squash-merged as `ce709ff`. Phase 7 #2 (vitest@4 infrastructure + 5-case auth.register smoke coverage) squash-merged as `81c0279` — closes Rule 25 TDD deferral. Phase 7 #3 (/app/meetings/new — 7-case meetings.test.ts + react-hook-form + zodResolver port + shadcn Form primitive in @yelli/ui + shared MeetingCreateClientInputSchema) squash-merged as `8709595` — closes UI Rule #4 gap for the meetings creation flow. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
 
 Prior status: **4 Part 8 complete — Phase 4 fully done.** CI/CD workflows + MANIFEST.txt + README.md
 + final IMPLEMENTATION_MAP rewrite all generated. Repository is now structurally complete and
@@ -26,6 +26,19 @@ App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
 ## Built So Far
+
+- ✅ Phase 7 Feature Update — /app/meetings/new tests + RHF/Zod form polish (2026-05-15, SHA `8709595`)
+  - `apps/web/src/server/trpc/routers/meetings.test.ts` — 7 cases against `meetingsRouter.create`: happy path verifies server stamps `organization_id` from ctx + `host_user_id` from ctx + `status="scheduled"` + crypto.randomUUID for `meeting_link_token` and `livekit_room_name`; minimal-input defaults (recording=false, lobby=false, description=null, scheduled_at=null); Zod rejects empty title + title >300; Zod rejects description >2000; strict() rejects unknown field (proves client can't override server-stamped `status`); UNAUTHORIZED on null session with no rate-limit fired
+  - `packages/shared/src/schemas/meeting.ts` — new `MeetingCreateClientInputSchema` (5 client-facing fields: title, description, scheduled_at, recording_enabled, lobby_enabled). Distinct from pre-existing `MeetingCreateInputSchema` (entity projection — admin/internal). Pattern locks the boundary: `<Entity>CreateClientInputSchema` for client input, `<Entity>CreateInputSchema` for projections where server-stamped fields are visible.
+  - `apps/web/src/server/trpc/routers/meetings.ts` — refactored `create` to import `MeetingCreateClientInputSchema` from `@yelli/shared` (replaced inline `z.object`). Behavior equivalence proven by the 7 tests added in the same commit.
+  - `apps/web/src/app/app/meetings/new/_meeting-form.tsx` — ported from useState chain to react-hook-form + zodResolver + shadcn Form primitives. Local `formSchema` covers the datetime-local string input; `onSubmit` transforms to wire shape before invoking `trpc.meetings.create.useMutation`. All existing UX preserved: title required + max-300, optional description + max-2000, optional datetime-local scheduled_at, recording/lobby toggles, success→/app/meeting/[id], cancel→/app/meetings, toast feedback, disabled-during-pending.
+  - `packages/ui/src/components/form.tsx` — shadcn/ui Form primitive installed (Form/FormField/FormItem/FormLabel/FormControl/FormDescription/FormMessage + useFormField hook). Closes UI Rule #4 gap. Future forms throughout apps/web `import { Form, FormField, ... } from '@yelli/ui'`.
+  - `packages/ui/{package.json,src/index.ts}` — added `./form` subpath export, `react-hook-form` peerDependency (apps/web already had RHF 7.53.2 as direct dep), and barrel re-exports.
+  - Visual QA (Rule 16) deferred — auth-gated route requires login credentials the agent cannot read; manual smoke pending next dev-up session.
+  - Test suite: 12/12 passing in ~411ms (5 auth + 7 meetings).
+  - Build: 26 routes, `/app/meetings/new` 4.46 kB / 218 kB first-load (RHF + zodResolver bundled into this route now), middleware unchanged at 99.1 kB, 53.4s.
+  - Two-stage review (Rule 25): Stage 1 spec PASS, Stage 2 quality PASS (no `any`, 2 documented `as never` casts per lessons.md, 8 files all in blast radius).
+  - 4 new lessons captured: shared schema split (client-input vs entity-projection); namespace-import + @typescript-eslint/consistent-type-imports gotcha; vi.mocked Prisma mockImplementation `as never` on the function (extends [[trpc-test-pattern]]); shadcn Form primitive scoped to @yelli/ui.
 
 - ✅ Phase 7 Feature Update — vitest infrastructure + auth.register smoke coverage (2026-05-15, SHA `81c0279`)
   - `apps/web/vitest.config.ts` — vitest 4 with native `resolve.tsconfigPaths: true`, `environment: "node"`, `SKIP_ENV_VALIDATION=1` in `test.env`, v8 coverage provider
@@ -261,7 +274,7 @@ Governance + spec + meta (tracked):
 - .github/: 4 files (ci.yml + docker-publish.yml + skills/SKILL.md + agents/n8n-architect.agent.md)
 - **Governance subtotal: ~62 files**
 
-**Tracked total: ~255 files**
+**Tracked total: ~257 files** (Phase 7 #3 added `apps/web/src/server/trpc/routers/meetings.test.ts` + `packages/ui/src/components/form.tsx`)
 
 Local-only (gitignored — never committed): CREDENTIALS.md, .env.dev, .env.staging, .env.prod, .socraticodecontextartifacts.json, .specstory/history/*, .code-review-graph/*
 

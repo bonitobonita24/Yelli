@@ -1,10 +1,12 @@
-Phase 7 #3 — user picks from queued candidates (vitest now exists, TDD mandatory)
+Phase 7 #4 — user picks from queued candidates (vitest infrastructure live; TDD mandatory per Rule 25)
 
-Phase 7 #2 shipped on 2026-05-15 as `81c0279`:
-- vitest@4 + @vitest/coverage-v8 installed in apps/web
-- vitest.config.ts (node env, native tsconfigPaths, SKIP_ENV_VALIDATION=1, v8 coverage)
-- auth.register smoke coverage (5 cases, ~600ms) — Rule 25 TDD deferral closed
-- Test pattern documented in lessons.md for reuse on all future tRPC router tests
+Phase 7 #3 shipped on 2026-05-15 as `8709595`:
+- 7-case meetings.test.ts (happy path + minimal-input defaults + Zod rejections + UNAUTHORIZED)
+- meetingsRouter.create refactored to import MeetingCreateClientInputSchema from @yelli/shared
+- _meeting-form.tsx ported to react-hook-form + zodResolver + shadcn Form primitive
+- shadcn Form primitive installed in @yelli/ui (closes UI Rule #4 gap — all future forms use this path)
+- 4 new lessons documented: shared schema split, namespace-import lint gotcha, vi.mocked Prisma `as never` cast extension, shadcn Form scoping
+- Visual QA Rule 16 deferred — auth-gated route, manual smoke pending next dev-up session
 
 ----------------------------------------------------------------------
 Candidates (any order, user picks):
@@ -15,19 +17,12 @@ Candidates (any order, user picks):
     - apps/web/src/server/trpc/routers/auth.ts — add `requestPasswordReset` + `resetPassword`
     - packages/shared/src/schemas/auth.ts — add request/reset input schemas
     - apps/web/src/server/lib/email.ts — new SMTP wrapper (deferred actual delivery test)
-    - apps/web/src/app/(auth)/forgot-password/page.tsx — wire form to mutation
+    - apps/web/src/app/(auth)/forgot-password/page.tsx — wire form to mutation (RHF + shadcn Form per UI Rule #4)
     - apps/web/src/app/(auth)/reset-password/[token]/page.tsx — token consumer
-    - auth.test.ts: 3+ test cases (request issues token, invalid token rejected, valid token resets + invalidates)
+    - auth.test.ts: 3+ test cases (request issues token, invalid token rejected, valid token resets + invalidates session)
     Blocker: SMTP credentials ⏳ — email delivery itself untestable until filled
     Tests: mock @yelli/db + mocked SMTP transport (nodemailer) for unit coverage
-
-(b) /app/meetings/new form                  [visible product win, no blockers]
-    Scope: Tier 2 (~5 files)
-    - apps/web/src/app/app/meetings/new/page.tsx (currently 404)
-    - apps/web/src/components/meetings/meeting-form.tsx
-    - Wire to existing trpc.meetings.create mutation (from Part 5d)
-    - Test: caller test for meetings.create (already partially wired)
-    No credential blockers; clean fresh-context candidate
+    Bonus: now that shadcn Form is wired (Phase 7 #3), forgot-password forms can reuse the same pattern as meetings/new
 
 (c) JWT org-slug encoding                   [middleware foundation — high-risk]
     Scope: Tier 3 (~10 files, middleware + auth.config + session callback + all consumers)
@@ -36,20 +31,31 @@ Candidates (any order, user picks):
     - apps/web/src/middleware.ts — resolve tenant from JWT, validate URL ↔ session match (security.md TENANT MIDDLEWARE SAFETY)
     - Test: middleware unit test for tenant-switch attack rejection
     Risk: every authenticated route depends on this; reserve for careful fresh-context session
+    Tier 3 → mandatory split via memory-governance §1: probably 3 sub-sessions (auth.config + auth.ts → middleware → consumers).
 
 (d) join/[token] tRPC                       [needs LiveKit ⏳ for full integration]
     Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled
+    Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows
 
 (e) Socket.IO auth middleware               [depends on (c)]
     Should land AFTER (c) so the JWT contract is stable
 
 (f) Root landing page                       [verify scope first]
     Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
+    Likely Tier 1
+
+(g) Coverage threshold gate                 [housekeeping — ~1 file]
+    `vitest run --coverage` works (12 tests cover authRouter.register + meetingsRouter.create)
+    No minimum % gate yet — add to vitest.config.ts and CI workflow
+    Should land before Phase 8 — quick win to lock the safety net
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
   → Write failing test FIRST (RED), then implementation (GREEN), then refactor.
-  → Test pattern documented in [[trpc-test-pattern]] lessons.md entry (2026-05-15).
-  → Reusable mock setup: vi.mock @yelli/db + sibling lib modules, real Zod, createCallerFactory(targetRouter), fake Request context.
+  → Test patterns: [[trpc-test-pattern]] (Phase 7 #2) + [[meetings-protected-route-test]] (Phase 7 #3).
+  → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` as reference impl).
+  → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
 
-Recommended next: (b) meetings/new form — visible to user, no blockers, exercises the just-installed test infra on a fresh router endpoint.
+Recommended next: (a) forgot-password — closes the auth quartet (register ✓, password reset, login ✓, logout). Reuses meetings/new RHF pattern. SMTP unit tests via mocked transport unblock the work even while SMTP credentials remain ⏳.
+
+Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up. The RHF refactor is unit-test + build covered but the actual page render under SSR + hydration hasn't been verified in a logged-in session.
