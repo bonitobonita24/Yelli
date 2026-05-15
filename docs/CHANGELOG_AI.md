@@ -22,6 +22,33 @@
 
 # ---
 
+## 2026-05-16 — Phase 7 #5: coverage threshold gate (vitest + CI)
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 1 — ~4 files, deterministic)
+- Why: Lock the 20-test safety net against silent regression (accidentally skipped suites, deleted test files, branch coverage drops) before Phase 8 begins. The recommended-next ticket from .whatsnext (option g) — quick housekeeping win that establishes a measurable floor under future contributions.
+- Files added: none
+- Files modified:
+  - apps/web/vitest.config.ts — added `thresholds` block to coverage config: global floor (statements ≥ 12, branches ≥ 6, functions ≥ 12, lines ≥ 12) plus per-file gate for fully-tested src/server/trpc/routers/auth.ts (statements 100, branches 75, functions 100, lines 100). Added lcov reporter alongside text + html.
+  - turbo.json — added `test:coverage` task definition (dependsOn ^build, outputs coverage/**).
+  - package.json (root) — added `test:coverage` script delegating to `turbo run test:coverage`.
+  - .github/workflows/ci.yml — added new `coverage` job under needs: governance; runs `pnpm test:coverage` and uploads apps/web/coverage/ as 14-day artifact (HTML + lcov).
+- Files deleted: none
+- Schema/migrations: none
+- Tests: TDD gate verification — temporarily bumped auth.ts branches threshold from 75 → 99 (above measured 78.94), confirmed `pnpm test:coverage` exited 1 with explicit message `Coverage for branches (78.94%) does not meet "src/server/trpc/routers/auth.ts" threshold (99%)`. Restored to 75. No test files modified; coverage gate is config-only.
+- Errors encountered:
+  - PreToolUse hook flagged `.github/workflows/ci.yml` edit as "GitHub Actions workflow security" reminder. False positive — the added `coverage` job uses only project-controlled env vars (NODE_VERSION, PNPM_VERSION) and `pnpm test:coverage` (no untrusted GitHub event input flows into any `run:` line). Retry succeeded.
+  - `pnpm audit --audit-level=high` exits 1 with `nodemailer addressparser DoS` HIGH CVE (GHSA-rcmh-qjqh-p98v, affects <=7.0.10; we run 6.9.16, pinned for Auth.js v5 peer compat per Phase 7 #4 lessons). Confirmed pre-existing on main — NOT introduced by this branch. Flagged for separate follow-up ticket; this PR is not blocked.
+- Errors resolved: gate-engagement verified inline (RED via 99 threshold → GREEN via 75 threshold restore); no test code changes were required.
+- Validation:
+  - `pnpm test:coverage` PASS (20/20 tests, all thresholds met; 2 files; ~459ms run + v8 coverage overhead, total turbo run ~3.8s)
+  - `pnpm lint` PASS (cached, 8/8)
+  - `pnpm typecheck` PASS (cached, 8/8)
+  - `pnpm build` PASS (50.2s, 27 routes — unchanged from Phase 7 #4)
+  - `pnpm tools:check-product-sync` PASS (no leaks, no drift)
+  - `pnpm audit --audit-level=high` FAIL — pre-existing on main (not regression)
+- Outstanding: nodemailer CVE follow-up (separate ticket; pin/upgrade path constrained by Auth.js v5 peer). Visual QA Rule 16 carryover from Phase 7 #3 + #4 still pending dev-up smoke.
+- Commit SHA: <SHA> (squash-merged from feat/coverage-threshold-gate)
+
 ## 2026-05-16 — Phase 7 #4: forgot-password + reset-password tRPC + UI
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 2 — well-scoped, deterministic)

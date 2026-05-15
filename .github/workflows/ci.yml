@@ -104,6 +104,46 @@ jobs:
         # NOTE: packages without a `test` script are skipped silently by turbo.
         # Test harness is deferred per Parts 5b-5f precedent — added in a dedicated test-suite Part.
 
+  coverage:
+    name: Coverage threshold gate
+    needs: governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests with coverage thresholds
+        # Thresholds defined in apps/web/vitest.config.ts (Phase 7 #5).
+        # Global floor catches catastrophic regression; per-file gates lock
+        # fully-tested routers (e.g. auth.ts) at their measured coverage.
+        # To raise thresholds: add tests, re-measure, bump values.
+        run: pnpm test:coverage
+
+      - name: Upload coverage report (HTML + lcov)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: apps/web/coverage/
+          retention-days: 14
+
   security:
     name: Dependency vulnerability audit
     needs: governance

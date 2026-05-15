@@ -1,15 +1,13 @@
-Phase 7 #5 — user picks from queued candidates (vitest infrastructure live; TDD mandatory per Rule 25)
+Phase 7 #6 — user picks from queued candidates (coverage threshold gate live since Phase 7 #5; TDD mandatory per Rule 25)
 
-Phase 7 #4 shipped on 2026-05-16 as `2cdc3c3`:
-- New PasswordResetToken Prisma model + migration `20260515162430_add_password_reset_tokens` applied to yelli_dev
-- passwordSchema extracted in @yelli/shared (reused by register + reset)
-- requestPasswordReset + resetPassword tRPC procedures with security defaults locked: 1h TTL, single-use, sha256-only storage, no enumeration, security_version++ on reset, rate-limited both endpoints
-- email.ts lazy nodemailer wrapper (MailHog fallback in dev); pinned nodemailer to ^6.9.16 for Auth.js v5 peer compat
-- forgot-password page wired to mutation (TODO replaced)
-- New /reset-password/[token] server + client form using shadcn Form + RHF + Zod (UI Rule #4)
-- 8 new test cases bringing the suite to 20/20 in 313ms
-- 4 new lessons documented: prisma migrate dev DATABASE_URL gap, nodemailer/Auth.js peer pin, vi.mock @/env extension, separate password_reset_tokens table rationale
-- Visual QA Rule 16 deferred — public auth pages (/forgot-password + /reset-password) pending manual smoke on next dev-up
+Phase 7 #5 shipped on 2026-05-16 as `<SHA>`:
+- apps/web/vitest.config.ts — added `coverage.thresholds` block: global floor (statements ≥ 12, branches ≥ 6, functions ≥ 12, lines ≥ 12 — matches measured baseline) + per-file gate src/server/trpc/routers/auth.ts (statements 100, branches 75, functions 100, lines 100). Added lcov reporter alongside text + html.
+- turbo.json — new `test:coverage` task (dependsOn ^build, outputs coverage/**).
+- package.json (root) — new `test:coverage` script delegating to turbo.
+- .github/workflows/ci.yml — new `coverage` job (needs: governance, parallel to quality + security) running `pnpm test:coverage` and uploading `apps/web/coverage/` as a 14-day artifact (HTML + lcov) via actions/upload-artifact@v4.
+- Gate-engagement verified inline: temporarily bumped auth.ts branches threshold 75 → 99 (above measured 78.94) → confirmed exit 1 with `Coverage for branches (78.94%) does not meet "src/server/trpc/routers/auth.ts" threshold (99%)` → restored to 75.
+- 3 new lessons documented: (🔴) nodemailer 6.9.16 still flagged HIGH CVE — three resolution paths queued for candidate (j); (🟤) vitest per-file thresholds via glob keys inside the `thresholds` object; (🟤) PreToolUse workflow-edit warning is precautionary, not diff-aware.
+- Visual QA Rule 16 not applicable (no UI changes).
 
 ----------------------------------------------------------------------
 Candidates (any order, user picks):
@@ -26,21 +24,17 @@ Candidates (any order, user picks):
 
 (d) join/[token] tRPC                       [needs LiveKit ⏳ for full integration]
     Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled
-    Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows
+    Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows.
+    NEW: adding tests for getJoinToken would also let us add a per-file coverage gate on meetings.ts.
 
 (e) Socket.IO auth middleware               [depends on (c)]
-    Should land AFTER (c) so the JWT contract is stable
+    Should land AFTER (c) so the JWT contract is stable.
 
 (f) Root landing page                       [verify scope first]
     Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
-    Likely Tier 1
+    Likely Tier 1.
 
-(g) Coverage threshold gate                 [housekeeping — ~1 file]
-    `vitest run --coverage` works (20 tests cover authRouter.register + authRouter.requestPasswordReset + authRouter.resetPassword + meetingsRouter.create)
-    No minimum % gate yet — add to vitest.config.ts and CI workflow
-    Should land before Phase 8 — quick win to lock the safety net
-
-(h) NEW: Tighten request-password-reset rate limiting   [hardening — ~2 files]
+(h) Tighten request-password-reset rate limiting    [hardening — ~2 files]
     Currently uses rateLimiters.auth (in-memory LRU, ~5/min per IP+key).
     Could add a per-user 24h cap (e.g. ≤5 reset emails per user per day) to prevent
     a targeted user from receiving spam reset emails when an attacker repeatedly
@@ -48,10 +42,22 @@ Candidates (any order, user picks):
     Tests would assert the cap engages at request #6 (returns ok still — no enumeration — but
     skips email send + token mint).
 
-(i) NEW: Periodic cleanup of expired/consumed password_reset_tokens
+(i) Periodic cleanup of expired/consumed password_reset_tokens
     A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
     expired tokens > 7 days. Keeps the table from growing unboundedly.
-    Pairs with the Coverage gate (g) — both are housekeeping.
+    Pairs naturally with the new coverage gate (g — now shipped) — both are housekeeping.
+
+(j) NEW: Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)    [security — depends on @auth]
+    addressparser DoS via recursive calls affects <=7.0.10; we run 6.9.16 pinned for
+    Auth.js v5 peer compat. Three documented paths in lessons.md:
+      (a) wait for @auth to widen its nodemailer peer range — cleanest, no code changes
+      (b) replace nodemailer with a different transport library — touches email.ts + callsites
+      (c) document mitigation (server-stamped addresses only, attacker cannot reach the
+          vulnerable parser through the password-reset flow) + add `audit-level=critical`
+          to .npmrc per phases.md decision tree step 3
+    Path (c) is the realistic short-term option; (a) is the long-term hope; (b) is
+    last-resort. Decision deserves its own commit + DECISIONS_LOG.md entry.
+    Pre-existing on main — not Phase 7 #5 regression but flagged during its audit.
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
@@ -60,7 +66,9 @@ Rule 25 reminder for ALL of the above:
   → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` and `_reset-form.tsx` as reference impls).
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
   → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file (extends Phase 7 #4 pattern).
+  → NEW (Phase 7 #5): when a router becomes fully tested (>95% across all four metrics), add a per-file threshold to apps/web/vitest.config.ts to lock the new coverage in. Use the [[vitest-per-file-glob-thresholds]] pattern from lessons.md.
+  → NEW (Phase 7 #5): coverage thresholds rise organically — add tests → measure → bump threshold. Do NOT lower thresholds to make a regression "fix" pass.
 
-Recommended next: (g) Coverage threshold gate — quick housekeeping win that locks the test safety net before Phase 8. The 20-test suite is currently lint-and-pray; one accidental skip(skip)(skip) and we'd never notice. Then (h) hardening of request-password-reset before (c) JWT middleware (which is the riskiest open ticket).
+Recommended next: (h) tighten request-password-reset rate limiting — hardening pairs naturally now that the coverage gate locks in the test safety net. Then (c) JWT org-slug middleware (the riskiest open ticket, but unblocks (e) Socket.IO auth). Save (j) for when @auth releases a wider peer range; mitigation analysis is documented in lessons.md regardless.
 
-Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). NEW: also smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed.
+Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). ALSO smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover).

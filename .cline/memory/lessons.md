@@ -8,6 +8,27 @@
 
 # ---
 
+## 2026-05-16 — 🔴 nodemailer 6.9.16 still flagged HIGH CVE (addressparser DoS, GHSA-rcmh-qjqh-p98v)
+- Type:      🔴 gotcha
+- Phase:     Phase 7 #5 (coverage gate)
+- Files:     apps/web/package.json (nodemailer dep), apps/web/src/server/lib/email.ts
+- Concepts:  pnpm-audit, nodemailer, auth-js-v5, peer-deps, cve, dos
+- Narrative: Phase 7 #4 pinned nodemailer to ^6.9.16 because @auth packages declared a peer dep range incompatible with nodemailer 7.x ([[nodemailer-pin-auth-js]] decision). On Phase 7 #5 the routine `pnpm audit --audit-level=high` surfaced GHSA-rcmh-qjqh-p98v — addressparser DoS via recursive calls — affecting nodemailer <=7.0.10. So our 6.9.16 pin IS vulnerable. Confirmed pre-existing on main (identical 6/1/4/1 severity before this branch's changes) — NOT a Phase 7 #5 regression. Three viable paths, each documented for the follow-up ticket: (a) wait for @auth to widen its nodemailer peer range so we can move to ≥7.0.11 (cleanest, no code changes); (b) replace nodemailer with a different transport library — would touch apps/web/src/server/lib/email.ts and any other callsites; (c) document mitigation (this lib is server-only, addressparser is only invoked on `to`/`from`/`cc` fields which are server-stamped from validated DB rows — attacker cannot send a crafted address through the password-reset flow) and add `audit-level=critical` to .npmrc per phases.md decision tree step 3. Decision deferred — flagged as a follow-up ticket in .whatsnext. Phase 7 #5 PR not blocked because the CVE pre-existed.
+
+## 2026-05-16 — 🟤 vitest per-file coverage thresholds use glob keys inside the `thresholds` object
+- Type:      🟤 decision
+- Phase:     Phase 7 #5 (coverage gate)
+- Files:     apps/web/vitest.config.ts
+- Concepts:  vitest, v8-coverage, thresholds, per-file-gate, glob-key
+- Narrative: Vitest 4.1.6 supports per-file threshold gates inside `coverage.thresholds` by using glob paths as keys ALONGSIDE the four numeric global keys (statements/branches/functions/lines). Verified syntax: `thresholds: { statements: 12, branches: 6, functions: 12, lines: 12, "src/server/trpc/routers/auth.ts": { statements: 100, branches: 75, functions: 100, lines: 100 } }` — vitest reads numeric keys as global thresholds and string keys as glob-matched per-file thresholds. The two coexist in one block (NOT two separate blocks). RED→GREEN proven: bumping the per-file branches threshold to 99 (above measured 78.94) produced exit 1 with message `Coverage for branches (78.94%) does not meet "src/server/trpc/routers/auth.ts" threshold (99%)`. Use this pattern when adding tight gates on fully-tested files — global thresholds alone are too coarse because they hide regressions on the well-tested files (e.g. auth.ts could drop from 100% statements to 50% and a global floor of 12% still passes). Do NOT use `coverage.perFile: true` — that applies thresholds to every file and would fail immediately since most files in src/server/** have 0% coverage.
+
+## 2026-05-16 — 🟤 PreToolUse hook may flag .github/workflows/*.yml edits as risky even when safe
+- Type:      🟤 decision
+- Phase:     Phase 7 #5 (coverage gate CI wiring)
+- Files:     .github/workflows/ci.yml
+- Concepts:  github-actions, pretooluse-hook, security-reminder, workflow-injection, false-positive
+- Narrative: First edit to .github/workflows/ci.yml from Phase 7 #5 was blocked by a PreToolUse security-reminder hook with the GitHub Actions workflow-injection warning ("Never use untrusted input in run: commands"). The hook treats ANY workflow edit as worth a warning — it does not actually parse the diff for unsafe patterns. The Phase 7 #5 change added a `coverage` job whose `run:` lines reference only project-controlled env vars (NODE_VERSION, PNPM_VERSION) and a static command (`pnpm test:coverage`) — no `${{ github.event.* }}` flows into any shell. Retry succeeded. Going forward: workflow edits will produce this warning even when safe; agents should (1) confirm no `github.event.*` / `github.head_ref` / commit-message inputs flow into `run:` lines, (2) retry the edit, (3) flag the false positive in CHANGELOG_AI so the noise is documented. Reference: https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
 ## 2026-05-16 — 🔴 `prisma migrate dev` needs DATABASE_URL exported
 
 - Type: 🔴 gotcha

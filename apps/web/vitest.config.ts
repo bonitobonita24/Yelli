@@ -14,9 +14,27 @@ export default defineConfig({
     exclude: ["node_modules", ".next", "dist"],
     coverage: {
       provider: "v8",
-      reporter: ["text", "html"],
+      reporter: ["text", "html", "lcov"],
       include: ["src/server/**/*.ts"],
       exclude: ["src/**/*.test.ts", "src/**/*.d.ts"],
+      // Threshold gate — locks the safety net at current measured coverage so
+      // accidental test skips or deletion regressions trigger CI failure.
+      // Global floor: catches catastrophic regression (e.g. an entire suite
+      // disabled via `.skip`). Raise as coverage grows.
+      // Per-file gates: tight thresholds on fully-tested routers so partial
+      // deletion of their test files surfaces immediately.
+      thresholds: {
+        statements: 12,
+        branches: 6,
+        functions: 12,
+        lines: 12,
+        "src/server/trpc/routers/auth.ts": {
+          statements: 100,
+          branches: 75,
+          functions: 100,
+          lines: 100,
+        },
+      },
     },
   },
 });
