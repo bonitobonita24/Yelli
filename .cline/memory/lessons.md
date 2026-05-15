@@ -711,3 +711,39 @@
 - Files:     package.json (root), apps/web/package.json
 - Concepts:  vitest, tdd, rule-25, phase-7, test-infrastructure, scaffold-gap
 - Narrative: Phase 4 Part 8 generated a root `pnpm test` → `turbo run test` script but no package implements the `test` task — vitest is not installed anywhere in the repo. Rule 25 says "write failing test FIRST" but the test runner doesn't exist to run a test. Strict adherence to Rule 25 would have forced this Phase 7 ticket to install vitest as a prerequisite, ballooning scope from Tier 2 to Tier 3 (vitest deps + config + jsdom or happy-dom + turbo pipeline wiring + tsconfig pathing). With user approval, deferred tests for this commit and opened follow-up Phase 7 ticket: "Install vitest + write auth.register coverage". **For future Phase 7 tickets touching server code**: install vitest as PR #1, then resume strict TDD ordering for everything thereafter. Document deviations from Rule 25 in CHANGELOG_AI Phase 7 entry under "Tests: DEFERRED" — never silent.
+
+# ---
+
+## 2026-05-15 — 🟤 Vitest 4 supports tsconfig paths natively — drop vite-tsconfig-paths
+- Type:      🟤 decision
+- Phase:     Phase 7 #2 (vitest install)
+- Files:     apps/web/vitest.config.ts
+- Concepts:  vitest, vite, tsconfig-paths, monorepo, alias-resolution
+- Narrative: Initial vitest.config.ts used `vite-tsconfig-paths` plugin (the historical default for resolving `@/` alias from tsconfig.json `paths`). On first `pnpm test` run, vitest 4.1.6 printed: "The plugin 'vite-tsconfig-paths' is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option." Verified — dropping the plugin and setting `resolve: { tsconfigPaths: true }` in vitest.config gives identical resolution behavior with one less dep. Tests still pass in ~600ms. **For all future packages adding vitest configs in this repo**: do NOT install vite-tsconfig-paths. Use `resolve.tsconfigPaths: true` directly in defineConfig. Saves a transitive dep + simplifies the config.
+
+# ---
+
+## 2026-05-15 — 🟤 tRPC router test pattern — mocks for @yelli/db + sibling libs, real Zod
+- Type:      🟤 decision
+- Phase:     Phase 7 #2 (auth.test.ts pattern establishment)
+- Files:     apps/web/src/server/trpc/routers/auth.test.ts (reference implementation)
+- Concepts:  vitest, vi.mock, trpc-testing, createCallerFactory, prisma-mocking, isolation
+- Narrative: First tRPC router test in the repo. Pattern that worked cleanly:
+  (1) Mock `@yelli/db` to provide a fake `platformPrisma` with `vi.fn()` for each `.model.method()` consumed — DO NOT mock the whole `prisma` ecosystem if you only use `platformPrisma`.
+  (2) Mock sibling lib modules entirely with `vi.mock(path, factory)` — for auth.test that's `@/server/lib/turnstile` and `@/server/lib/rate-limit`. Factory mode prevents the real module from loading (so env.ts doesn't fire from inside turnstile).
+  (3) Keep `@yelli/shared/schemas` real — Zod validation is part of what we're testing.
+  (4) Use `createCallerFactory(specificRouter)` for unit-scoped tests, not the full `appRouter` — gives `caller.method(input)` not `caller.namespace.method(input)`. Faster, no unrelated middleware fires.
+  (5) Mock `bcryptjs` with BOTH `default: { hash }` and named `hash` export — the seed.ts gotcha (named import on bcryptjs failing) showed both shapes matter depending on consumer.
+  (6) Context: `{ session: null, req: new Request(...) }` — the router calls `ctx.req.headers.get(...)` so a real Request constructor works fine.
+  (7) `beforeEach` resets all mocks AND installs default "sane" implementations so each test only overrides what it cares about (e.g. happy-path defaults: rate-limit allows, turnstile succeeds, slug is free, $transaction returns the tx callback's result).
+  (8) For TypeScript-strict mocks of Prisma findUnique that return only a narrowed select: cast `mockResolvedValueOnce({ id } as never)` and add an inline comment explaining the runtime select narrows it. Cleaner than building the full ~10-field Organization shape.
+  Test pattern reusable for all future tRPC router tests in this codebase. Cross-link: [[trpc-v11-architecture]].
+
+# ---
+
+## 2026-05-15 — 🟤 SKIP_ENV_VALIDATION=1 in vitest test.env unblocks env-importing routers
+- Type:      🟤 decision
+- Phase:     Phase 7 #2 (vitest config)
+- Files:     apps/web/vitest.config.ts, apps/web/src/env.ts
+- Concepts:  vitest, env-validation, server-only, zod-parse-on-import, test-config
+- Narrative: apps/web/src/env.ts parses `process.env` against a Zod schema at module-load when `typeof window === "undefined"` AND `process.env.SKIP_ENV_VALIDATION !== "1"`. Any test that transitively imports the auth router (which imports the turnstile module which imports env) would trigger this parse with vitest's empty `process.env`, throwing on the first missing required field. Fix: set `test.env: { SKIP_ENV_VALIDATION: "1" }` in vitest.config.ts. vitest injects this into `process.env` BEFORE the test files are loaded — earlier than any vi.mock factory, earlier than any import. The mocked turnstile module never reads env at all (we mock the whole module), but the safety net is still needed for any future test that doesn't mock the full transitive chain. **Rule**: every vitest.config.ts in this monorepo must set `test.env.SKIP_ENV_VALIDATION=1` unless the test specifically wants to verify env validation behavior.

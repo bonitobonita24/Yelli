@@ -6,7 +6,7 @@
 
 ## Project Status
 
-Phase: **Phase 7 active — first Feature Update merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. First Phase 7 ticket (auth.register tRPC wire-up + register page submit) squash-merged to main as `ce709ff` on 2026-05-15. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
+Phase: **Phase 7 active — two Feature Updates merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. Phase 7 #1 (auth.register tRPC wire-up + register page submit) squash-merged as `ce709ff`. Phase 7 #2 (vitest@4 infrastructure + 5-case auth.register smoke coverage) squash-merged as `81c0279` — closes Rule 25 TDD deferral. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
 
 Prior status: **4 Part 8 complete — Phase 4 fully done.** CI/CD workflows + MANIFEST.txt + README.md
 + final IMPLEMENTATION_MAP rewrite all generated. Repository is now structurally complete and
@@ -26,6 +26,15 @@ App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
 ## Built So Far
+
+- ✅ Phase 7 Feature Update — vitest infrastructure + auth.register smoke coverage (2026-05-15, SHA `81c0279`)
+  - `apps/web/vitest.config.ts` — vitest 4 with native `resolve.tsconfigPaths: true`, `environment: "node"`, `SKIP_ENV_VALIDATION=1` in `test.env`, v8 coverage provider
+  - `apps/web/src/server/trpc/routers/auth.test.ts` — 5 cases: happy path returns `{ ok: true, slug }` and lowercases email for rate-limit key; rate-limit throws before turnstile (early-exit verified); turnstile fail → UNAUTHORIZED with no DB write; slug conflict → CONFLICT with no $transaction; Zod rejects weak password + uppercase slug before rate-limit fires
+  - `apps/web/package.json` — added `test` / `test:watch` / `test:coverage` scripts; turbo `test` pipeline now executes for `@yelli/web`
+  - Mock pattern (reusable for future tRPC router tests): `vi.mock("@yelli/db")` for platformPrisma surface; `vi.mock("@/server/lib/turnstile")` + `vi.mock("@/server/lib/rate-limit")` for sibling deps; `vi.mock("bcryptjs")` with both `default` and named exports; real Zod via `@yelli/shared/schemas`; `createCallerFactory(authRouter)` + fake `Request` context
+  - Closes Rule 25 TDD deferral from Phase 7 #1; all subsequent Phase 7 tickets must write failing test first
+  - Test suite: 5/5 passing in ~600ms cold start
+  - Two-stage review (Rule 25): Stage 1 spec PASS (closes the deferred test ordering), Stage 2 quality PASS (typecheck + lint green)
 
 - ✅ Phase 7 Feature Update — auth.register tRPC procedure (2026-05-15, SHA `ce709ff`)
   - `apps/web/src/server/trpc/routers/auth.ts` — new `authRouter` with `register` publicProcedure

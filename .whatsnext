@@ -1,23 +1,55 @@
-Phase 7 #2 — Install vitest + write smoke test (auth.register coverage as first real test)
+Phase 7 #3 — user picks from queued candidates (vitest now exists, TDD mandatory)
 
-Why this is next:
-- Closes the Rule 25 TDD deferral taken in Phase 7 #1 (auth.register)
-- Compounding return: every subsequent Phase 7 ticket gets proper test-first ordering
-- Self-contained, no credential blockers (unlike forgot-password → SMTP ⏳, join-by-token → LiveKit ⏳)
-- Fresh-context friendly: Sonnet dispatch stays well under 30K budget
+Phase 7 #2 shipped on 2026-05-15 as `81c0279`:
+- vitest@4 + @vitest/coverage-v8 installed in apps/web
+- vitest.config.ts (node env, native tsconfigPaths, SKIP_ENV_VALIDATION=1, v8 coverage)
+- auth.register smoke coverage (5 cases, ~600ms) — Rule 25 TDD deferral closed
+- Test pattern documented in lessons.md for reuse on all future tRPC router tests
 
-Scope (estimated Tier 2, ~5-7 files):
-- Add vitest + @vitest/coverage-v8 to apps/web devDependencies
-- apps/web/vitest.config.ts — Node test env (server-side tRPC) + path aliases matching tsconfig
-- Wire root turbo.json test pipeline if needed
-- apps/web/package.json — "test" script: vitest run; "test:watch": vitest
-- Recreate apps/web/src/server/trpc/routers/auth.test.ts (Sonnet's earlier draft is in git history at commit ce709ff parent — but easier to rewrite given Prisma mock structure changed)
-- Tests: happy path returns { ok, slug }; rate-limit blocks before turnstile; turnstile fail → UNAUTHORIZED; slug conflict → CONFLICT; Zod rejects weak password + uppercase slug
+----------------------------------------------------------------------
+Candidates (any order, user picks):
+----------------------------------------------------------------------
 
-After this lands, Phase 7 #3 candidates (any order):
-- forgot-password tRPC (#2 from punch-list) — pairs with #1, but needs SMTP ⏳ to test email delivery
-- /app/meetings/new form (#5) — visible product win, no blockers
-- JWT org slug encoding (#4) — middleware foundation, high-risk; save for a careful session
-- join/[token] tRPC (#3) — needs LiveKit keys ⏳ to test guest token exchange
-- Socket.IO auth middleware (#7) — depends on session shape clarity
-- Root landing page (#6) — verify scope first (current /page.tsx is 11 lines)
+(a) forgot-password tRPC procedure         [pairs with auth.register]
+    Scope: Tier 2 (~6 files)
+    - apps/web/src/server/trpc/routers/auth.ts — add `requestPasswordReset` + `resetPassword`
+    - packages/shared/src/schemas/auth.ts — add request/reset input schemas
+    - apps/web/src/server/lib/email.ts — new SMTP wrapper (deferred actual delivery test)
+    - apps/web/src/app/(auth)/forgot-password/page.tsx — wire form to mutation
+    - apps/web/src/app/(auth)/reset-password/[token]/page.tsx — token consumer
+    - auth.test.ts: 3+ test cases (request issues token, invalid token rejected, valid token resets + invalidates)
+    Blocker: SMTP credentials ⏳ — email delivery itself untestable until filled
+    Tests: mock @yelli/db + mocked SMTP transport (nodemailer) for unit coverage
+
+(b) /app/meetings/new form                  [visible product win, no blockers]
+    Scope: Tier 2 (~5 files)
+    - apps/web/src/app/app/meetings/new/page.tsx (currently 404)
+    - apps/web/src/components/meetings/meeting-form.tsx
+    - Wire to existing trpc.meetings.create mutation (from Part 5d)
+    - Test: caller test for meetings.create (already partially wired)
+    No credential blockers; clean fresh-context candidate
+
+(c) JWT org-slug encoding                   [middleware foundation — high-risk]
+    Scope: Tier 3 (~10 files, middleware + auth.config + session callback + all consumers)
+    - apps/web/src/server/auth.config.ts — add `organization_slug` to JWT
+    - apps/web/src/server/auth.ts — populate from session.user
+    - apps/web/src/middleware.ts — resolve tenant from JWT, validate URL ↔ session match (security.md TENANT MIDDLEWARE SAFETY)
+    - Test: middleware unit test for tenant-switch attack rejection
+    Risk: every authenticated route depends on this; reserve for careful fresh-context session
+
+(d) join/[token] tRPC                       [needs LiveKit ⏳ for full integration]
+    Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled
+
+(e) Socket.IO auth middleware               [depends on (c)]
+    Should land AFTER (c) so the JWT contract is stable
+
+(f) Root landing page                       [verify scope first]
+    Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
+
+----------------------------------------------------------------------
+Rule 25 reminder for ALL of the above:
+  → Write failing test FIRST (RED), then implementation (GREEN), then refactor.
+  → Test pattern documented in [[trpc-test-pattern]] lessons.md entry (2026-05-15).
+  → Reusable mock setup: vi.mock @yelli/db + sibling lib modules, real Zod, createCallerFactory(targetRouter), fake Request context.
+
+Recommended next: (b) meetings/new form — visible to user, no blockers, exercises the just-installed test infra on a fresh router endpoint.

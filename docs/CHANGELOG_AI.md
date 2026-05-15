@@ -22,6 +22,30 @@
 
 # ---
 
+## 2026-05-15 — Phase 7 #2: vitest infrastructure + auth.register smoke coverage
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 2 — well-scoped, deterministic)
+- Why: Phase 7 #1 deferred Rule 25 TDD ordering because no test runner existed. Installing vitest closes that gap so every subsequent Phase 7 ticket can write the failing test first. Establishes the test pattern (vi.mock for @yelli/db + lib modules, createCallerFactory, mocked Request context) for all future tRPC router tests.
+- Files added:
+  - apps/web/vitest.config.ts (node env, native tsconfigPaths via vitest 4, SKIP_ENV_VALIDATION=1, v8 coverage)
+  - apps/web/src/server/trpc/routers/auth.test.ts (5 cases — see Why above for shape)
+- Files modified:
+  - apps/web/package.json (vitest@4 + @vitest/coverage-v8 devDeps; test/test:watch/test:coverage scripts)
+  - pnpm-lock.yaml (54 new transitive packages)
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: 2 minor —
+  1) Initial config used `vite-tsconfig-paths` plugin; vitest 4 warned that resolve.tsconfigPaths is now native. Dropped the plugin + dep, tests still pass.
+  2) Typecheck failed on `findUnique` mock — `mockResolvedValueOnce({ id })` rejected because the schema return type is the full Organization. Resolved via `as never` cast with inline comment explaining the runtime narrowing (`select: { id: true }`).
+- Errors resolved:
+  1) Switched to native resolve.tsconfigPaths; removed vite-tsconfig-paths.
+  2) Cast the mock to `as never` since the router only consumes `.id` (defense-in-depth: the runtime select narrows correctly).
+- Tests: 5/5 passing (~600ms cold). Coverage threshold not set yet — follow-up to define minimum % before Phase 8.
+- Build status: production build was passing before this change; no source-graph touch, still passing.
+- Rule 25 status: TDD discipline restored. Phase 7 #3+ must write failing test first.
+
+# ---
+
 ## 2026-05-15 — Phase 7 #1: auth.register tRPC procedure + register page submit
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct execution; Sonnet dispatch attempted first, thrashed at ~18 tool uses — escalated per memory-governance §2.5b)
