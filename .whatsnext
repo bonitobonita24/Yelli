@@ -1,1 +1,23 @@
-Phase 7 Feature Update loop — scaffold polish first, then PRODUCT.md-driven features
+Phase 7 #2 — Install vitest + write smoke test (auth.register coverage as first real test)
+
+Why this is next:
+- Closes the Rule 25 TDD deferral taken in Phase 7 #1 (auth.register)
+- Compounding return: every subsequent Phase 7 ticket gets proper test-first ordering
+- Self-contained, no credential blockers (unlike forgot-password → SMTP ⏳, join-by-token → LiveKit ⏳)
+- Fresh-context friendly: Sonnet dispatch stays well under 30K budget
+
+Scope (estimated Tier 2, ~5-7 files):
+- Add vitest + @vitest/coverage-v8 to apps/web devDependencies
+- apps/web/vitest.config.ts — Node test env (server-side tRPC) + path aliases matching tsconfig
+- Wire root turbo.json test pipeline if needed
+- apps/web/package.json — "test" script: vitest run; "test:watch": vitest
+- Recreate apps/web/src/server/trpc/routers/auth.test.ts (Sonnet's earlier draft is in git history at commit ce709ff parent — but easier to rewrite given Prisma mock structure changed)
+- Tests: happy path returns { ok, slug }; rate-limit blocks before turnstile; turnstile fail → UNAUTHORIZED; slug conflict → CONFLICT; Zod rejects weak password + uppercase slug
+
+After this lands, Phase 7 #3 candidates (any order):
+- forgot-password tRPC (#2 from punch-list) — pairs with #1, but needs SMTP ⏳ to test email delivery
+- /app/meetings/new form (#5) — visible product win, no blockers
+- JWT org slug encoding (#4) — middleware foundation, high-risk; save for a careful session
+- join/[token] tRPC (#3) — needs LiveKit keys ⏳ to test guest token exchange
+- Socket.IO auth middleware (#7) — depends on session shape clarity
+- Root landing page (#6) — verify scope first (current /page.tsx is 11 lines)
