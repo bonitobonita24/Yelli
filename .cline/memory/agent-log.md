@@ -493,3 +493,5 @@ CLAUDE_CODE | 2026-05-14 governance | Part 8 squash-merge SHA recorded
 - Created scripts/seed-dev.sh — idempotent seed runner that reads CREDENTIALS.md via shell pipe so credentials never enter agent context
 - All 20 modified + 4 new files held in working tree on main (uncommitted) — next session should branch as fix/phase-4-dev-bringup, squash-merge per Rule 23
 - Outputs preserved: .env.local symlink, public/livekit-styles.css, three new TSX files under apps/web/src
+
+CLAUDE_CODE | Phase 7 #1 | 2026-05-15 ~15:25 GMT+8 | auth.register tRPC procedure + register page submit wired. First Phase 7 Feature Update post-Phase-4. Sonnet dispatch attempted, thrashed at 18 tool uses — escalated to Opus direct per §2.5b. Fixed Sonnet's 3 partial-output bugs (snake_case fields, unenforceable email pre-check, missing createCallerFactory export). Build initially failed on `.js` extension leftovers in packages/shared/* barrels — fixed all 4 (storage scaffold-bug pattern repeated). Tests DEFERRED — vitest not installed. Two-stage review PASS. Squash-merged feat/auth-register-trpc → main as ce709ff. 11 files changed, 162 insertions, 56 deletions.

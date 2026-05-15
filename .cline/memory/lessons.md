@@ -690,3 +690,24 @@
 
 # ---
 
+
+## 2026-05-15 — 🔴 packages/shared `.js` extension leftovers latent until first consumer
+- Type:      🔴 gotcha
+- Phase:     Phase 4 Part 2 → surfaced in Phase 7 #1
+- Files:     packages/shared/src/{index,schemas/index,types/index,schemas/subscription}.ts
+- Concepts:  monorepo, barrel exports, webpack, .js extensions, latent bug
+- Narrative: Phase 4 Part 2 generated `packages/shared` with `.js` extensions in all barrel re-exports. The package was structurally valid (tsc was happy because of TS module resolution) and went undetected through 7 subsequent Parts because nothing actually imported from `@yelli/shared/schemas` at runtime — types-only imports never traversed the barrel. Phase 7 #1 (auth.register) was the FIRST runtime consumer: the register page imports `registerInputSchema` for use with `zodResolver`. Webpack tried to resolve `./meeting.js` and failed. Same exact pattern as the storage scaffold-bug from the 2026-05-15 dev-bringup session. **Lesson for future Parts**: when a package barrel is generated, immediately add a smoke import from any apps/web route + run `pnpm build` to verify the package actually loads — don't trust that typecheck passing means the package works at runtime. Webpack module resolution is stricter than TS module resolution.
+
+## 2026-05-15 — 🟤 Opus escalation per §2.5b: first real-world trigger
+- Type:      🟤 decision
+- Phase:     Phase 7 #1 (auth.register)
+- Files:     n/a — process decision
+- Concepts:  sonnet-thrashing, opus-escalation, memory-governance, §2.5b, dispatch-discipline
+- Narrative: First Phase 7 Feature Update dispatched to Sonnet 4.6 thrashed at ~18 tool uses with the documented "autocompact thrashing" error. Brief was long (~3K) + Sonnet had to read existing register page (~150 lines), trpc.ts base (~140 lines), shared schemas index, login flow auth.ts — tool results accumulated past 30K. Per memory-governance §4 status handling, did NOT re-dispatch the same task. Per §2.5b, escalated to Opus 4.7 direct execution (last-resort path). Justification: each fix exposed the next (snake_case → email-uniqueness → createCallerFactory → .js extensions in barrels), and the cross-file context needed to be held in one head. Completed in one Opus session, ~55K context. **For future Phase 7 dispatches**: when the implementation requires understanding 4+ existing files to do correctly, the Opus brief approach (Opus reads, pre-digests into the Sonnet brief, Sonnet only writes new code) works better than a discovery-style brief. Tighten the read budget BEFORE dispatching, not after thrashing. Cost: this was the 1st of <20% Opus-exec allotment per §2.5b — track future escalations and reassess decomposition strategy if frequency rises.
+
+## 2026-05-15 — 🟤 Rule 25 TDD ordering deferred — no test infra yet
+- Type:      🟤 decision
+- Phase:     Phase 7 #1 (auth.register)
+- Files:     package.json (root), apps/web/package.json
+- Concepts:  vitest, tdd, rule-25, phase-7, test-infrastructure, scaffold-gap
+- Narrative: Phase 4 Part 8 generated a root `pnpm test` → `turbo run test` script but no package implements the `test` task — vitest is not installed anywhere in the repo. Rule 25 says "write failing test FIRST" but the test runner doesn't exist to run a test. Strict adherence to Rule 25 would have forced this Phase 7 ticket to install vitest as a prerequisite, ballooning scope from Tier 2 to Tier 3 (vitest deps + config + jsdom or happy-dom + turbo pipeline wiring + tsconfig pathing). With user approval, deferred tests for this commit and opened follow-up Phase 7 ticket: "Install vitest + write auth.register coverage". **For future Phase 7 tickets touching server code**: install vitest as PR #1, then resume strict TDD ordering for everything thereafter. Document deviations from Rule 25 in CHANGELOG_AI Phase 7 entry under "Tests: DEFERRED" — never silent.

@@ -6,7 +6,9 @@
 
 ## Project Status
 
-Phase: **4 Part 8 complete — Phase 4 fully done.** CI/CD workflows + MANIFEST.txt + README.md
+Phase: **Phase 7 active — first Feature Update merged.** Post-Phase-4 dev bring-up complete; production build passes end-to-end. First Phase 7 ticket (auth.register tRPC wire-up + register page submit) squash-merged to main as `ce709ff` on 2026-05-15. Sub-Phase-5 validation passes (8 of 9) — full Phase 5/6 gated on CREDENTIALS.md ⏳ placeholders.
+
+Prior status: **4 Part 8 complete — Phase 4 fully done.** CI/CD workflows + MANIFEST.txt + README.md
 + final IMPLEMENTATION_MAP rewrite all generated. Repository is now structurally complete and
 ready for Phase 5 validation. `.github/workflows/ci.yml` runs governance gates (validate-inputs,
 check-product-sync, hydration-lint), the Turbo quality matrix (lint/typecheck/test/build), and a
@@ -24,6 +26,16 @@ App: Yelli (instant video intercom SaaS + self-hosted)
 Framework: Spec-Driven Platform V31
 
 ## Built So Far
+
+- ✅ Phase 7 Feature Update — auth.register tRPC procedure (2026-05-15, SHA `ce709ff`)
+  - `apps/web/src/server/trpc/routers/auth.ts` — new `authRouter` with `register` publicProcedure
+  - `packages/shared/src/schemas/auth.ts` — new `registerInputSchema` (Zod, includes turnstileToken)
+  - Wired `apps/web/src/app/(auth)/register/page.tsx` to call `trpc.auth.register.useMutation`; on success → toast + `router.push('/login?org=' + slug)`; on error → toast + reset captcha
+  - Flow: rate-limit (auth tier, keyed on `register:${email}`) → Turnstile siteverify → slug pre-check → bcrypt cost 12 → atomic `platformPrisma.$transaction` creating Organization (billing_email = registrant) + tenant_admin User
+  - Exposed `createCallerFactory` on tRPC base (for future tests)
+  - Fixed `.js` extension leftovers in `packages/shared/src/{index,schemas/index,types/index,schemas/subscription}.ts` (same pattern as the prior storage scaffold-bug — surfaced by the first real import of `@yelli/shared/schemas` from a route)
+  - **Deferred**: vitest not installed → no test file shipped. Next Phase 7 ticket should install vitest + write `auth.register` coverage.
+  - Two-stage review (Rule 25): Stage 1 spec PASS, Stage 2 quality PASS (with test deferral)
 
 - ✅ Phase 0 Bootstrap (2026-05-11)
   - Folder structure, governance docs, MCP wiring, Phase 4 task files (8 parts), CREDENTIALS.md with ⏳ placeholders.

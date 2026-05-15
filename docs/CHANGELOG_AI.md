@@ -22,6 +22,27 @@
 
 # ---
 
+## 2026-05-15 — Phase 7 #1: auth.register tRPC procedure + register page submit
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct execution; Sonnet dispatch attempted first, thrashed at ~18 tool uses — escalated per memory-governance §2.5b)
+- Why: First Phase 7 Feature Update. Register page had a `TODO Part 5e` stub at line 57 — no auth router existed at all. Unblocks the entire signup flow on the running dev server.
+- Files added:
+  - apps/web/src/server/trpc/routers/auth.ts
+  - packages/shared/src/schemas/auth.ts
+- Files modified:
+  - apps/web/src/app/(auth)/register/page.tsx (replaced fake submit with trpc.auth.register.useMutation; uses next/navigation router.push)
+  - apps/web/src/server/trpc/router.ts (registered authRouter)
+  - apps/web/src/server/trpc/trpc.ts (exported createCallerFactory)
+  - packages/shared/src/index.ts, packages/shared/src/schemas/index.ts, packages/shared/src/types/index.ts, packages/shared/src/schemas/subscription.ts (removed `.js` extension leftovers — same scaffold-bug pattern as the prior storage fix, surfaced by first real consumer of `@yelli/shared/schemas`)
+  - .cline/STATE.md, .whatsnext (housekeeping bundled into same commit)
+- Files deleted: none
+- Schema/migrations: none — uses existing Organization + User models with their snake_case Prisma field names
+- Errors encountered: 1) Sonnet dispatch thrashed (predicted §2.5 over-budget pattern: long brief + multi-file reads accumulated past 30K). 2) Sonnet's partial output had 3 bugs: camelCase Prisma field names (would fail typecheck against snake_case schema), email pre-check used `findUnique` on a non-unique field, tests referenced `createCallerFactory` which wasn't exported. 3) Build initially failed on `.js` extension leftovers in `packages/shared` barrel files.
+- Errors resolved: 1) Escalated to Opus direct execution per §2.5b (last resort, documented justification). 2) Fixed snake_case fields, dropped the unenforceable global email pre-check, exported createCallerFactory. 3) Removed `.js` extensions across the four shared-package barrels.
+- Tests: DEFERRED — vitest not installed in repo. Sonnet's draft test file was deleted; follow-up Phase 7 ticket needed to install vitest infrastructure first, then write auth.register coverage with proper `$transaction` callback mock.
+- Two-stage review (Rule 25): Stage 1 (spec compliance) PASS — creator role tenant_admin, return { ok, slug }, redirect to /login?org={slug}, billing_email = registrant email, all matched user-locked decisions. Stage 2 (code quality) PASS with documented test deferral.
+- Squash-merge SHA: ce709ff (branch feat/auth-register-trpc → main, branch deleted per Rule 23).
+
 ## 2026-05-11 — Phase 0 Bootstrap
 
 - Agent: BOOTSTRAP
