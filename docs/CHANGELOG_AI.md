@@ -55,7 +55,7 @@
   5. Converted `import { z }` → `import type { z }`; removed unused constant; replaced `env.SMTP_USER!` non-null bangs with const locals after a truthy check.
 - Tier classification: 2 — moderate (10 files modified/created, 3 modules: @yelli/db, @yelli/shared, apps/web). Single Opus 4.7 session, est. ~45K context, well under 80K SAFE zone. No Sonnet dispatch (same reasoning as #2 and #3 — deterministic, well-scoped infra work).
 - Quality gates: 20/20 tests pass in 313ms (was 12 before, +8 new); typecheck 0 errors across 8 packages; lint 0 errors (1 pre-existing warning in layout.tsx); build 27 routes (added /reset-password/[token] at 2.41 kB / 223 kB first-load; /forgot-password grew from 0 kB stub to 7.01 kB / 175 kB now that it has a real mutation client) in ~45s.
-- Squash-merge: feat/forgot-password → main as <SHA> (set at merge time).
+- Squash-merge: feat/forgot-password → main as 2cdc3c3.
 
 ## 2026-05-15 — Phase 7 #2: vitest infrastructure + auth.register smoke coverage
 

@@ -1,6 +1,6 @@
 Phase 7 #5 — user picks from queued candidates (vitest infrastructure live; TDD mandatory per Rule 25)
 
-Phase 7 #4 shipped on 2026-05-16 as `<SHA>`:
+Phase 7 #4 shipped on 2026-05-16 as `2cdc3c3`:
 - New PasswordResetToken Prisma model + migration `20260515162430_add_password_reset_tokens` applied to yelli_dev
 - passwordSchema extracted in @yelli/shared (reused by register + reset)
 - requestPasswordReset + resetPassword tRPC procedures with security defaults locked: 1h TTL, single-use, sha256-only storage, no enumeration, security_version++ on reset, rate-limited both endpoints

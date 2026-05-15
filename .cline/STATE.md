@@ -16,7 +16,7 @@ LAST_DONE: 2026-05-16 Phase 7 #4 (Opus 4.7 direct, single-session, ~50K context)
   (7) forgot-password/page.tsx wired to mutation (TODO line 46 replaced)
   (8) reset-password/[token]/page.tsx (server, awaits async params) + _reset-form.tsx (client — shadcn Form + RHF + Zod per UI Rule #4)
   (9) 8 new test cases in auth.test.ts (3 requestPasswordReset + 5 resetPassword) — RED→GREEN→REFACTOR enforced
-Squash-merged to main as SHA `<SHA>`. ~10 files modified, ~4 created. Visual QA (Rule 16) deferred — see lessons.md from Phase 7 #3 for the auth-gated route rationale; /forgot-password and /reset-password are public but still pending dev-up smoke.
+Squash-merged to main as SHA `2cdc3c3`. ~10 files modified, ~4 created. Visual QA (Rule 16) deferred — see lessons.md from Phase 7 #3 for the auth-gated route rationale; /forgot-password and /reset-password are public but still pending dev-up smoke.
 
 NEXT: Phase 7 #5 candidates (any order, user picks):
   (c) JWT org-slug encoding — middleware foundation, high-risk; reserve for fresh-context careful session (Tier 3 split likely needed)
@@ -35,7 +35,7 @@ BLOCKERS:
 - Coverage threshold not yet enforced — TODO before Phase 8 (`vitest run --coverage` works, but no minimum % gate). Candidate (g) above.
 - Rule 16 Visual QA deferred for /forgot-password + /reset-password — manual smoke pending next dev-up session. /forgot-password is public so this CAN be smoked without credentials, unlike Phase 7 #3's auth-gated /app/meetings/new.
 
-GIT_BRANCH: main (8709595..<SHA>)
+GIT_BRANCH: main (8709595..2cdc3c3)
 
 PORTS: APP=43512 DB=43502 PGBOUNCER=43503 CACHE=43504 MINIO=43505 MINIO_CONSOLE=43506 MAILHOG_SMTP=43507 MAILHOG_UI=43508 PGADMIN=43509 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542
 
