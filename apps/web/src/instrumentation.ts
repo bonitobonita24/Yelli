@@ -34,13 +34,19 @@ export async function register(): Promise<void> {
   }
 
   // Dynamic imports keep this file Edge-bundle-safe; the Node-only modules
-  // (http, socket.io, @/server/socket/server) load lazily after the runtime
-  // check passes.
+  // (http, socket.io, @/server/socket/server, @/server/socket/revalidation)
+  // load lazily after the runtime check passes.
   const { createServer } = await import("http");
   const { createSocketServer } = await import("@/server/socket/server");
+  const { startSessionRevalidationLoop } = await import(
+    "@/server/socket/revalidation"
+  );
 
   const httpServer = createServer();
   const io = createSocketServer(httpServer);
+  // 60s session revalidation loop per security.md §Realtime Connection Safety
+  // + AUTH DEFAULTS item 6 (DECISIONS_LOG line 172).
+  const stopRevalidation = startSessionRevalidationLoop(io);
 
   httpServer.listen(port, () => {
     console.log(`[socket] listening on :${port}`);
@@ -48,6 +54,7 @@ export async function register(): Promise<void> {
 
   const shutdown = (signal: NodeJS.Signals): void => {
     console.log(`[socket] received ${signal} — closing connections`);
+    stopRevalidation();
     io.close(() => {
       httpServer.close(() => {
         process.exit(0);
