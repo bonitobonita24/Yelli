@@ -23,6 +23,7 @@ vi.mock("@yelli/db", () => ({
       create: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      count: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -192,6 +193,8 @@ describe("authRouter.requestPasswordReset", () => {
       email: "user@example.com",
       display_name: "User",
     } as never);
+    // 0 tokens in last 24h → well under the per-user cap
+    vi.mocked(platformPrisma.passwordResetToken.count).mockResolvedValueOnce(0);
     vi.mocked(platformPrisma.passwordResetToken.create).mockResolvedValueOnce(
       { id: "tok-1" } as never,
     );
@@ -227,8 +230,58 @@ describe("authRouter.requestPasswordReset", () => {
     const caller = createCaller(makeCtx("auth.requestPasswordReset"));
     const res = await caller.requestPasswordReset(input);
     expect(res).toEqual({ ok: true });
+    expect(platformPrisma.passwordResetToken.count).not.toHaveBeenCalled();
     expect(platformPrisma.passwordResetToken.create).not.toHaveBeenCalled();
     expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it("existing user at per-user 24h cap (≥5 tokens) → returns ok but skips mint + email", async () => {
+    vi.mocked(platformPrisma.user.findFirst).mockResolvedValueOnce({
+      id: "user-cap",
+      email: "user@example.com",
+      display_name: "User",
+    } as never);
+    // At the cap — 5 tokens already minted in the last 24h
+    vi.mocked(platformPrisma.passwordResetToken.count).mockResolvedValueOnce(5);
+
+    const caller = createCaller(makeCtx("auth.requestPasswordReset"));
+    const res = await caller.requestPasswordReset(input);
+
+    expect(res).toEqual({ ok: true });
+    // Count was consulted with a 24h rolling-window where clause
+    expect(platformPrisma.passwordResetToken.count).toHaveBeenCalledTimes(1);
+    const countArgs = vi.mocked(platformPrisma.passwordResetToken.count).mock
+      .calls[0]?.[0] as {
+      where: { user_id: string; created_at: { gte: Date } };
+    };
+    expect(countArgs.where.user_id).toBe("user-cap");
+    expect(countArgs.where.created_at.gte).toBeInstanceOf(Date);
+    const windowMs = Date.now() - countArgs.where.created_at.gte.getTime();
+    // ~24h ago (allow ±1min for test execution drift)
+    expect(windowMs).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 60_000);
+    expect(windowMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 60_000);
+    // Cap engaged → no token written, no email sent
+    expect(platformPrisma.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it("existing user one-under-cap (4 tokens) → still mints and sends", async () => {
+    vi.mocked(platformPrisma.user.findFirst).mockResolvedValueOnce({
+      id: "user-under",
+      email: "user@example.com",
+      display_name: "User",
+    } as never);
+    vi.mocked(platformPrisma.passwordResetToken.count).mockResolvedValueOnce(4);
+    vi.mocked(platformPrisma.passwordResetToken.create).mockResolvedValueOnce(
+      { id: "tok-5" } as never,
+    );
+
+    const caller = createCaller(makeCtx("auth.requestPasswordReset"));
+    const res = await caller.requestPasswordReset(input);
+
+    expect(res).toEqual({ ok: true });
+    expect(platformPrisma.passwordResetToken.create).toHaveBeenCalledTimes(1);
+    expect(sendPasswordResetEmail).toHaveBeenCalledTimes(1);
   });
 
   it("turnstile failure → UNAUTHORIZED, no DB lookup", async () => {

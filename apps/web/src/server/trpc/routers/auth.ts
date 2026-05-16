@@ -17,6 +17,13 @@ import { publicProcedure, router } from "@/server/trpc/trpc";
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour — security.md AUTH DEFAULTS max
 
+// Per-user 24h reset-request cap — prevents a known user from being
+// email-bombed when an attacker passes Turnstile and spaces requests
+// past the per-email LRU rate limit. Cap engaged → return ok (no
+// enumeration) but skip mint + send.
+const PER_USER_RESET_CAP = 5;
+const PER_USER_RESET_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 function sha256Hex(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
@@ -125,6 +132,21 @@ export const authRouter = router({
       // Always return ok — never reveal whether the email exists
       // (security.md PRODUCTION ERROR HANDLING — no enumeration).
       if (!user) {
+        return { ok: true as const };
+      }
+
+      // Per-user 24h cap (defence-in-depth on top of per-email LRU
+      // rate limit above). Cap met → return ok silently so the
+      // response shape stays identical to the cap-not-met path.
+      const recentResetCount = await platformPrisma.passwordResetToken.count({
+        where: {
+          user_id: user.id,
+          created_at: {
+            gte: new Date(Date.now() - PER_USER_RESET_WINDOW_MS),
+          },
+        },
+      });
+      if (recentResetCount >= PER_USER_RESET_CAP) {
         return { ok: true as const };
       }
 
