@@ -9,6 +9,10 @@ import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
 import { authConfig } from "@/server/auth.config";
+import {
+  buildTenantRedirectUrl,
+  resolveTenantRedirect,
+} from "@/server/tenant-redirect";
 
 // Edge-safe Auth.js instance — uses the shell config without Credentials/bcrypt/Prisma.
 // The full server instance lives in @/server/auth and is used by route handlers + tRPC.
@@ -78,9 +82,33 @@ export default auth(async (req) => {
   const hostname = host.split(":")[0] ?? "";
   const tenantSlug = extractTenantSlug(hostname, path);
 
-  // Attach enriched headers for tRPC context and route handlers
-  // Tenant-session cross-check (slug→organizationId) deferred to tRPC procedures
-  // to avoid per-request DB lookup in Edge middleware. See TODO below.
+  // §TENANT MIDDLEWARE SAFETY (security.md): on protected routes, the
+  // URL-derived org slug must match the session's organizationSlug, or
+  // we redirect to the user's correct subdomain. Super-admins get an
+  // exception on /superadmin paths only (Phase 7 #7c option C). The
+  // slug now lives in the JWT (Phase 7 #7c-1) so no DB round-trip here.
+  if (isProtected && session?.user && tenantSlug) {
+    const decision = resolveTenantRedirect({
+      urlSlug: tenantSlug,
+      sessionSlug: session.user.organizationSlug,
+      isSuperAdmin: session.user.isSuperAdmin,
+      path,
+    });
+    if (decision.kind === "redirect") {
+      const redirectUrl = buildTenantRedirectUrl({
+        currentHostname: hostname,
+        currentPath: path,
+        currentSearch: nextUrl.search,
+        currentUrlSlug: tenantSlug,
+        targetSlug: decision.targetSlug,
+        origin: nextUrl.origin,
+      });
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
+  // Attach enriched headers for tRPC context and route handlers. After the
+  // cross-check above, when both slugs are present they are equal.
   const requestHeaders = new Headers(req.headers);
 
   if (tenantSlug) {
@@ -89,12 +117,8 @@ export default auth(async (req) => {
 
   if (session?.user) {
     requestHeaders.set("x-user-id", session.user.id);
-    // organizationId may be absent for super-admins operating outside a tenant
-    if (session.user.organizationId) {
-      requestHeaders.set("x-organization-id", session.user.organizationId);
-    }
-    // TODO Part 5b+: add org slug to JWT so middleware can enforce slug→organizationId
-    // match without a DB lookup, enabling full §TENANT MIDDLEWARE SAFETY enforcement here.
+    requestHeaders.set("x-organization-id", session.user.organizationId);
+    requestHeaders.set("x-organization-slug", session.user.organizationSlug);
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } });
