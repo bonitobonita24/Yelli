@@ -22,6 +22,36 @@
 
 # ---
 
+## 2026-05-16 — Phase 7 #6: per-user 24h reset-request cap
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 1 — ~2 files, deterministic)
+- Why: User picked option (h) from `.whatsnext` queued candidates. Close the email-bomb gap in `authRouter.requestPasswordReset` — currently only protected by per-email LRU rate limit (10/min), so an attacker who passes Turnstile and spaces requests >6s apart could flood a known user with thousands of reset emails per day. Adds defence-in-depth: count `PasswordResetToken` rows created for the matched user_id in the last 24h; if ≥5, return ok silently and skip mint + email send.
+- Files added: none
+- Files modified:
+  - apps/web/src/server/trpc/routers/auth.ts — added 2 module constants (PER_USER_RESET_CAP=5, PER_USER_RESET_WINDOW_MS=24h) and a `passwordResetToken.count` query with a 24h gte where clause + early-return on cap-met. Placement is AFTER the user lookup so unknown-email paths skip the cap-check entirely (1 fewer DB call) and no enumeration leaks via timing or code-path differences.
+  - apps/web/src/server/trpc/routers/auth.test.ts — added `count: vi.fn()` to the mock factory; updated existing happy-path test to mock count=0; added two new tests: cap-engaged (count=5 → ok, no create, no send, count call signature asserted with user_id + ~24h gte window) and one-under-cap (count=4 → still mints + sends); updated unknown-email test to assert count is NOT called (preserves no-enumeration: lookup-misses skip the cap query entirely).
+- Files deleted: none
+- Schema/migrations: none. The existing PasswordResetToken table already has `@@index([user_id])` (Phase 7 #4) which makes the count query efficient without a composite index. At 5/24h cap there will never be more than a handful of rows per user — index is sufficient.
+- Tests: RED → GREEN proven inline. Initial run of the cap-engaged test failed because the implementation didn't call `count` (`expected "vi.fn()" to be called 1 times, but got 0 times`). After adding the count + cap-met early-return, all 15 auth.test.ts cases passed. Test suite: 22/22 (was 20/20; +2 new cases).
+- Errors encountered:
+  - None new. The pre-existing `pnpm audit --audit-level=high` failure (nodemailer addressparser DoS, GHSA-rcmh-qjqh-p98v) was confirmed still pre-existing — flagged as Phase 7 #7 candidate (j); does not block this PR.
+- Errors resolved: none (no new errors introduced).
+- Validation:
+  - `pnpm test` PASS (22/22 in 344ms turbo wrap; 2 test files; +2 cases from Phase 7 #5 baseline of 20)
+  - `pnpm test:coverage` PASS — auth.ts gate met (statements 100, branches 80.95, functions 100, lines 100; per-file threshold 75 passes with 5.95% slack, up from 3.94%). Global floor (12/6/12/12) met (13.25 / 6.94 / 12.9 / 13.62).
+  - `pnpm lint` PASS (0 errors, 1 pre-existing warning in layout.tsx — not introduced by this branch)
+  - `pnpm typecheck` PASS (8/8 packages, cached)
+  - `pnpm build` PASS (45.8s, 27 routes — unchanged from Phase 7 #5; backend-only change)
+  - `pnpm tools:check-product-sync` PASS (no leaks, no drift)
+  - `pnpm audit --audit-level=high` FAIL — pre-existing nodemailer CVE; not regression
+- Two-stage review (Rule 25):
+  - Stage 1 spec compliance: PASS. `.whatsnext` declared "per-user 24h cap … prevent token-spam … Tests would assert the cap engages at request #6 (returns ok still — no enumeration — but skips email send + token mint)" — all three asserted behaviors present (cap engages at #6, returns ok, no enumeration, no email).
+  - Stage 2 quality: PASS. No `any` types, no type assertions without comment, tests assert behavior (count call signature + where clause + side-effect absence), only blast-radius files touched (auth.ts + auth.test.ts), conventional commit format, module-scope constants match existing `RESET_TOKEN_TTL_MS` pattern, comment explains WHY (defence-in-depth on top of LRU).
+- Outstanding: Visual QA Rule 16 carryover from Phase 7 #3/#4 still pending dev-up smoke. Note for the smoke test: with the new 24h cap live, manually requesting >5 resets for the same email in 24h will now silently no-op — manual test should use distinct emails or trust the test suite assertions.
+- Commit SHA: 5325b8c (squash-merged from feat/password-reset-per-user-cap)
+
+# ---
+
 ## 2026-05-16 — Phase 7 #5: coverage threshold gate (vitest + CI)
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 1 — ~4 files, deterministic)

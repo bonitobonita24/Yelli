@@ -1,13 +1,13 @@
-Phase 7 #6 — user picks from queued candidates (coverage threshold gate live since Phase 7 #5; TDD mandatory per Rule 25)
+Phase 7 #7 — user picks from queued candidates (coverage gate live since Phase 7 #5; per-user 24h cap live since Phase 7 #6; TDD mandatory per Rule 25)
 
-Phase 7 #5 shipped on 2026-05-16 as `78fc022`:
-- apps/web/vitest.config.ts — added `coverage.thresholds` block: global floor (statements ≥ 12, branches ≥ 6, functions ≥ 12, lines ≥ 12 — matches measured baseline) + per-file gate src/server/trpc/routers/auth.ts (statements 100, branches 75, functions 100, lines 100). Added lcov reporter alongside text + html.
-- turbo.json — new `test:coverage` task (dependsOn ^build, outputs coverage/**).
-- package.json (root) — new `test:coverage` script delegating to turbo.
-- .github/workflows/ci.yml — new `coverage` job (needs: governance, parallel to quality + security) running `pnpm test:coverage` and uploading `apps/web/coverage/` as a 14-day artifact (HTML + lcov) via actions/upload-artifact@v4.
-- Gate-engagement verified inline: temporarily bumped auth.ts branches threshold 75 → 99 (above measured 78.94) → confirmed exit 1 with `Coverage for branches (78.94%) does not meet "src/server/trpc/routers/auth.ts" threshold (99%)` → restored to 75.
-- 3 new lessons documented: (🔴) nodemailer 6.9.16 still flagged HIGH CVE — three resolution paths queued for candidate (j); (🟤) vitest per-file thresholds via glob keys inside the `thresholds` object; (🟤) PreToolUse workflow-edit warning is precautionary, not diff-aware.
-- Visual QA Rule 16 not applicable (no UI changes).
+Phase 7 #6 shipped on 2026-05-16 as `5325b8c`:
+- apps/web/src/server/trpc/routers/auth.ts — added 2 module constants (PER_USER_RESET_CAP=5, PER_USER_RESET_WINDOW_MS=24h) and a passwordResetToken.count query with 24h gte where clause + early-return on cap-met. Placed AFTER user lookup so unknown emails skip the cap query (preserves no-enumeration: identical {ok:true} shape across unknown / under-cap / cap-met paths).
+- apps/web/src/server/trpc/routers/auth.test.ts — added count: vi.fn() to the mock factory; updated existing happy-path to mock count=0; added 2 new cases: cap-engaged (count=5 → ok, no create, no send, count signature asserted) and one-under-cap (count=4 → still mints + sends); updated unknown-email path to assert count is NOT called.
+- Defence-in-depth design: per-email LRU (10/min) catches rapid bursts; per-user 24h cap catches sustained low-rate flooding. Without the cap an attacker passing Turnstile could send 14k+ resets per day to one user.
+- RED → GREEN proven inline: cap-engaged test failed first (count not called) → after impl, 15/15 auth.test.ts cases pass.
+- Coverage on auth.ts: branches 78.94 → 80.95 (new branch exercised); per-file gate (≥75) passes with widened slack.
+- 1 new lesson documented: (🟤) per-user 24h cap design pattern — cap placement after user lookup, count primitive vs findFirst+orderBy, per-user.id keying vs per-email.
+- Visual QA Rule 16 not applicable (no UI changes). Note for future smoke tests: with cap live, manually requesting >5 resets for the same email in 24h will now silently no-op.
 
 ----------------------------------------------------------------------
 Candidates (any order, user picks):
@@ -21,11 +21,12 @@ Candidates (any order, user picks):
     - Test: middleware unit test for tenant-switch attack rejection
     Risk: every authenticated route depends on this; reserve for careful fresh-context session
     Tier 3 → mandatory split via memory-governance §1: probably 3 sub-sessions (auth.config + auth.ts → middleware → consumers).
+    Now the highest-impact open ticket; unblocks (e) Socket.IO.
 
 (d) join/[token] tRPC                       [needs LiveKit ⏳ for full integration]
     Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled
     Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows.
-    NEW: adding tests for getJoinToken would also let us add a per-file coverage gate on meetings.ts.
+    Adding tests for getJoinToken would also let us add a per-file coverage gate on meetings.ts.
 
 (e) Socket.IO auth middleware               [depends on (c)]
     Should land AFTER (c) so the JWT contract is stable.
@@ -34,20 +35,14 @@ Candidates (any order, user picks):
     Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
     Likely Tier 1.
 
-(h) Tighten request-password-reset rate limiting    [hardening — ~2 files]
-    Currently uses rateLimiters.auth (in-memory LRU, ~5/min per IP+key).
-    Could add a per-user 24h cap (e.g. ≤5 reset emails per user per day) to prevent
-    a targeted user from receiving spam reset emails when an attacker repeatedly
-    fires off the endpoint. Cost: another small Prisma query per request.
-    Tests would assert the cap engages at request #6 (returns ok still — no enumeration — but
-    skips email send + token mint).
-
 (i) Periodic cleanup of expired/consumed password_reset_tokens
     A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
     expired tokens > 7 days. Keeps the table from growing unboundedly.
-    Pairs naturally with the new coverage gate (g — now shipped) — both are housekeeping.
+    Pairs naturally with #6: the new cap-met silent-skip and the cleanup job
+    together close the token-table lifecycle. The count query introduced in #6
+    stays fast forever if the cleanup runs daily.
 
-(j) NEW: Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)    [security — depends on @auth]
+(j) Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)    [security — depends on @auth]
     addressparser DoS via recursive calls affects <=7.0.10; we run 6.9.16 pinned for
     Auth.js v5 peer compat. Three documented paths in lessons.md:
       (a) wait for @auth to widen its nodemailer peer range — cleanest, no code changes
@@ -57,7 +52,7 @@ Candidates (any order, user picks):
           to .npmrc per phases.md decision tree step 3
     Path (c) is the realistic short-term option; (a) is the long-term hope; (b) is
     last-resort. Decision deserves its own commit + DECISIONS_LOG.md entry.
-    Pre-existing on main — not Phase 7 #5 regression but flagged during its audit.
+    Pre-existing on main — flagged during Phase 7 #5 audit; not Phase 7 #6 regression.
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
@@ -66,9 +61,10 @@ Rule 25 reminder for ALL of the above:
   → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` and `_reset-form.tsx` as reference impls).
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
   → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file (extends Phase 7 #4 pattern).
-  → NEW (Phase 7 #5): when a router becomes fully tested (>95% across all four metrics), add a per-file threshold to apps/web/vitest.config.ts to lock the new coverage in. Use the [[vitest-per-file-glob-thresholds]] pattern from lessons.md.
-  → NEW (Phase 7 #5): coverage thresholds rise organically — add tests → measure → bump threshold. Do NOT lower thresholds to make a regression "fix" pass.
+  → When a router becomes fully tested (>95% across all four metrics), add a per-file threshold to apps/web/vitest.config.ts to lock the new coverage in. Use the [[vitest-per-file-glob-thresholds]] pattern from lessons.md.
+  → Coverage thresholds rise organically — add tests → measure → bump threshold. Do NOT lower thresholds to make a regression "fix" pass.
+  → NEW (Phase 7 #6): for any new throttle/cap design on auth flows, follow [[per-user-24h-cap-pattern]] — place after user lookup (not before), use Prisma `count` (not findFirst+orderBy), preserve no-enumeration response shape on cap-met.
 
-Recommended next: (h) tighten request-password-reset rate limiting — hardening pairs naturally now that the coverage gate locks in the test safety net. Then (c) JWT org-slug middleware (the riskiest open ticket, but unblocks (e) Socket.IO auth). Save (j) for when @auth releases a wider peer range; mitigation analysis is documented in lessons.md regardless.
+Recommended next: (c) JWT org-slug middleware — now the highest-impact open ticket (unblocks Socket.IO and tenant-switch attack hardening). Reserve for a fresh-context careful session; Tier 3 split likely needed (3 sub-sessions). If a small-and-safe ticket is preferred, pick (j) nodemailer mitigation (path c — single commit + DECISIONS_LOG entry + .npmrc tweak) or (i) cleanup job (pairs naturally with the new cap query). Save (d) join/[token] for when LIVEKIT_API_KEY is filled.
 
-Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). ALSO smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover).
+Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). ALSO smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover). With the new 24h cap live, manual /forgot-password smoke for the same email is limited to 5 requests per 24h — use distinct emails or trust the test assertions.

@@ -8,6 +8,20 @@
 
 # ---
 
+## 2026-05-16 — 🟤 Per-user 24h cap on password-reset requests — placement AFTER user lookup; use `count` not `findFirst`
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #6 (rate-limit hardening)
+- Files:     apps/web/src/server/trpc/routers/auth.ts, apps/web/src/server/trpc/routers/auth.test.ts
+- Concepts:  rate-limit, password-reset, no-enumeration, defence-in-depth, prisma-count, security
+- Narrative: Added a 5/24h per-user cap on `requestPasswordReset` as defence-in-depth on top of the per-email LRU rate limit (rateLimiters.auth at 10/min). The LRU catches rapid-fire bursts; the per-user cap catches sustained low-rate flooding where an attacker spaces requests just past the LRU window. Three non-obvious decisions baked into the design — write them down so the next agent that touches this code doesn't undo them:
+  (1) **Cap placement is AFTER the user lookup, not before.** If the cap-check ran first (keyed on email), the code path for "unknown email at cap" vs "unknown email under cap" would diverge in latency, making cap state observable via timing. Running it AFTER means unknown emails return ok immediately (lookup miss → return) with no count query; known emails always run the count query. From an attacker's perspective, all three paths (unknown email / known under cap / known at cap) return the same `{ok:true}` shape and the same approximate latency — the only observable difference is whether an email lands in the user's inbox, which the attacker can't see.
+  (2) **Use `passwordResetToken.count`, NOT `findFirst+orderBy` or `findMany+take`.** The query is "are there at least N rows in the last 24h" — that's `count(where:...)`. Prisma maps it to a single `SELECT COUNT(*)` with an index seek on `user_id` (PasswordResetToken already has `@@index([user_id])` from Phase 7 #4). findFirst skip+take would be misleading — "find Nth recent" is a different question from "are there ≥N". The semantic match matters when the cap design evolves (e.g., adding a per-org cap on top — still count).
+  (3) **Cap is per-user (user.id), not per-email.** The email key is already covered by the LRU. The DB count uses the canonical user identity (User PK). This is the right surface because (a) email is per-org unique (not globally), so two users with the same email in different orgs each get their own 5/24h budget — correct behavior; (b) if a future migration changes how emails are normalized, the cap doesn't break.
+  Cap value (5/24h) chosen as generous headroom for legitimate use (user forgets password, doesn't see email in spam, retries) while still blocking sustained spam. If real-world abuse pushes through at 5/day, lower to 3/day before lowering further — the cap-met path returns silently so legitimate users hitting the cap will perceive it as "the reset email didn't arrive". Tests assert both cap-engaged (count=5 → no mint, no send) and one-under-cap (count=4 → still mints + sends) to lock the threshold position.
+
+# ---
+
 ## 2026-05-16 — 🔴 nodemailer 6.9.16 still flagged HIGH CVE (addressparser DoS, GHSA-rcmh-qjqh-p98v)
 - Type:      🔴 gotcha
 - Phase:     Phase 7 #5 (coverage gate)
