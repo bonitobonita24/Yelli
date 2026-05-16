@@ -342,6 +342,7 @@ ports:
     pgadmin: 43509
     app: 43512
     worker: 43513
+    socket: 43515               # Socket.IO listener (Phase 7 #8e — instrumentation.ts bootstrap)
     prisma_studio: 43522
     livekit_signal: 43532
     livekit_turn_udp_start: 43537

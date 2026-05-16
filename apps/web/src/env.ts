@@ -14,6 +14,10 @@ const serverSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v !== undefined ? parseInt(v, 10) : 3000)),
+  SOCKET_PORT: z
+    .string()
+    .optional()
+    .transform((v) => (v !== undefined ? parseInt(v, 10) : 0)),
   NODE_ENV: z
     .enum(["development", "staging", "production"])
     .default("development"),
@@ -41,6 +45,7 @@ const clientSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1),
   NEXT_PUBLIC_LIVEKIT_WS_URL: z.string().url().optional(),
+  NEXT_PUBLIC_SOCKET_URL: z.string().url().optional(),
 });
 
 function getServerEnv() {
@@ -52,6 +57,7 @@ function getServerEnv() {
     AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST,
     TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
     APP_PORT: process.env.APP_PORT,
+    SOCKET_PORT: process.env.SOCKET_PORT,
     NODE_ENV: process.env.NODE_ENV,
     STORAGE_ENDPOINT: process.env.STORAGE_ENDPOINT,
     STORAGE_ACCESS_KEY: process.env.STORAGE_ACCESS_KEY,
@@ -76,6 +82,7 @@ function getClientEnv() {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_LIVEKIT_WS_URL: process.env.NEXT_PUBLIC_LIVEKIT_WS_URL,
+    NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL,
   };
 }
 
