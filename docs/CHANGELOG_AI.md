@@ -22,6 +22,46 @@
 
 # ---
 
+## 2026-05-16 — Phase 7 #7: JWT org-slug encoding + middleware URL↔session cross-check (Tier 3)
+
+- Agent: CLAUDE_CODE (Opus 4.7 — direct execution per memory-governance §4 Step 2.5b after Sonnet dispatch thrashed; see lessons.md). Decomposed into 3 sub-sessions per memory-governance §1.
+- Why: Closes the security.md §TENANT MIDDLEWARE SAFETY gap and the `TODO Part 5b+` at middleware.ts:96. Subdomain URL routing was previously trusted relative to the session — an authenticated user from org acme could navigate to evil.yelli.powerbyte.app and the middleware would not redirect them (only the downstream tRPC tenant-guard would catch the leak, and only for queries that explicitly checked tenantId). Encoding `organizationSlug` in the JWT lets the Edge middleware enforce match without a per-request DB lookup. Also unblocks Phase 7 #8 candidate (e) Socket.IO auth, which needs the same JWT-encoded slug for room-channel scoping.
+- Files added:
+  - apps/web/src/server/auth-config.test.ts — 7 cases exercising authConfig.callbacks.{jwt,session} directly (RED→GREEN proven)
+  - apps/web/src/server/tenant-redirect.ts — two pure helpers (resolveTenantRedirect, buildTenantRedirectUrl) extracted from middleware so Node-based vitest can import without pulling next-auth + next/server
+  - apps/web/src/server/tenant-redirect.test.ts — 13 cases (8 decision branches + 5 URL construction patterns)
+- Files modified:
+  - apps/web/src/types/next-auth.d.ts — `organizationSlug: string` added to all 4 module augmentations (Session.user, User, next-auth/jwt JWT, @auth/core/jwt JWT)
+  - apps/web/src/server/auth.config.ts — jwt callback writes token.organizationSlug from user; session callback narrows from token, includes in invalid predicate, assigns to session.user (mirrors organizationId pattern)
+  - apps/web/src/server/auth.ts — authorize() returns organizationSlug from userRecord.organization.slug; DB-revalidating session callback extends `current.include` to pull organization.slug and assigns `current.organization.slug` to session.user.organizationSlug (freshness over token: org slug renames invalidate stale tokens within one session-read cycle)
+  - apps/web/src/server/trpc/routers/meetings.test.ts — SESSION_USER fixture updated with organizationSlug to satisfy newly-required field on User type
+  - apps/web/src/middleware.ts — imports the two pure helpers; on `(isProtected && session.user && tenantSlug)`, runs the decision; redirects via NextResponse.redirect on mismatch. Adds x-organization-slug request header alongside x-organization-id for tRPC defense-in-depth. Drops the defensive `if (session.user.organizationId)` guard — post c-1 the type system guarantees presence.
+- Files deleted: none
+- Schema/migrations: none. The Organization model already has `slug String @unique @db.VarChar(100)` (schema.prisma:78); no migration needed.
+- Tests: 22 → 42 (+20). c-1 added 7 (auth-config.test.ts); c-2 added 13 (tenant-redirect.test.ts). RED→GREEN proven for both (c-1 had 3 failing runtime assertions before implementation, GREEN after; c-2 had a failing suite import before extraction, GREEN after).
+- Errors encountered:
+  - **Sonnet executor thrash on c-1 first dispatch.** Per memory-governance §4 Step 2.5, the c-1 sub-session was scoped to ~22K (target Sonnet budget). A general-purpose Sonnet 4.6 agent was dispatched with explicit "do NOT read CLAUDE.md or .claude/rules/*" instructions and a self-contained prompt. Within 3 turns Claude Code reported "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row." Root cause: dispatched subagents inherit Yelli's SessionStart hook chain (which auto-loads CLAUDE.md + all .claude/rules/* files — ~50K of system reminders) before the task prompt processes. Sonnet's 60K window fills before any productive work. Partial work was left (a tautological test asserting on a self-constructed User object literal — type-only, no runtime contract); reverted via `git checkout apps/web/src/server/trpc/routers/auth.test.ts` and the partial test discarded.
+  - **typecheck error in meetings.test.ts SESSION_USER fixture.** Making organizationSlug required on the User type broke the existing fixture that didn't include it. Fixed by adding organizationSlug: "tenant-org" to the fixture.
+  - **import resolution error in middleware test.** Trying to import pure helpers from `@/middleware` failed because middleware.ts imports next-auth, which imports `next/server`, which Node's test environment can't resolve. Fixed by extracting helpers to `@/server/tenant-redirect` (pure TypeScript, no runtime-specific imports).
+  - **Coverage `--coverage` flag not reaching vitest through `pnpm --filter ... -- --coverage`.** pnpm consumed the `--` as its own arg separator. Fixed by `pnpm exec vitest run --coverage` directly from apps/web.
+- Errors resolved: see above. All resolutions documented inline.
+- Validation:
+  - `pnpm --filter @yelli/web test` PASS (4 files, 42 tests, ~380ms vitest run)
+  - `pnpm --filter @yelli/web typecheck` PASS (clean)
+  - `pnpm --filter @yelli/web lint` PASS (0 errors, 1 pre-existing layout.tsx warning — not introduced)
+  - `pnpm exec vitest run --coverage` PASS — trpc/routers/auth.ts gate intact at 100/80.95/100/100; globals improved 13.25→21.37 stmts / 6.94→16.1 branches / 12.9→17.7 funcs / 13.62→21.49 lines
+- Two-stage review (Rule 25):
+  - Stage 1 spec compliance: PASS. .whatsnext declared "JWT org-slug encoding — middleware foundation, high-risk; reserve for fresh-context careful session (Tier 3 split likely needed). … unblocks (e) Socket.IO." All three declared behaviors delivered: (a) JWT carries organizationSlug, (b) middleware enforces match (with super-admin /superadmin bypass per user-confirmed option C), (c) (e) Socket.IO is now unblocked. Also closes the TODO Part 5b+ comment.
+  - Stage 2 quality: PASS. No `any`, narrowing mirrors existing organizationId pattern, regex-escape on slug interpolation for path swap, discriminated-union return type for decision helper, defensive null-guard for sessionSlug even though c-1 invariant prevents it, pure helpers extracted for testability + Edge/Node co-compatibility, conventional commit format per Rule 23.
+- Outstanding:
+  - Rule 16 Visual QA: still deferred for /forgot-password + /reset-password from Phase 7 #4 carryover. Also new from #7: subdomain routing manual smoke (edit /etc/hosts or use /t/{slug} path pattern) — log in as user with org "acme" → visit `http://localhost:43512/t/acme/app` → confirm passes → visit `http://localhost:43512/t/evil/app` → confirm redirects to `/t/acme/app` (no DB lookup, JWT-fast).
+- Commit SHAs:
+  - c-1 (JWT shape): `0e0a892` (squash-merged from feat/jwt-org-slug-1)
+  - c-2 (middleware enforcement): `740cdd2` (squash-merged from feat/jwt-org-slug-2)
+  - c-3 (governance batch — this commit): squash-merged from feat/jwt-org-slug-3; SHA backfilled in follow-up `chore(governance)` per Phase 7 #6 precedent
+
+# ---
+
 ## 2026-05-16 — Phase 7 #6: per-user 24h reset-request cap
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct, single-session; Tier 1 — ~2 files, deterministic)

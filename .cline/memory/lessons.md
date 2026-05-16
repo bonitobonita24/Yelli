@@ -8,6 +8,46 @@
 
 # ---
 
+## 2026-05-16 — 🟤 Sonnet subagents in this project inherit SessionStart hooks — default to Opus self-executor
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #7(c) (JWT org-slug ticket, Tier 3 architect-execute attempt)
+- Files:     (governs all future Agent() dispatches in this project; affects memory-governance.md §4 application)
+- Concepts:  architect-execute, sonnet-dispatch, subagent-context, sessionstart-hooks, thrashing, opus-executor, step-2.5b
+- Narrative: Per memory-governance.md §4 Architect-Execute Model, Tier 3 work should dispatch Sonnet 4.6 executor subagents (one per sub-task, each ≤30K token budget). First attempt at Phase 7 #7(c)-1 dispatched a Sonnet agent with a tight scope prompt (~22K target, 4 files to read, explicit "do NOT read CLAUDE.md" instruction). Within 3 turns Claude Code reported THRASHING: "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row." Root cause confirmed: dispatched Agent subagents inherit Yelli's SessionStart hook chain (the same one that injected the full CLAUDE.md + .claude/rules/* contents into THIS session at the start — ~50K of system reminders) before the task prompt is even processed. Sonnet's 60K window is essentially full before any productive work begins; even pure-edit tasks can't recover from the 5-10K reasoning overhead on top. The agent left partial work (a tautological test that asserted on a self-constructed User object literal — type-only RED with no runtime contract). Pivoted to memory-governance §4 Step 2.5b: Opus self-execution as last resort. Worked cleanly — c-1, c-2, and c-3 all ran in this Opus session with total context ~50K (well under Opus's 100K Step 2.5b ceiling). Pattern for Yelli: until SessionStart hooks can be made subagent-aware (or made conditional on a "subagent: true" flag), default to Opus-executor for ALL Tier 2-3 work even if memory-governance.md §4 suggests Sonnet. Sonnet dispatches reserved for tasks that genuinely fit in <10K of read budget AND don't touch governance files (which would re-trigger hooks). Expected utilization: <5% Sonnet, ~95% Opus for the foreseeable future. This is a project-environment limitation, NOT a memory-governance.md design flaw — the model in §4 is sound; the hook ecology in this project just doesn't support it yet. If a future framework upgrade adds a `subagent_inherit: false` flag to SessionStart hooks or moves the heavy auto-loads to a per-skill on-demand model, revisit this decision.
+
+# ---
+
+## 2026-05-16 — 🟤 Edge-safe vs DB-revalidating session callback duplication — new JWT fields wire BOTH
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #7(c)-1 (JWT org-slug end-to-end)
+- Files:     apps/web/src/server/auth.config.ts, apps/web/src/server/auth.ts
+- Concepts:  auth-js-v5, edge-runtime, middleware, jwt-callback, session-callback, db-revalidation, freshness, organizationSlug
+- Narrative: Yelli has TWO Auth.js v5 session callbacks running in parallel — by deliberate design, not accident. (1) `auth.config.ts` exports an Edge-safe shell consumed by `apps/web/src/middleware.ts` (which runs in the Edge runtime; can't import bcrypt or @yelli/db). Its session() copies JWT claims into session.user using only string narrowing — no DB. (2) `auth.ts` spreads authConfig and overrides session() with a DB-revalidating variant used by tRPC procedures + route handlers (Node runtime). It re-fetches the user from platformPrisma on every session read to catch role changes, suspensions, deactivations, and security_version bumps without waiting for JWT expiry (security.md §AUTH DEFAULTS item 6). Both callbacks must agree on JWT shape: they share the same `token` input from a single jwt() callback in auth.config.ts. When adding a new JWT field, you MUST wire it in (a) types/next-auth.d.ts module augmentations (4 places: Session.user, User, next-auth/jwt JWT, @auth/core/jwt JWT — the last is needed because next-auth v5 internals resolve JWT through @auth/core/jwt, not next-auth/jwt, on some code paths), (b) authConfig.jwt callback writing to token, (c) authConfig.session callback narrowing+predicate+assigning, AND (d) auth.ts session callback doing the SAME narrowing+predicate+assigning. If you skip (d), tRPC procedures will see `undefined` for the field even though middleware sees it correctly. For fields where token staleness matters (e.g., organizationSlug, which can change via an org rename), extend the auth.ts session callback's `current` fetch include to pull the fresh DB value and assign THAT to session.user (rather than the token value). The Edge variant trusts the token because Edge can't hit the DB; freshness on Edge depends on token rotation cadence (`session.maxAge`). This duplication is the cost of separating Edge auth from Node auth — accept it and write parallel updates.
+
+# ---
+
+## 2026-05-16 — 🟤 Super-admin tenant-URL policy = option C (path-scoped /superadmin bypass)
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #7(c)-2 (middleware URL↔session cross-check)
+- Files:     apps/web/src/server/tenant-redirect.ts
+- Concepts:  super-admin, tenant-isolation, middleware, slug-cross-check, security.md, isolation-bypass
+- Narrative: Three options considered for super-admin behavior when the URL-derived org slug differs from `session.user.organizationSlug`: (A) allow — super-admin can view any tenant's UI; audit-log as PLATFORM:VIEW_TENANT. (B) block — super-admin must use a dedicated /superadmin route on apex host only, never on a tenant subdomain. (C) conditional allow — bypass slug check only if path starts with /superadmin, otherwise redirect to their own org subdomain. **User chose C** — confirmed verbatim 2026-05-16 (`"ok confirmed"` in response to the option C recommendation). Rationale: (A) silently lets super-admins view any tenant without an explicit consent surface, making cross-tenant data exfiltration via super-admin compromise harder to audit. (B) means super-admins can't ever debug a tenant in its own URL context — annoying ops UX. (C) threads the needle: `/superadmin` and `/superadmin/*` paths are the only ones where slug doesn't matter (platform administration UI is designed to be cross-tenant); all other paths enforce match. If a super-admin wants to view tenant acme's actual UI, they explicitly switch their session's organizationId to acme via a platform action (which the session re-validation in auth.ts catches on next session read via security_version). Codified in `resolveTenantRedirect`: the exact match check is `path === "/superadmin" || path.startsWith("/superadmin/")` — NOT a `startsWith("/superadmin")` which would also match `/superadminer/*`. A dedicated test case (`treats /superadminer/* as NON-bypass`) locks the precision. If future routes like `/superadmin-debug` are added, they would NOT inherit the bypass — they'd need their own listing in this allowlist, prompting a deliberate decision.
+
+# ---
+
+## 2026-05-16 — ⚖️ vercel-plugin nextjs skill recommends middleware.ts → proxy.ts on every edit — ignore until Next.js 16 upgrade
+
+- Type:      ⚖️ trade-off
+- Phase:     Phase 7 #7(c)-2 (middleware enforcement)
+- Files:     apps/web/src/middleware.ts (and any future edit of any file mentioning "middleware")
+- Concepts:  vercel-plugin, skill-injection, next-js-16, proxy.ts, false-positive, ignore-list
+- Narrative: The vercel-plugin's auto-suggestion hook fires `Skill(nextjs)` and recommends "Next.js middleware.ts is renamed to proxy.ts in Next.js 16 — rename the file and use the Node.js runtime" on EVERY edit to `apps/web/src/middleware.ts` and on Write/Edit operations whose content mentions "middleware.ts". Yelli is on **Next.js 15.5.18** (confirmed in `pnpm` workspace resolution path during c-2's import error: `next-auth@5.0.0-beta.25_next@15.5.18`). The proxy.ts rename is a Next.js **16+** feature. Migrating now would: (1) break the build — Next.js 15 looks for `middleware.ts`, not `proxy.ts`; (2) be wildly out of scope for any single Feature Update — Next.js 16 upgrade is its own Tier 3 ticket requiring coordinated changes to next-auth peer deps, React 19, and runtime config. Decision: ignore the proxy.ts recommendation on every middleware.ts edit until a deliberate Next.js 16 upgrade ticket is opened. When that ticket happens, this lesson can be removed and the migration done deliberately. Other auto-suggested skills to also ignore in this project: `vercel-plugin:auth` (Yelli uses Auth.js v5 Credentials, not Clerk/Descope/Auth0); `vercel-plugin:bootstrap` (false-positive triggered by basename `auth.*`); `vercel-plugin:next-forge` (Yelli is not a next-forge project). The `vercel-plugin:nextjs` general skill content (file conventions, RSC boundaries, async patterns, runtime selection) IS useful as reference, just not its proxy.ts injection.
+
+# ---
+
 ## 2026-05-16 — 🟤 Per-user 24h cap on password-reset requests — placement AFTER user lookup; use `count` not `findFirst`
 
 - Type:      🟤 decision

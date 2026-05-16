@@ -1,48 +1,26 @@
-Phase 7 #7 — user picks from queued candidates (coverage gate live since Phase 7 #5; per-user 24h cap live since Phase 7 #6; TDD mandatory per Rule 25)
+Phase 7 #8 — user picks from queued candidates (JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h cap live since Phase 7 #6; TDD mandatory per Rule 25)
 
-Phase 7 #6 shipped on 2026-05-16 as `5325b8c`:
-- apps/web/src/server/trpc/routers/auth.ts — added 2 module constants (PER_USER_RESET_CAP=5, PER_USER_RESET_WINDOW_MS=24h) and a passwordResetToken.count query with 24h gte where clause + early-return on cap-met. Placed AFTER user lookup so unknown emails skip the cap query (preserves no-enumeration: identical {ok:true} shape across unknown / under-cap / cap-met paths).
-- apps/web/src/server/trpc/routers/auth.test.ts — added count: vi.fn() to the mock factory; updated existing happy-path to mock count=0; added 2 new cases: cap-engaged (count=5 → ok, no create, no send, count signature asserted) and one-under-cap (count=4 → still mints + sends); updated unknown-email path to assert count is NOT called.
-- Defence-in-depth design: per-email LRU (10/min) catches rapid bursts; per-user 24h cap catches sustained low-rate flooding. Without the cap an attacker passing Turnstile could send 14k+ resets per day to one user.
-- RED → GREEN proven inline: cap-engaged test failed first (count not called) → after impl, 15/15 auth.test.ts cases pass.
-- Coverage on auth.ts: branches 78.94 → 80.95 (new branch exercised); per-file gate (≥75) passes with widened slack.
-- 1 new lesson documented: (🟤) per-user 24h cap design pattern — cap placement after user lookup, count primitive vs findFirst+orderBy, per-user.id keying vs per-email.
-- Visual QA Rule 16 not applicable (no UI changes). Note for future smoke tests: with cap live, manually requesting >5 resets for the same email in 24h will now silently no-op.
+Phase 7 #7 (c) JWT org-slug encoding + middleware URL↔session cross-check shipped on 2026-05-16:
+- (c)-1 [SHA `0e0a892`] — JWT + session shape carries organizationSlug end-to-end. types/next-auth.d.ts gets organizationSlug in all 4 module augmentations (Session.user, User, next-auth/jwt JWT, @auth/core/jwt JWT). auth.config.ts (Edge-safe) writes from user in jwt(), narrows + invalid-predicate + assigns in session(). auth.ts (Node, DB-revalidating) returns organizationSlug from userRecord.organization.slug in authorize(); session() extends include to pull current.organization.slug and writes THAT (freshness over token — org slug renames invalidate stale tokens within one session-read cycle). meetings.test.ts SESSION_USER fixture +1 line. NEW apps/web/src/server/auth-config.test.ts with 7 cases (3 jwt + 4 session) — RED→GREEN proven inline.
+- (c)-2 [SHA `740cdd2`] — middleware enforcement. NEW apps/web/src/server/tenant-redirect.ts with two pure helpers (resolveTenantRedirect decision, buildTenantRedirectUrl URL construction) extracted from middleware so Node-based vitest can import without pulling next-auth + next/server. NEW apps/web/src/server/tenant-redirect.test.ts with 13 cases (8 decision branches + 5 URL construction patterns including prod subdomain swap, staging subdomain swap, /t/{slug} path swap, exact /t/{slug}, port preservation). middleware.ts wires the helpers: on (isProtected && session.user && tenantSlug), runs decision; redirects via NextResponse.redirect on mismatch. Adds x-organization-slug request header alongside x-organization-id. Drops defensive `if (session.user.organizationId)` guard (post c-1 the type system guarantees presence).
+- (c)-3 — governance batch only (this update).
+- Super-admin behavior: option C — bypass slug check ONLY on /superadmin/* paths; all other paths enforce match for super-admins too (redirect to their own org subdomain). Exact match `path === "/superadmin" || path.startsWith("/superadmin/")` to prevent /superadminer/* false-bypass.
+- Test count: 22 → 42 (+20). All GREEN. trpc/routers/auth.ts per-file gate intact at 100/80.95/100/100.
+- Tier 3 decomposition: per memory-governance §1, score 46 > 40 threshold → mandatory split into 3 sub-sessions. First Sonnet dispatch on c-1 thrashed within 3 turns (SessionStart hooks auto-load CLAUDE.md + .claude/rules/* into subagent context, exhausting Sonnet's 60K window). Pivoted to Step 2.5b Opus self-execution for all 3 sub-sessions. Pattern documented in lessons.md.
+- 4 new lessons documented: (🟤) Sonnet-thrash-on-SessionStart-hooks → default to Opus executor for this project; (🟤) edge-safe vs DB-revalidating session callback duplication contract; (🟤) super-admin option C decision; (⚖️) vercel-plugin proxy.ts false-positive on Next.js 15.
 
 ----------------------------------------------------------------------
-Candidates (any order, user picks):
+Candidates for Phase 7 #8 (any order, user picks):
 ----------------------------------------------------------------------
 
-(c) JWT org-slug encoding                   [middleware foundation — high-risk]
-    Scope: Tier 3 (~10 files, middleware + auth.config + session callback + all consumers)
-    - apps/web/src/server/auth.config.ts — add `organization_slug` to JWT
-    - apps/web/src/server/auth.ts — populate from session.user
-    - apps/web/src/middleware.ts — resolve tenant from JWT, validate URL ↔ session match (security.md TENANT MIDDLEWARE SAFETY)
-    - Test: middleware unit test for tenant-switch attack rejection
-    Risk: every authenticated route depends on this; reserve for careful fresh-context session
-    Tier 3 → mandatory split via memory-governance §1: probably 3 sub-sessions (auth.config + auth.ts → middleware → consumers).
-    Now the highest-impact open ticket; unblocks (e) Socket.IO.
+(e) Socket.IO auth middleware                  [NOW UNBLOCKED — recommended next]
+    JWT carries organizationSlug (Phase 7 #7c). Socket handshake can re-use the same
+    auth.config.ts session() narrowing to scope room subscriptions per organization.
+    Mirrors the tRPC tenant guard pattern. Likely Tier 2 (3-5 files: Socket.IO server
+    init, auth middleware, room namespace, integration test). Pairs with eventual
+    Phase 7 #N+1 (real-time presence + chat).
 
-(d) join/[token] tRPC                       [needs LiveKit ⏳ for full integration]
-    Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled
-    Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows.
-    Adding tests for getJoinToken would also let us add a per-file coverage gate on meetings.ts.
-
-(e) Socket.IO auth middleware               [depends on (c)]
-    Should land AFTER (c) so the JWT contract is stable.
-
-(f) Root landing page                       [verify scope first]
-    Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
-    Likely Tier 1.
-
-(i) Periodic cleanup of expired/consumed password_reset_tokens
-    A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
-    expired tokens > 7 days. Keeps the table from growing unboundedly.
-    Pairs naturally with #6: the new cap-met silent-skip and the cleanup job
-    together close the token-table lifecycle. The count query introduced in #6
-    stays fast forever if the cleanup runs daily.
-
-(j) Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)    [security — depends on @auth]
+(j) Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)   [security — small + safe]
     addressparser DoS via recursive calls affects <=7.0.10; we run 6.9.16 pinned for
     Auth.js v5 peer compat. Three documented paths in lessons.md:
       (a) wait for @auth to widen its nodemailer peer range — cleanest, no code changes
@@ -51,20 +29,42 @@ Candidates (any order, user picks):
           vulnerable parser through the password-reset flow) + add `audit-level=critical`
           to .npmrc per phases.md decision tree step 3
     Path (c) is the realistic short-term option; (a) is the long-term hope; (b) is
-    last-resort. Decision deserves its own commit + DECISIONS_LOG.md entry.
-    Pre-existing on main — flagged during Phase 7 #5 audit; not Phase 7 #6 regression.
+    last-resort. Single-commit ticket — Tier 1. Pre-existing on main since before Phase 7 #5.
+
+(i) Periodic cleanup of expired/consumed password_reset_tokens
+    A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
+    expired tokens > 7 days. Keeps the table from growing unboundedly.
+    Pairs naturally with #6: the cap-met silent-skip and the cleanup job
+    together close the token-table lifecycle. The count query introduced in #6
+    stays fast forever if the cleanup runs daily. Tier 2 (BullMQ worker + scheduler
+    + tests + deploy config).
+
+(d) join/[token] tRPC                          [needs LiveKit ⏳ for full integration]
+    Unit tests OK against mocked LiveKit token mint; integration deferred until LIVEKIT_API_KEY filled.
+    Existing getJoinToken in meetingsRouter has 0 test coverage — could pair with this if scope allows.
+    Adding tests for getJoinToken would also let us add a per-file coverage gate on meetings.ts.
+
+(f) Root landing page                          [verify scope first]
+    Current /page.tsx is 11 lines — check PRODUCT.md for what's expected
+    Likely Tier 1.
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
   → Write failing test FIRST (RED), then implementation (GREEN), then refactor.
-  → Test patterns: [[trpc-test-pattern]] (Phase 7 #2) + [[meetings-protected-route-test]] (Phase 7 #3) + [[trpc-test-with-env-mock]] (Phase 7 #4).
+  → Test patterns: [[trpc-test-pattern]] (Phase 7 #2) + [[meetings-protected-route-test]] (Phase 7 #3) + [[trpc-test-with-env-mock]] (Phase 7 #4) + [[direct-callback-test-pattern]] (Phase 7 #7c-1 — exercises authConfig.callbacks directly) + [[pure-helper-extraction-pattern]] (Phase 7 #7c-2 — extract Edge-incompatible code into separate file for Node test runner).
   → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3 (`_meeting-form.tsx` and `_reset-form.tsx` as reference impls).
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
   → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file (extends Phase 7 #4 pattern).
+  → For new JWT fields: wire BOTH session callbacks (auth.config.ts Edge-safe AND auth.ts DB-revalidating) — see [[edge-safe-vs-db-revalidating-callback-duplication]] lesson from #7c-1.
   → When a router becomes fully tested (>95% across all four metrics), add a per-file threshold to apps/web/vitest.config.ts to lock the new coverage in. Use the [[vitest-per-file-glob-thresholds]] pattern from lessons.md.
   → Coverage thresholds rise organically — add tests → measure → bump threshold. Do NOT lower thresholds to make a regression "fix" pass.
   → NEW (Phase 7 #6): for any new throttle/cap design on auth flows, follow [[per-user-24h-cap-pattern]] — place after user lookup (not before), use Prisma `count` (not findFirst+orderBy), preserve no-enumeration response shape on cap-met.
+  → NEW (Phase 7 #7c): for any work in a fresh session that touches CLAUDE.md / .claude/rules/* / governance docs, prefer Opus-executor over Sonnet dispatch — Sonnet subagents in this project thrash on SessionStart hooks. See [[sonnet-thrash-sessionstart-hooks]] in lessons.md.
+  → NEW (Phase 7 #7c): for any middleware.ts edit, IGNORE the vercel-plugin nextjs auto-suggestion to rename to proxy.ts — that's a Next.js 16 feature and Yelli is on 15.5.18. See [[proxy-ts-false-positive]] in lessons.md.
 
-Recommended next: (c) JWT org-slug middleware — now the highest-impact open ticket (unblocks Socket.IO and tenant-switch attack hardening). Reserve for a fresh-context careful session; Tier 3 split likely needed (3 sub-sessions). If a small-and-safe ticket is preferred, pick (j) nodemailer mitigation (path c — single commit + DECISIONS_LOG entry + .npmrc tweak) or (i) cleanup job (pairs naturally with the new cap query). Save (d) join/[token] for when LIVEKIT_API_KEY is filled.
+Recommended next: (e) Socket.IO auth middleware — now unblocked by #7c, this is the highest-impact open ticket. Tier 2-3 likely. If a small-and-safe ticket is preferred instead, pick (j) nodemailer mitigation (path c — single commit + DECISIONS_LOG entry + .npmrc tweak, Tier 1) or (i) cleanup job (Tier 2, pairs with #6's count query). Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a quick fill-in if you want to clear the smallest open ticket first.
 
-Pending Rule 16 follow-up: smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover). ALSO smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover). With the new 24h cap live, manual /forgot-password smoke for the same email is limited to 5 requests per 24h — use distinct emails or trust the test assertions.
+Pending Rule 16 follow-up:
+  - smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover);
+  - smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover). With the 24h cap live, manual /forgot-password smoke for the same email is limited to 5 requests per 24h — use distinct emails or trust the test assertions.
+  - NEW from #7c: smoke-test subdomain routing locally. Options: (a) edit /etc/hosts to add `127.0.0.1 acme.localhost` and `127.0.0.1 evil.localhost`, then visit http://acme.localhost:43512/app vs http://evil.localhost:43512/app while logged in as a user from org "acme" — second should redirect to the first. OR (b) easier — use the /t/{slug} path pattern which middleware also handles: log in as user with org "acme" → visit http://localhost:43512/t/acme/app → confirm passes → visit http://localhost:43512/t/evil/app → confirm redirects to /t/acme/app. Also confirm super-admin behavior: log in as super-admin → visit http://localhost:43512/t/evil/superadmin/users → confirm allows (option C bypass); visit http://localhost:43512/t/evil/app → confirm redirects to /t/{super-admin's-own-org}/app.
