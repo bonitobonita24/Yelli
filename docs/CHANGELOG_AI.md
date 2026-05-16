@@ -22,6 +22,51 @@
 
 # ---
 
+## 2026-05-16 — Phase 7 #8: Socket.IO realtime foundation — auth middleware + org channels + 60s revalidation (Tier 3)
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct, per memory-governance §4 Step 2.5b — Sonnet dispatch unviable here per Phase 7 #7c's [[sonnet-thrash-sessionstart-hooks]] precedent). Decomposed into 3 sub-sessions per memory-governance §1.
+- Why: Unblocked by Phase 7 #7c (JWT now carries organizationSlug + organizationId + isSuperAdmin). PRODUCT.md (line 309) names Socket.IO as the realtime layer for presence, in-call chat, ringing, and notifications; DECISIONS_LOG.md (line 168-174) locked the provider, heartbeat, re-validation cadence, and channel naming convention 2026-05-11. socket.io@^4.8.1 + socket.io-client@^4.8.1 already in apps/web/package.json from Phase 4; this ticket adds the server bootstrap, auth middleware, channel naming helpers, and 60s session-revalidation loop — the foundation that all real-time features (presence, chat, ringing, notifications) will sit on top of.
+- Files added:
+  - apps/web/src/instrumentation.ts — Next.js 15 register() hook; gated on NEXT_RUNTIME=nodejs + !SKIP_ENV_VALIDATION + SOCKET_PORT>0; dynamic imports keep file Edge-bundle-safe; SIGTERM/SIGINT clean shutdown
+  - apps/web/src/server/socket/server.ts — createSocketServer(httpServer) factory; CORS to NEXT_PUBLIC_APP_URL with credentials:true (separate ports = separate origins; browser needs explicit allowance to send the Auth.js cookie); installs socketAuthMiddleware on io.use()
+  - apps/web/src/server/socket/auth.ts — verifySocketAuth({cookieHeader, isProduction}) pure function parses Auth.js v5 cookie (authjs.session-token dev / __Secure-authjs.session-token prod) and decodes with cookie name as JWE salt (Auth.js v5 derives the AEAD key from secret + cookie-name — wrong salt returns null even with right secret). Narrows decoded JWT mirroring auth.config.ts session callback; rejects on missing organizationSlug / Id / role / securityVersion. socketAuthMiddleware wraps it for io.use()
+  - apps/web/src/server/socket/auth.test.ts — 13 cases: null/empty cookie → null; dev vs prod cookie name selection; decode-null → null; missing required fields → null; bad role → null; accepts all 3 valid roles; defaults isSuperAdmin to false; trims whitespace in cookie pairs
+  - apps/web/src/server/socket/channels.ts — orgChannelName/platformChannelName formatters per DECISIONS_LOG.md:173 (${tenantId}:${eventType}; tenant = organization in Yelli's schema); joinOrgChannel(socket, eventType) takes NO orgId parameter so cross-org subscription via API surface is impossible (the helper always reads session.organizationId, so a malicious client cannot coerce subscription to another org); joinPlatformChannel(socket, eventType) requires session.isSuperAdmin === true
+  - apps/web/src/server/socket/channels.test.ts — 10 cases: name composition; joinOrgChannel happy path + sessionless rejection + cross-org coercion-attack-surface guard; joinPlatformChannel super-admin acceptance + non-super-admin rejection + sessionless rejection; emitToOrg + emitToPlatform target the correct room
+  - apps/web/src/server/socket/revalidation.ts — revalidateConnectedSockets walks io.fetchSockets(), dedupes userIds, single platformPrisma.user.findMany including organization.suspended_at, disconnects sockets that fail any of: missing user / status != active / org suspended / security_version mismatch. Emits "session:invalidated" before disconnect. startSessionRevalidationLoop(io, intervalMs=60_000) is the setInterval wrapper with .unref() so it doesn't keep Node alive past Next.js lifecycle
+  - apps/web/src/server/socket/revalidation.test.ts — 9 cases: 0 sockets short-circuit; valid session preserved; security_version bump → disconnect + emit; user.status != active → disconnect; organization suspended → disconnect; missing user → disconnect; sessionless socket cleanup; N-socket-per-user query dedupe; mixed valid/invalid subset disconnects only the bad ones
+- Files modified:
+  - inputs.yml — ports.dev.socket = 43515 (base+13)
+  - .env.example — SOCKET_PORT + NEXT_PUBLIC_SOCKET_URL template
+  - .env.dev — same vars (gitignored, not in commit)
+  - apps/web/src/env.ts — SOCKET_PORT in serverSchema + getServerEnv (defaults to 0 = disabled listener when unset, so build + typecheck with SKIP_ENV_VALIDATION work uninterrupted); NEXT_PUBLIC_SOCKET_URL in clientSchema + getClientEnv
+  - docs/DECISIONS_LOG.md — new "Realtime Hosting Topology (Phase 7 #8e)" entry locking option B (instrumentation hook + separate port)
+- Files deleted: none
+- Schema/migrations: none. The User and Organization models already have everything needed (security_version, suspended_at, status — all present since Phase 4).
+- Tests: 42 → 75 (+33). e-1 added 13 (auth.test.ts); e-2 added 19 (10 in channels.test.ts + 9 in revalidation.test.ts). RED→GREEN proven for both (each sub-session's test suite couldn't load until the source file was implemented).
+- Errors encountered:
+  - Lint import-ordering errors after each new file write (auto-fix resolved most; one manual reorder in auth.test.ts because vi.mock() blocks live between vitest import and next-auth/jwt import — moved next-auth/jwt up with the externals since vitest hoists vi.mock automatically).
+  - Typecheck errors on `as never` prisma stubs in revalidation.test.ts where assertions later accessed `.user.findMany` on the never-typed variable. Fix: extract `const findMany = vi.fn().mockResolvedValue(...)` at top of test and reference findMany (not prisma.user.findMany) in assertions.
+- Errors resolved: see above.
+- Validation:
+  - `pnpm --filter @yelli/web test` PASS (7 files, 75 tests, ~545ms vitest run)
+  - `pnpm --filter @yelli/web typecheck` PASS (clean)
+  - `pnpm --filter @yelli/web lint` PASS (0 errors, 1 pre-existing layout.tsx warning)
+  - `pnpm exec vitest run --coverage` PASS — trpc/routers/auth.ts gate intact at 100/80.95/100/100; server/socket aggregate at 75.53/77.04/60/76.47; revalidation.ts at 74.28/64.7/50/78.12; globals 21.37→29.43 stmts / 16.1→25.06 branches / 17.7→25 funcs / 21.49→29.2 lines
+- Two-stage review (Rule 25):
+  - Stage 1 spec compliance: PASS. .whatsnext declared "Socket.IO auth middleware … JWT carries organizationSlug … Socket handshake can re-use the same auth.config.ts session() narrowing to scope room subscriptions per organization. Mirrors the tRPC tenant guard pattern. Likely Tier 2 (3-5 files: Socket.IO server init, auth middleware, room namespace, integration test)." All four declared behaviors delivered: (a) server init (server.ts + instrumentation.ts), (b) auth middleware (auth.ts verifies Auth.js v5 JWT with cookie-name salt), (c) room namespace (channels.ts org + platform helpers), (d) tests (auth.test + channels.test + revalidation.test, 32 cases total). Plus locked DECISIONS_LOG.md decisions on heartbeat 30s, revalidation 60s, channel naming ${tenantId}:${eventType} — all honored.
+  - Stage 2 quality: PASS. No `any`, narrowing mirrors existing auth.config.ts pattern, cross-org guard is API-surface-shape not runtime check (correct-by-construction), defensive null guards, eslint disables only where intentional (no-console in instrumentation.ts + revalidation.ts for boot/shutdown logging that has no alternative; no-restricted-syntax for platformPrisma server-side import per Rule 13 carveout), pure helpers extracted for unit testability, dynamic imports keep instrumentation.ts Edge-bundle-safe.
+- Outstanding:
+  - Rule 16 Visual QA: Socket.IO handshake smoke deferred to manual next dev-up. Smoke checklist for #8e: (1) start dev env with SOCKET_PORT=43515; (2) verify `curl http://localhost:43515/socket.io/` returns Socket.IO handshake page; (3) authenticated browser session connects + console logs no errors; (4) hit POST /api/auth/signout in another tab → wait 60s → verify connected socket receives `session:invalidated` event + disconnects.
+  - Client-side socket.io-client provider hook deferred to next ticket (small Tier 1) — builds the React provider that connects to NEXT_PUBLIC_SOCKET_URL with `credentials: include`, exposes `useSocket()`, and surfaces session:invalidated as a forced re-auth UX.
+  - Real-time presence engine deferred to its own ticket — the first feature to consume this foundation. Will use joinOrgChannel(socket, "presence") + emit on socket.connect / socket.disconnect.
+- Commit SHAs:
+  - e-1 (bootstrap + auth): `dd57c9c` (squash-merged from feat/socket-auth-1)
+  - e-2 (channels + revalidation): `c399b43` (squash-merged from feat/socket-auth-2)
+  - e-3 (governance batch — this commit): squash-merged from feat/socket-auth-3; SHA backfilled in follow-up `chore(governance)` per Phase 7 #6/#7 precedent
+
+# ---
+
 ## 2026-05-16 — Phase 7 #7: JWT org-slug encoding + middleware URL↔session cross-check (Tier 3)
 
 - Agent: CLAUDE_CODE (Opus 4.7 — direct execution per memory-governance §4 Step 2.5b after Sonnet dispatch thrashed; see lessons.md). Decomposed into 3 sub-sessions per memory-governance §1.

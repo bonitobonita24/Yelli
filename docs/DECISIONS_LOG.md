@@ -172,3 +172,32 @@ chat delivery, call ringing notifications, and general realtime notifications.
 Security: heartbeat every 30s, session re-validation every 60s (security.md Realtime Connection Safety).
 Channel naming: ${tenantId}:${eventType} — never broadcast globally.
 Locked: yes — 2026-05-11.
+
+## Realtime Hosting Topology (Phase 7 #8e)
+
+Decision: Option B — Next.js 15 `instrumentation.ts` hook bootstraps a separate Socket.IO HTTP
+server on its own port (`SOCKET_PORT` env var, dev port 43515 = base+13). The Next.js HTTP
+server on `APP_PORT` and the Socket.IO server on `SOCKET_PORT` are siblings, not coupled. The
+browser connects to `NEXT_PUBLIC_SOCKET_URL` (CORS-allowed with `credentials: true` so the
+Auth.js session cookie flows cross-origin).
+Rationale: Considered three options on 2026-05-16. (A) Custom Next.js `server.ts` wrapping
+`next()` + Socket.IO on the same port — rejected because it breaks `next start` and
+`output: 'standalone'` Docker builds, requiring a custom Dockerfile. (B) instrumentation hook
++ separate port — chosen for minimum-change-to-deployment-pipeline. (C) Separate Node service
+in `apps/socket/` — deferred as a scale-out option when load warrants; current pattern can be
+extracted to (C) by moving `createSocketServer` + `startSessionRevalidationLoop` + their tests
+to a new package with zero changes to the auth logic.
+Cookie naming: `authjs.session-token` (dev/HTTP) or `__Secure-authjs.session-token` (prod/HTTPS)
+per Auth.js v5 convention. The cookie name IS the JWE salt (Auth.js derives the AEAD key from
+`secret + cookie-name`); passing the wrong salt makes `decode` return null even with the right
+secret. The Socket auth middleware reads the cookie name based on `env.NODE_ENV === "production"`.
+Channel ownership: each org subscribes to `${organizationId}:${eventType}` rooms. The
+`joinOrgChannel(socket, eventType)` helper takes NO `organizationId` parameter — it always
+reads from `socket.data.session.organizationId`, so a malicious client cannot coerce
+subscription to another org's room through the API surface. Super-admin cross-tenant events
+use a parallel `platform:${eventType}` channel reachable only via `joinPlatformChannel`
+which checks `session.isSuperAdmin === true`.
+Super-admin tenant URL policy (analog of Phase 7 #7c option C): super-admins on `/superadmin/*`
+paths bypass org-slug enforcement but still cannot cross-subscribe to other tenants' Socket.IO
+channels — they must use `platform:*` channels for cross-tenant administrative events.
+Locked: yes — 2026-05-16.

@@ -8,6 +8,36 @@
 
 # ---
 
+## 2026-05-16 — 🟤 Auth.js v5 JWE decode requires cookie name as `salt` — wrong salt returns null even with right secret
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #8(e)-1 (Socket.IO auth middleware)
+- Files:     apps/web/src/server/socket/auth.ts
+- Concepts:  auth-js-v5, jwe, jwt-decode, cookie-name, salt, aead, domain-separation, socket-io
+- Narrative: Auth.js v5 introduced a domain-separation feature where each session cookie's JWE is salted with the cookie name itself. The `decode` function from `next-auth/jwt` (and `@auth/core/jwt`) takes a `salt` parameter that MUST match the cookie name used to wrap the token. Cookie name differs by environment: `authjs.session-token` (dev / HTTP) or `__Secure-authjs.session-token` (prod / HTTPS). If you pass the wrong salt (e.g., always pass the dev name in prod), `decode` returns `null` silently — no error, no log, just unauthenticated. This is intentional: it prevents a token harvested from one Auth.js cookie context from being usable in another (e.g., a dev tunnel cookie being replayed against prod). The Socket.IO auth middleware in `apps/web/src/server/socket/auth.ts` reads the cookie name based on `isProduction` (which the caller derives from `env.NODE_ENV === "production"`), parses the cookie value, and passes the SAME cookie name to `decode` as the `salt` argument. Test `auth.test.ts` "ignores the dev cookie when in production mode" asserts that even if a dev-named cookie is present, the prod-mode path won't decode it. When wiring Auth.js v5 token decoding into ANY non-Next.js context (Socket.IO, Worker, CLI tool, cron job), remember: secret alone is NOT enough — cookie name is the second key.
+
+# ---
+
+## 2026-05-16 — 🟤 Cross-org subscription guard via API-surface design (no runtime check needed)
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #8(e)-2 (Socket.IO org channels)
+- Files:     apps/web/src/server/socket/channels.ts, apps/web/src/server/socket/channels.test.ts
+- Concepts:  multi-tenant, socket-io, room-subscription, channel-naming, correct-by-construction, tenant-isolation, L6-analog
+- Narrative: The naive Socket.IO pattern is `socket.join(roomName)` where `roomName` is computed from a user-controlled input (e.g., a "join meeting X" message payload). Runtime authorization is then required: "does this user belong to the org that owns meeting X?" Every subscribe call needs a check; missing one is a cross-tenant leak. The pattern we chose for Phase 7 #8e-2 inverts this: `joinOrgChannel(socket, eventType)` takes NO `organizationId` parameter. The helper always reads `socket.data.session.organizationId` (populated by the auth middleware and verified at handshake). The room name is `${session.organizationId}:${eventType}` — server-controlled, not client-controlled. There is NO API surface where a malicious client can supply an `organizationId` other than its own session's. The cross-org guard is the ABSENCE of an input, not a runtime check. This is the same pattern as the Prisma `$allOperations` tenant-guard extension (L6) — correct-by-construction beats authorize-at-runtime. The test `joinOrgChannel CANNOT be coerced to join another org` documents this guarantee. When future code wants a cross-tenant Socket subscription (e.g., super-admin viewing platform-wide events), it must use a SEPARATE helper (`joinPlatformChannel`) which has its own gate (`session.isSuperAdmin === true`). New helpers are explicit decisions; coercion via existing helpers is impossible.
+
+# ---
+
+## 2026-05-16 — 🟤 Next.js 15 instrumentation.ts hook + Edge-safe dynamic imports for Socket.IO bootstrap
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #8(e)-1 (Socket.IO hosting topology, option B)
+- Files:     apps/web/src/instrumentation.ts, apps/web/src/server/socket/server.ts, docs/DECISIONS_LOG.md (new Realtime Hosting Topology entry)
+- Concepts:  next-js-15, instrumentation-hook, socket-io, custom-server, edge-runtime, dynamic-imports, hosting-topology, separate-port
+- Narrative: Three options were considered for how Socket.IO sits relative to Next.js 15 App Router: (A) custom `server.ts` that wraps `next()` + `http.createServer` + Socket.IO on the same port; (B) Next.js 15's `instrumentation.ts` hook spawns Socket.IO on a SEPARATE port; (C) standalone `apps/socket/` package + its own compose service. Chose (B). Why (A) is wrong here: `next start` and `output: 'standalone'` Docker builds assume Next.js owns the HTTP server. A custom server.ts replaces both, requiring a custom Dockerfile and breaking the standalone bundle pattern V31's Phase 4 Part 8 generates for free. Why (C) is overkill for first cut: 2-3x more files (separate package, separate Dockerfile, separate compose service) + needs the JWT decode logic to be published from a shared package since the Node service can't reuse Next.js-resident code. Why (B) wins: `instrumentation.ts` is the official Next.js 15 hook for "run code at process start"; it loads on BOTH the Edge and Node runtimes but is gated by `process.env.NEXT_RUNTIME === "nodejs"` so the Socket.IO setup only runs server-side. Dynamic imports of `http`, `socket.io`, and `@/server/socket/server` keep this file Edge-bundle-safe (Edge runtime evaluates the file but the Node-only modules never load there). The two-port setup means CORS configuration is required (separate ports = separate origins for the browser), with `credentials: true` so the Auth.js cookie flows cross-origin — this is the only operational cost. The chosen pattern is extractable to (C) later by moving `createSocketServer` + `startSessionRevalidationLoop` + their tests to a new package with zero changes to the auth logic. Decision locked in DECISIONS_LOG.md "Realtime Hosting Topology (Phase 7 #8e)" on 2026-05-16.
+
+# ---
+
 ## 2026-05-16 — 🟤 Sonnet subagents in this project inherit SessionStart hooks — default to Opus self-executor
 
 - Type:      🟤 decision
