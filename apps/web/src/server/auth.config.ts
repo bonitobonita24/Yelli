@@ -26,12 +26,14 @@ export const authConfig = {
         const u = user as unknown as {
           id: string;
           organizationId: string;
+          organizationSlug: string;
           role: "tenant_admin" | "host" | "participant";
           isSuperAdmin: boolean;
           securityVersion: number;
         };
         (token as Record<string, unknown>).userId = u.id;
         (token as Record<string, unknown>).organizationId = u.organizationId;
+        (token as Record<string, unknown>).organizationSlug = u.organizationSlug;
         (token as Record<string, unknown>).role = u.role;
         (token as Record<string, unknown>).isSuperAdmin = u.isSuperAdmin;
         (token as Record<string, unknown>).securityVersion = u.securityVersion;
@@ -43,6 +45,8 @@ export const authConfig = {
       const userId = typeof t.userId === "string" ? t.userId : null;
       const organizationId =
         typeof t.organizationId === "string" ? t.organizationId : null;
+      const organizationSlug =
+        typeof t.organizationSlug === "string" ? t.organizationSlug : null;
       const tokenRole = t.role;
       const isSuperAdmin =
         typeof t.isSuperAdmin === "boolean" ? t.isSuperAdmin : false;
@@ -55,12 +59,13 @@ export const authConfig = {
           ? tokenRole
           : null;
 
-      if (!userId || !organizationId || !role) {
+      if (!userId || !organizationId || !organizationSlug || !role) {
         return { ...session, user: undefined as never };
       }
 
       session.user.id = userId;
       session.user.organizationId = organizationId;
+      session.user.organizationSlug = organizationSlug;
       session.user.role = role;
       session.user.isSuperAdmin = isSuperAdmin;
       session.user.securityVersion = securityVersion;

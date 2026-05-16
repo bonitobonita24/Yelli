@@ -5,6 +5,7 @@ declare module "next-auth" {
     user: DefaultSession["user"] & {
       id: string;
       organizationId: string;
+      organizationSlug: string;
       role: "tenant_admin" | "host" | "participant";
       isSuperAdmin: boolean;
       securityVersion: number;
@@ -14,6 +15,7 @@ declare module "next-auth" {
     id: string;
     email: string;
     organizationId: string;
+    organizationSlug: string;
     role: "tenant_admin" | "host" | "participant";
     isSuperAdmin: boolean;
     securityVersion: number;
@@ -25,6 +27,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     userId: string;
     organizationId: string;
+    organizationSlug: string;
     role: "tenant_admin" | "host" | "participant";
     isSuperAdmin: boolean;
     securityVersion: number;
@@ -38,6 +41,7 @@ declare module "@auth/core/jwt" {
   interface JWT {
     userId: string;
     organizationId: string;
+    organizationSlug: string;
     role: "tenant_admin" | "host" | "participant";
     isSuperAdmin: boolean;
     securityVersion: number;

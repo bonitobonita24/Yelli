@@ -47,6 +47,7 @@ const SESSION_USER = {
   name: "Host User",
   displayName: "Host User",
   organizationId: "org-tenant-cuid",
+  organizationSlug: "tenant-org",
   role: "tenant_admin" as const,
   isSuperAdmin: false,
   securityVersion: 1,

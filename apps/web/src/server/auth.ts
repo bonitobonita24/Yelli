@@ -93,6 +93,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: userRecord.id,
           email: userRecord.email,
           organizationId: userRecord.organization_id,
+          organizationSlug: userRecord.organization.slug,
           role: userRecord.role,
           isSuperAdmin: userRecord.is_super_admin,
           securityVersion: userRecord.security_version,
@@ -110,6 +111,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const t = token as Record<string, unknown>;
       const userId = typeof t.userId === "string" ? t.userId : null;
       const organizationId = typeof t.organizationId === "string" ? t.organizationId : null;
+      const organizationSlug =
+        typeof t.organizationSlug === "string" ? t.organizationSlug : null;
       const tokenRole = t.role;
       const isSuperAdmin = typeof t.isSuperAdmin === "boolean" ? t.isSuperAdmin : false;
       const securityVersion = typeof t.securityVersion === "number" ? t.securityVersion : -1;
@@ -118,16 +121,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           ? tokenRole
           : null;
 
-      if (!userId || !organizationId || !role) {
+      if (!userId || !organizationId || !organizationSlug || !role) {
         return { ...session, user: undefined as never };
       }
 
       // Re-validate on every session read — catches role changes, suspensions, deactivations
       // without waiting for the JWT to expire (security.md §AUTH DEFAULTS item 6).
+      // Pulling organization.slug here lets a rename invalidate stale tokens within one
+      // session-read cycle; the Edge-safe variant in auth.config.ts trusts the token value.
       // Middleware never reaches this code path — it uses auth.config.ts's edge-safe session().
       const current = await platformPrisma.user.findUnique({
         where: { id: userId },
-        include: { organization: { select: { suspended_at: true } } },
+        include: { organization: { select: { suspended_at: true, slug: true } } },
       });
 
       const isInvalid =
@@ -142,6 +147,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       session.user.id = userId;
       session.user.organizationId = organizationId;
+      session.user.organizationSlug = current.organization.slug;
       session.user.role = role;
       session.user.isSuperAdmin = isSuperAdmin;
       session.user.securityVersion = securityVersion;
