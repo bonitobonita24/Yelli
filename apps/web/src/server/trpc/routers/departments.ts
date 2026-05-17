@@ -41,6 +41,13 @@ const csvImportInput = z
   })
   .strict();
 
+const setDefaultUserInput = z
+  .object({
+    departmentId: z.string().cuid(),
+    userId: z.string().cuid().nullable(),
+  })
+  .strict();
+
 // ----------------------------------------------------------------------------
 // Router
 // ----------------------------------------------------------------------------
@@ -62,6 +69,7 @@ export const departmentsRouter = router({
         sort_order: true,
         auto_answer_enabled: true,
         device_binding_token: true,
+        default_user_id: true,
         created_at: true,
         updated_at: true,
       },
@@ -258,6 +266,70 @@ export const departmentsRouter = router({
 
         // UI shows the token once with copy-to-clipboard; never retrievable after.
         return { id: existing.id, device_binding_token: token };
+      });
+    }),
+
+  /**
+   * Bind (or unbind) a Department's default user.
+   * adminProcedure — tenant_admin only.
+   * L6 tenant guard: findUnique returns null for cross-org IDs → NOT_FOUND.
+   * userId: null clears the binding.
+   * Inactive-user defense-in-depth check added in Task 8.
+   * Audit log added in Task 9.
+   */
+  setDefaultUser: adminProcedure
+    .input(setDefaultUserInput)
+    .mutation(async ({ ctx, input }) => {
+      return prisma.$transaction(async (tx) => {
+        const dept = await tx.department.findUnique({
+          where: { id: input.departmentId },
+          select: { id: true, name: true, default_user_id: true },
+        });
+        if (!dept) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Department not found.",
+          });
+        }
+
+        if (input.userId !== null) {
+          const user = await tx.user.findUnique({
+            where: { id: input.userId },
+            select: { id: true, status: true },
+          });
+          if (!user) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "User not found.",
+            });
+          }
+          // Defense-in-depth: race where a user is deactivated between
+          // dropdown render and form submit. Server is source of truth.
+          if (user.status !== "active") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Cannot bind an inactive user.",
+            });
+          }
+        }
+
+        const updated = await tx.department.update({
+          where: { id: input.departmentId },
+          data: { default_user_id: input.userId },
+          select: { id: true, default_user_id: true },
+        });
+
+        await writeAuditLog(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.userId,
+          action: "UPDATE",
+          entity: "Department",
+          entityId: updated.id,
+          before: { default_user_id: dept.default_user_id },
+          after: { default_user_id: updated.default_user_id },
+        });
+
+        return updated;
       });
     }),
 });

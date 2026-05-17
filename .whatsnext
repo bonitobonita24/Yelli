@@ -1,4 +1,15 @@
-Phase 7 #13 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; user-level presence engine live since Phase 7 #11; department-binding presence WIRED INTO Speed Dial Board since Phase 7 #12 — green dots are live; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+Phase 7 #14 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; user-level presence engine live since Phase 7 #11; department-binding presence WIRED INTO Speed Dial Board since Phase 7 #12 — green dots are live; admin self-service UI for default_user_id assignment live since Phase 7 #13 — no more pgAdmin direct edits; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+
+Phase 7 #13 (admin-binding-ui) shipped on 2026-05-17:
+- Tier 2 single-session (~50K Opus controller context). User picked (admin-binding-ui) from the recommended-next slot after #12.
+- NEW `apps/web/src/server/trpc/routers/departments.test.ts` (271 lines, 7 RED→GREEN cases) — happy path bind, clear-binding (userId:null skips user lookup), non-admin FORBIDDEN (validates adminProcedure short-circuit before any DB call), cross-org dept NOT_FOUND with "Department not found." generic message, cross-org user NOT_FOUND with "User not found." generic message, inactive user BAD_REQUEST with "Cannot bind an inactive user." message, audit-log shape assertion verifying writeAuditLog payload [organizationId, userId, action:"UPDATE", entity:"Department", entityId, before:{default_user_id}, after:{default_user_id}]. Mocks @yelli/db prisma + runWithTenantContext + writeAuditLog + rateLimiters via vi.mock factories; $transaction is pass-through invoking the callback with the same prisma mock.
+- NEW `apps/web/src/components/admin/department-user-picker.tsx` (121 lines) — controlled shadcn `<Select>` wrapping `trpc.departments.setDefaultUser.useMutation()` with optimistic onSuccess toast + onError revert toast; receives `users: readonly DepartmentUserPickerUser[]` already filtered to active by parent; handles three render states (bound + found in list → display_name; unbound currentUserId === null → "Unassigned"; bound to inactive user not in active list → "(deactivated)" cosmetically with clear option). Sentinel values `__clear__` and `__unassigned__` keep shadcn Select's value space non-overlapping.
+- MODIFIED `apps/web/src/server/trpc/routers/departments.ts` (+72 lines) — new `setDefaultUserInput` Zod schema (departmentId cuid + userId cuid().nullable(), .strict()); new `setDefaultUser` mutation under `adminProcedure` wrapping the existing 4 mutations' shape; one-line addition `default_user_id: true` to existing `list` query select clause; widened `makeCtx` parameter type in the test file to accept both ADMIN_SESSION and HOST_SESSION (latent typecheck issue caught during Task 10 validation).
+- MODIFIED `apps/web/src/app/admin/departments/page.tsx` (+19 / -1 lines) — adds `useMemo` to the React import; adds `DepartmentUserPicker` import; adds `usersQuery = trpc.admin.users.list.useQuery()` + `activeUsers` memo filtering status === "active" and mapping to {id, display_name}; new `<TableHead>Default user</TableHead>` between Auto-answer and Device token; new `<TableCell>` with `<DepartmentUserPicker>` in the body row; onSaved invalidates `utils.departments.list`. Edit dialog untouched.
+- 7 new RED→GREEN cases (test suite 117→124). pnpm typecheck ✓ 0 errors 8 packages. pnpm lint ✓ 0 errors. pnpm build ✓ 22 static + dynamic routes compiled in 1m20s (MANDATORY per [[instrumentation-edge-stub-required]]). pnpm audit --audit-level=critical ✓ exit 0 (Phase 7 #9 + #10 still in effect). Two-stage review (Rule 25) PASS — 12/12 spec items + 8/8 quality items verified. Final whole-branch reviewer subagent APPROVED FOR MERGE.
+- 0 new lessons logged — nothing novel emerged. Existing patterns covered everything: adminProcedure pattern from admin.ts, $transaction + writeAuditLog from neighbor mutations in departments.ts, vi.mock factory pattern from meetings.test.ts.
+- Subagent execution note: pivoted from subagent-driven to inline implementation after Task 3 Sonnet subagent autocompact-thrashed despite producing correct diffs. Per skill BLOCKED guidance, controller (Opus 4.7) absorbed implementation while reviewer subagents continued at every commit + the final whole-branch gate (their narrower diff-only scope stayed within budget).
+- Squash SHA: (set in next governance commit). Closes (admin-binding-ui). Closes the deferred-scope from Phase 7 #12 — admin no longer needs pgAdmin to manage bindings. End-to-end flow: tenant_admin opens /admin/departments → picks user from Default user dropdown → mutation fires → audit log written → page refresh / next socket reconnect picks up new binding → Speed Dial Board green dot follows new bound user.
 
 Phase 7 #12 (department-binding) shipped on 2026-05-17:
 - Tier 2 single-session (~55K Opus context). User picked (department-binding) from the recommended-next slot.
@@ -27,21 +38,10 @@ Phase 7 #11 (presence) shipped on 2026-05-17:
 - Squash SHA: `81356e9`. Closes (presence). Unblocks every realtime org-scoped feature — `emitToOrg(io, organizationId, eventType, payload)` with `joinOrgChannel` enforcing zero cross-org leakage is now the framework precedent.
 
 ----------------------------------------------------------------------
-Candidates for Phase 7 #13 (any order, user picks):
+Candidates for Phase 7 #14 (any order, user picks):
 ----------------------------------------------------------------------
 
-(admin-binding-ui) Admin UI for assigning Department.default_user_id — Tier 1-2, RECOMMENDED NEXT
-    The natural follow-up to (department-binding): now that the schema + wiring are live, give
-    tenant admins a UI to pick which user drives each department's online dot. Currently bindings
-    can only be set via pgAdmin direct edit. Scope: add a Select dropdown to /admin/departments
-    edit form populated with active users in the same organization; wire a tRPC mutation
-    `departments.setDefaultUser({ departmentId, userId | null })`; add 4-5 RED→GREEN test cases
-    on the mutation (org-scoping enforced, set null clears binding, set to user-from-other-org
-    rejected via L6 tenant-guard, set to inactive user rejected with explicit error, audit log
-    written on change per Rule 7 L5). Closes the deferred-scope from #12. Tier 1-2 depending on
-    whether an admin role-check middleware already exists at /admin/* (verify via grep).
-
-(in-call-state) Add "in_call" state derivation to selectDepartmentPresence — Tier 2
+(in-call-state) Add "in_call" state derivation to selectDepartmentPresence — Tier 2, RECOMMENDED NEXT
     The other deferred-scope item from #12. The current selectDepartmentPresence returns only
     "online" | "offline" — never "in_call". Two design paths to discuss:
     (a) Query active calls server-side and overlay via a tRPC subscription that emits per-user

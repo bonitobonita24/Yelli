@@ -23,8 +23,9 @@ import {
 } from "@yelli/ui/table";
 import { Textarea } from "@yelli/ui/textarea";
 import { toast } from "@yelli/ui/use-toast";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { DepartmentUserPicker } from "@/components/admin/department-user-picker";
 import { trpc } from "@/lib/trpc/react";
 
 interface DepartmentFormValues {
@@ -87,6 +88,14 @@ function parseCsv(input: string): Array<Record<string, string>> {
 export default function AdminDepartmentsPage(): JSX.Element {
   const utils = trpc.useUtils();
   const list = trpc.departments.list.useQuery();
+  const usersQuery = trpc.admin.users.list.useQuery();
+  const activeUsers = useMemo(
+    () =>
+      (usersQuery.data ?? [])
+        .filter((u) => u.status === "active")
+        .map((u) => ({ id: u.id, display_name: u.display_name })),
+    [usersQuery.data],
+  );
 
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
   const [form, setForm] = useState<DepartmentFormValues>(EMPTY_FORM);
@@ -246,6 +255,7 @@ export default function AdminDepartmentsPage(): JSX.Element {
                   <TableHead>Group</TableHead>
                   <TableHead className="text-center">Order</TableHead>
                   <TableHead>Auto-answer</TableHead>
+                  <TableHead>Default user</TableHead>
                   <TableHead>Device token</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -268,6 +278,14 @@ export default function AdminDepartmentsPage(): JSX.Element {
                       ) : (
                         <Badge variant="outline">Off</Badge>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <DepartmentUserPicker
+                        departmentId={d.id}
+                        currentUserId={d.default_user_id ?? null}
+                        users={activeUsers}
+                        onSaved={() => utils.departments.list.invalidate()}
+                      />
                     </TableCell>
                     <TableCell>
                       {d.device_binding_token ? (
