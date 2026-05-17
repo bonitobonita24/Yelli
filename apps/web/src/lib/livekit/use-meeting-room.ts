@@ -3,6 +3,7 @@
 import { Room, RoomEvent } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useEmitCallParticipation } from "@/lib/livekit/use-emit-call-participation";
 import { trpc } from "@/lib/trpc/react";
 
 import type { CallStatus } from "./types";
@@ -113,6 +114,10 @@ export function useMeetingRoom({
       setRoomInstance(null);
     };
   }, [meetingId, enabled, utils.client.meetings.getJoinToken]);
+
+  // Phase 7 #14 — emit call:joined/call:left socket events on Room lifecycle.
+  // Same wiring as useLiveKitRoom; both flows feed the same in-call roster.
+  useEmitCallParticipation(roomInstance);
 
   return { room: roomInstance, status, errorMessage, isHost, hangup };
 }

@@ -3,6 +3,7 @@
 import { Room, RoomEvent } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useEmitCallParticipation } from "@/lib/livekit/use-emit-call-participation";
 
 import type { CallStatus, LiveKitTokenResponse } from "./types";
 
@@ -116,6 +117,11 @@ export function useLiveKitRoom({
       setRoomInstance(null);
     };
   }, [callId, enabled]);
+
+  // Phase 7 #14 — emit call:joined/call:left socket events on Room lifecycle.
+  // Server-side in-call roster broadcasts call:active for the bound user's
+  // org, lighting up the yellow in_call dot on every Speed Dial Board.
+  useEmitCallParticipation(roomInstance);
 
   return { room: roomInstance, status, errorMessage, hangup };
 }

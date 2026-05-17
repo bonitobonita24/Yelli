@@ -18,6 +18,10 @@ import { Server as IOServer } from "socket.io";
 import { env } from "@/env";
 import { socketAuthMiddleware } from "@/server/socket/auth";
 import {
+  attachInCallHandlers,
+  createInCallRoster,
+} from "@/server/socket/in-call";
+import {
   attachPresenceHandlers,
   createPresenceRoster,
 } from "@/server/socket/presence";
@@ -54,8 +58,15 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
   // migration will swap the impl behind the same API. See presence.ts for the
   // contract and the multi-tab coalescing semantics.
   const presenceRoster = createPresenceRoster();
+
+  // Phase 7 #14 — in-call state engine. Parallel roster + handler structure;
+  // see in-call.ts and docs/superpowers/specs/2026-05-17-in-call-state-design.md.
+  // Same single-instance assumption + Redis adapter migration path as presence.
+  const inCallRoster = createInCallRoster();
+
   io.on("connection", (socket) => {
     attachPresenceHandlers({ io, socket, roster: presenceRoster });
+    attachInCallHandlers({ io, socket, roster: inCallRoster });
   });
 
   return io;

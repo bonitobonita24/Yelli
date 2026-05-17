@@ -28,12 +28,24 @@ export interface ServerToClientEvents {
   // this as a forced re-auth UX (redirect to /login) via Phase 7 #10's
   // SocketProvider.
   "session:invalidated": () => void;
+  // Phase 7 #14 — in-call state engine on the auth-gated server.
+  // `call:active` broadcasts a single user's in-call transition (0↔1 LiveKit
+  // room memberships in the in-call roster); `call:active-snapshot` is sent
+  // socket-direct on connect with the initial roster of in-call users in
+  // the org. See apps/web/src/server/socket/in-call.ts.
+  "call:active": (payload: { userId: string; in_call: boolean }) => void;
+  "call:active-snapshot": (payload: { userIds: string[] }) => void;
 }
 
 export interface ClientToServerEvents {
   "presence:subscribe": (departmentIds: string[]) => void;
   "presence:heartbeat": () => void;
   "call:reject": (payload: { callId: string }) => void;
+  // Phase 7 #14 — client signals from useEmitCallParticipation. Fired when
+  // a LiveKit Room.Connected/Disconnected event indicates this user has
+  // joined or left a call. Server identity comes from socket.data.session.
+  "call:joined": () => void;
+  "call:left": () => void;
 }
 
 export interface InterServerEvents {

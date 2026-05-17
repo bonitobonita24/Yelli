@@ -8,6 +8,7 @@ import {
   selectDepartmentPresence,
 } from "@/components/speed-dial/department-presence";
 import { useUserPresence } from "@/lib/presence/use-user-presence";
+import { useUsersInCall } from "@/lib/presence/use-users-in-call";
 import { trpc } from "@/lib/trpc/react";
 
 import { SpeedDialButton } from "./speed-dial-button";
@@ -38,6 +39,7 @@ export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
   const router = useRouter();
   const boundUserIds = extractBoundUserIds(departments);
   const online = useUserPresence(boundUserIds);
+  const inCall = useUsersInCall(boundUserIds);
 
   const initiate = trpc.calls.initiate.useMutation({
     onSuccess: (data) => {
@@ -120,7 +122,7 @@ export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
                 id={dept.id}
                 name={dept.name}
                 description={dept.description}
-                presenceState={selectDepartmentPresence(dept, online)}
+                presenceState={selectDepartmentPresence(dept, online, inCall)}
                 autoAnswer={dept.auto_answer_enabled}
                 onCall={handleCall}
               />
