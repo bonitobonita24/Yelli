@@ -25,6 +25,7 @@ export default async function AppPage() {
       group_label: true,
       sort_order: true,
       auto_answer_enabled: true,
+      default_user_id: true,
     },
   });
 

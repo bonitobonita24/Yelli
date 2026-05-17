@@ -127,15 +127,16 @@ model User {
   updated_at DateTime @updatedAt
 
   // Relations
-  organization        Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  audit_logs          AuditLog[]
-  hosted_meetings     Meeting[]
-  participations      Participant[]
-  made_call_logs      CallLog[]
-  sent_chat_messages  ChatMessage[]
-  recorded_recordings Recording[]
-  uploaded_files      SharedFile[]
-  password_reset_tokens PasswordResetToken[]
+  organization            Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  audit_logs              AuditLog[]
+  hosted_meetings         Meeting[]
+  participations          Participant[]
+  made_call_logs          CallLog[]
+  sent_chat_messages      ChatMessage[]
+  recorded_recordings     Recording[]
+  uploaded_files          SharedFile[]
+  password_reset_tokens   PasswordResetToken[]
+  default_for_departments Department[]  @relation("DepartmentDefaultUser")
 
   @@unique([organization_id, email])
   @@index([organization_id])
@@ -183,16 +184,19 @@ model Department {
   sort_order           Int     @default(0)
   device_binding_token String? @unique
   auto_answer_enabled  Boolean @default(false)
+  default_user_id      String?
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
   // Relations
   organization         Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  default_user         User?        @relation("DepartmentDefaultUser", fields: [default_user_id], references: [id], onDelete: SetNull)
   outgoing_call_logs   CallLog[]    @relation("CallerDepartment")
   incoming_call_logs   CallLog[]    @relation("RecipientDepartment")
 
   @@index([organization_id])
+  @@index([default_user_id])
   @@map("departments")
 }
 

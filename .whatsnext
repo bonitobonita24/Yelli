@@ -1,4 +1,17 @@
-Phase 7 #12 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; user-level presence engine live since Phase 7 #11; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+Phase 7 #13 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; user-level presence engine live since Phase 7 #11; department-binding presence WIRED INTO Speed Dial Board since Phase 7 #12 — green dots are live; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+
+Phase 7 #12 (department-binding) shipped on 2026-05-17:
+- Tier 2 single-session (~55K Opus context). User picked (department-binding) from the recommended-next slot.
+- NEW `apps/web/src/components/speed-dial/department-presence.ts` (30 lines) — two pure helpers `extractBoundUserIds(departments): string[]` (filters nulls, preserves order) + `selectDepartmentPresence(department, online): PresenceState` (returns "online" only when default_user_id is non-null AND online[default_user_id] === true; else "offline"). Node-testable per [[pure-helper-extraction-pattern]] — no React import.
+- NEW `apps/web/src/components/speed-dial/department-presence.test.ts` (75 lines, 9 RED→GREEN cases) — full helper contract proven: 4 for extractBoundUserIds (empty input, null-filtering, order preservation, no-dedup) + 5 for selectDepartmentPresence (bound+online, bound+offline, bound+missing-from-map, unbound (null FK) returns offline, defensive undefined entry).
+- NEW Prisma migration `20260517075117_add_department_default_user_id` — `ALTER TABLE "departments" ADD COLUMN "default_user_id" TEXT` + index + FK to `users(id) ON DELETE SET NULL ON UPDATE CASCADE`. TEXT type matches cuid() id convention across all 13 models (NOT UUID — plan's `@db.Uuid` was caught wrong at pre-flight read of schema.prisma).
+- MODIFIED `apps/web/src/components/speed-dial/speed-dial-grid.tsx` (+9 / -4 lines) — local Department interface widened with `default_user_id: string | null`; `usePresence(ids)` replaced with `useUserPresence(extractBoundUserIds(departments))`; `presenceState` prop derived via `selectDepartmentPresence(dept, online)`. `<SpeedDialButton>` untouched.
+- MODIFIED `packages/db/prisma/schema.prisma` (+5 on Department, +1 inverse on User) — `default_user_id String?` + `default_user User? @relation("DepartmentDefaultUser", ...)` + `@@index([default_user_id])`. Inverse `default_for_departments Department[]` on User. Named relation disambiguates from future Department→User relations.
+- MODIFIED `apps/web/src/app/app/page.tsx` (+1 line) — `default_user_id: true` in Prisma select clause so the SC's typed prop flows the new field through.
+- DELETED `apps/web/src/lib/presence/use-presence.ts` (-55 lines) — legacy department-level stub. Sole consumer migrated; closes the cleanup started in Phase 7 #11. Legacy `presence:update` event in types.ts is now orphaned but stays until (legacy-socket-retirement) lands.
+- 9 new RED→GREEN cases (test suite 108→117). pnpm build ✓ 27 routes in 1m26s (per [[instrumentation-edge-stub-required]] — schema change → prisma generate → bundle impact verified). pnpm audit ✓ exit 0 (Phase 7 #9 acceptance + #10 CLI flag still in effect). Two-stage review (Rule 25) PASS — all 5 locked spec decisions verified, no `any`, no type assertions, scope strictly bounded to plan inventory.
+- 0 new lessons logged — nothing novel emerged (existing patterns covered everything; cuid/UUID discovery was a pre-flight catch not a runtime gotcha; pre-flight pattern is already encoded in Rule 4).
+- Squash SHA: (set in next governance commit). Closes (department-binding). The Speed Dial Board now shows real per-department green dots when the bound user is connected — first end-to-end realtime UX surface using the Phase 7 #11 engine. `selectDepartmentPresence(department, online)` is the framework precedent for any future "derive single-resource state from user-presence map" pattern.
 
 Phase 7 #11 (presence) shipped on 2026-05-17:
 - Tier 2 single-session (~70K Opus context). User picked (presence) from the recommended-next slot.
@@ -14,20 +27,32 @@ Phase 7 #11 (presence) shipped on 2026-05-17:
 - Squash SHA: `81356e9`. Closes (presence). Unblocks every realtime org-scoped feature — `emitToOrg(io, organizationId, eventType, payload)` with `joinOrgChannel` enforcing zero cross-org leakage is now the framework precedent.
 
 ----------------------------------------------------------------------
-Candidates for Phase 7 #12 (any order, user picks):
+Candidates for Phase 7 #13 (any order, user picks):
 ----------------------------------------------------------------------
 
-(department-binding) Department-binding presence — Tier 2, RECOMMENDED NEXT
-    The natural follow-up to (presence): wire the user-level engine into the Speed Dial Board UI.
-    Scope: add `default_user_id` (or `device_binding_token`) to the Department Prisma model so
-    each department has a primary user whose presence drives the department's online indicator.
-    Then either (a) extend the server to also broadcast `presence:department {departmentId,state}`
-    by deriving from the userId↔department map at emit time, OR (b) keep server-side per-user
-    and resolve client-side via `useUserPresence(bindings.map(b => b.userId))` in the
-    `<SpeedDialGrid>` component. Option (b) is simpler and matches the existing per-user engine
-    without changing the type contract. Includes the migration + tests + integration of the new
-    hook into speed-dial-grid.tsx (currently consumes the legacy usePresence stub). Speed Dial
-    buttons go from "always disabled (offline)" to "live online state from the auth-gated socket".
+(admin-binding-ui) Admin UI for assigning Department.default_user_id — Tier 1-2, RECOMMENDED NEXT
+    The natural follow-up to (department-binding): now that the schema + wiring are live, give
+    tenant admins a UI to pick which user drives each department's online dot. Currently bindings
+    can only be set via pgAdmin direct edit. Scope: add a Select dropdown to /admin/departments
+    edit form populated with active users in the same organization; wire a tRPC mutation
+    `departments.setDefaultUser({ departmentId, userId | null })`; add 4-5 RED→GREEN test cases
+    on the mutation (org-scoping enforced, set null clears binding, set to user-from-other-org
+    rejected via L6 tenant-guard, set to inactive user rejected with explicit error, audit log
+    written on change per Rule 7 L5). Closes the deferred-scope from #12. Tier 1-2 depending on
+    whether an admin role-check middleware already exists at /admin/* (verify via grep).
+
+(in-call-state) Add "in_call" state derivation to selectDepartmentPresence — Tier 2
+    The other deferred-scope item from #12. The current selectDepartmentPresence returns only
+    "online" | "offline" — never "in_call". Two design paths to discuss:
+    (a) Query active calls server-side and overlay via a tRPC subscription that emits per-user
+        in-call state changes.
+    (b) Add a `call:active` Socket.IO broadcast event with per-user-set tracking on the server
+        (parallel to the presence:user/presence:snapshot pattern from #11). Client maintains an
+        in-call user set in addition to the online user set; selectDepartmentPresence overlays
+        in_call > online > offline.
+    Option (b) matches the realtime broadcast pattern from #11 + #12. Includes test cases for
+    transition coalescing (start_call → 1 emit, end_call → 1 emit; mid-call HMR/reconnect = no
+    spurious offline-in_call flicker).
 
 (i) Periodic cleanup of expired/consumed password_reset_tokens
     BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed expired tokens > 7 days. Keeps the table from
@@ -64,6 +89,12 @@ Candidates for Phase 7 #12 (any order, user picks):
       another peer in the same org. Sign out / close one tab — verify other tab does NOT see user go offline (multi-tab
       coalescing held). Close the last tab — verify peers in the org receive `presence:user {online:false}` within transport
       timeout (~25s pingInterval + 20s pingTimeout = ~45s worst-case).
+    - NEW: Speed Dial green-dot smoke (Phase 7 #12) — open pgAdmin, bind one demo department's `default_user_id` to the
+      webmaster user id (UPDATE departments SET default_user_id = '<webmaster-id>' WHERE name = 'Reception'). Sign in as
+      webmaster in /app → wait for socket handshake (~1s) → verify the Reception speed-dial button shows a green dot AND is
+      clickable (not disabled). Sign out → wait for transport timeout (~45s) → verify the dot returns to gray AND the button
+      becomes disabled. Verify an unbound department (default_user_id IS NULL) stays gray + disabled throughout (matches
+      existing offline UX).
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
@@ -79,6 +110,7 @@ Rule 25 reminder for ALL of the above:
       [[socket-client-factory-test-pattern]] (Phase 7 #10 — vi.mock("socket.io-client"); assert io() receives correct URL + opts)
       [[event-handler-disposer-test-pattern]] (Phase 7 #10 — hand-rolled MinimalSocket fake; assert register/fire/dispose/no-cross-fire)
       [[presence-roster-coalesce-pattern]] (Phase 7 #11 — Map<orgId, Map<userId, Set<socketId>>> with {wasFirst}/{isLast} semantics; mock io.to(...).emit(...) per [[socket-revalidation-test-pattern]] precedent)
+      [[pure-helper-extraction-pattern]] (Phase 7 #7c-2 / #8e / #10 / #11 / #12 — extract React-incompatible OR Edge-incompatible OR simply node-testable logic into a separate file; the React component becomes a thin composition that's correct-by-construction)
   → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3.
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
   → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file.
@@ -99,7 +131,7 @@ Rule 25 reminder for ALL of the above:
   → NEW (Phase 7 #10): for any audit policy claim, run `pnpm audit` BARE (no flag) and verify exit code — `.npmrc audit-level` does NOT control the bare exit code on pnpm 10. See [[pnpm10-audit-level-ignored]].
   → NEW (Phase 7 #11): test fakes that need to satisfy overloaded interfaces (per-event-name payload typing) use a `loose as unknown as Interface` boundary cast — established precedent `} as never` (revalidation.test.ts) and `as unknown as IOServer` (channels.test.ts). Keeps production typing strict while letting test runtime be loose.
 
-Recommended next: (department-binding) — pairs with #11 to finally turn on the Speed Dial Board live presence indicators. OR (legacy-socket-retirement) — consolidate the two parallel socket servers, simplify lib/socket/types.ts, retire `subscribedDepartmentIds` + `callIncomingRoom`/`callerRoom`. OR (rule-16-cleanup) for accumulated smoke-test debt now that we have a fresh presence engine to smoke-test as well. OR (i) BullMQ cleanup as clean Tier 2 housekeeping. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
+Recommended next: (admin-binding-ui) — pairs with #12 to give tenant admins a self-service UI for managing the new `default_user_id` bindings (currently pgAdmin-only). OR (in-call-state) — the other deferred-scope item from #12, lights up the yellow `in_call` dot. OR (legacy-socket-retirement) — now that #12 deleted the legacy `usePresence`, the legacy /api/socket server is closer to fully retired (only `emitIncomingCall` still uses it); consolidate the two parallel socket servers, retire `subscribedDepartmentIds` + `callIncomingRoom`/`callerRoom` + the now-orphaned `presence:update` event. OR (rule-16-cleanup) for accumulated smoke-test debt now that we have BOTH a fresh presence engine AND a wired Speed Dial green-dot UI to smoke-test. OR (i) BullMQ cleanup as clean Tier 2 housekeeping. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
 
 Pending Rule 16 follow-up (accumulated debt — clear before Phase 7 #N+M):
   - smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover)
@@ -107,3 +139,4 @@ Pending Rule 16 follow-up (accumulated debt — clear before Phase 7 #N+M):
   - smoke-test subdomain routing (Phase 7 #7c carryover) — edit /etc/hosts with `acme.localhost` / `evil.localhost`, OR use the /t/{slug} path pattern. Log in as user with org "acme" → visit http://localhost:43512/t/evil/app → confirm redirects to /t/acme/app. Super-admin → visit /t/evil/superadmin/users → confirm allows (option C bypass); visit /t/evil/app → confirm redirects to own subdomain
   - smoke-test Socket.IO handshake + session:invalidated event (Phase 7 #8e + #10 carryover). (1) start dev env with SOCKET_PORT=43515; (2) `curl http://localhost:43515/socket.io/` returns Socket.IO handshake page; (3) browser session in /app connects to ws://localhost:43515 + console logs no errors; (4) trigger session invalidation in another tab (sign out, or admin disables user) → wait ≤60s → verify the connected socket receives `session:invalidated` event AND the tab redirects to /login automatically.
   - NEW smoke-test Presence engine (Phase 7 #11). Open two browser tabs as the SAME user → both connect → both receive `presence:snapshot` containing self (plus any other peer in the org). Close ONE of the two tabs → OTHER tab should NOT see user go offline (multi-tab coalescing). Close the LAST tab → peers in the org should receive `presence:user {online:false}` within transport timeout (~25s pingInterval + 20s pingTimeout = ~45s worst case). Confirm the cross-org isolation: a user in `org-acme` should NEVER see a `presence:user` event for a user in `org-evil`.
+  - NEW smoke-test Speed Dial green-dot UI (Phase 7 #12). pgAdmin: UPDATE departments SET default_user_id = '<webmaster-id>' WHERE name = '<demo-dept-name>'. Sign in as webmaster in /app → wait ~1s for socket handshake → verify the bound department's speed-dial button shows a green dot AND is clickable (not disabled). Sign out → wait ~45s for transport timeout → verify the dot returns to gray AND the button becomes disabled. Verify an unbound department (default_user_id IS NULL) stays gray + disabled throughout. Verify a department bound to a user in a DIFFERENT org never shows online (cross-org isolation via the org-scoped Socket.IO channel). Verify the auto_answer badge ⚡ Auto still renders correctly for departments that have it set (orthogonal to presence).

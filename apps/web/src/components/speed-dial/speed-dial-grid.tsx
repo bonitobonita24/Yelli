@@ -3,7 +3,11 @@
 import { cn, toast } from "@yelli/ui";
 import { useRouter } from "next/navigation";
 
-import { usePresence } from "@/lib/presence/use-presence";
+import {
+  extractBoundUserIds,
+  selectDepartmentPresence,
+} from "@/components/speed-dial/department-presence";
+import { useUserPresence } from "@/lib/presence/use-user-presence";
 import { trpc } from "@/lib/trpc/react";
 
 import { SpeedDialButton } from "./speed-dial-button";
@@ -15,6 +19,7 @@ interface Department {
   group_label: string | null;
   sort_order: number;
   auto_answer_enabled: boolean;
+  default_user_id: string | null;
 }
 
 interface SpeedDialGridProps {
@@ -31,8 +36,8 @@ function getGridCols(count: number): string {
 
 export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
   const router = useRouter();
-  const ids = departments.map((d) => d.id);
-  const presence = usePresence(ids);
+  const boundUserIds = extractBoundUserIds(departments);
+  const online = useUserPresence(boundUserIds);
 
   const initiate = trpc.calls.initiate.useMutation({
     onSuccess: (data) => {
@@ -115,7 +120,7 @@ export function SpeedDialGrid({ departments, userRole }: SpeedDialGridProps) {
                 id={dept.id}
                 name={dept.name}
                 description={dept.description}
-                presenceState={presence[dept.id] ?? "offline"}
+                presenceState={selectDepartmentPresence(dept, online)}
                 autoAnswer={dept.auto_answer_enabled}
                 onCall={handleCall}
               />
