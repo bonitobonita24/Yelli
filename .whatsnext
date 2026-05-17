@@ -1,31 +1,27 @@
-Phase 7 #9 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e — instrumentation.ts hook + auth middleware + org-scoped channels + 60s revalidation loop; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+Phase 7 #10 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; nodemailer HIGH CVE mitigation shipped 2026-05-17 closes the only remaining `pnpm audit` failure; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
 
-Phase 7 #8 (e) Socket.IO realtime foundation shipped on 2026-05-16:
-- (e)-1 [SHA `dd57c9c`] — bootstrap + auth middleware. Next.js 15 instrumentation.ts hook spawns Socket.IO HTTP server on SOCKET_PORT (43515 dev = base+13), separate from APP_PORT. Dynamic imports keep instrumentation Edge-bundle-safe. server/socket/server.ts: createSocketServer factory with CORS to NEXT_PUBLIC_APP_URL + credentials:true (cross-port = cross-origin for the Auth.js cookie); installs socketAuthMiddleware on io.use(). server/socket/auth.ts: verifySocketAuth({cookieHeader, isProduction}) pure function parses Auth.js v5 cookie (authjs.session-token dev / __Secure-authjs.session-token prod) and decodes with cookie name as JWE salt — Auth.js v5 derives the AEAD key from secret + cookie-name, so wrong salt returns null even with right secret. Narrows decoded JWT mirroring auth.config.ts session callback; rejects on missing organizationSlug/Id/role/securityVersion. NEW auth.test.ts with 13 cases. RED→GREEN proven inline.
-- (e)-2 [SHA `c399b43`] — org channels + 60s revalidation. server/socket/channels.ts: orgChannelName/platformChannelName formatters per DECISIONS_LOG.md:173 (${tenantId}:${eventType}). joinOrgChannel(socket, eventType) takes NO orgId parameter so cross-org subscription is API-impossible — the helper always reads session.organizationId, so a malicious client cannot coerce subscription to another org through the API surface. joinPlatformChannel requires session.isSuperAdmin === true. server/socket/revalidation.ts: revalidateConnectedSockets walks io.fetchSockets(), dedupes userIds, single platformPrisma.user.findMany including organization.suspended_at, disconnects sockets failing any of 4 staleness conditions; emits "session:invalidated" before disconnect. startSessionRevalidationLoop is the setInterval wrapper with .unref(). NEW channels.test.ts (10) + revalidation.test.ts (9). instrumentation.ts wires the cleanup.
-- (e)-3 — governance batch only (this update). New DECISIONS_LOG entry "Realtime Hosting Topology (Phase 7 #8e)" locks option B over A (custom server) or C (separate compose service).
-- Tier 3 decomposition: 12 files (8 new + 4 modified), score 49 > 40 threshold → mandatory 3-session split per memory-governance §1. All 3 sub-sessions Opus self-executed per Phase 7 #7c's [[sonnet-thrash-sessionstart-hooks]] precedent. ~90K total Opus context, well under 100K ceiling.
-- Tests: 42 → 75 (+33). trpc/routers/auth.ts per-file gate intact at 100/80.95/100/100. Globals: 21.37→29.43 stmts / 16.1→25.06 branches.
-- User-confirmed decisions: (1) hosting topology = option B (instrumentation + separate port); (2) decomposition = 2 sub-sessions + governance.
-- 3 new lessons: (🟤) Auth.js v5 JWE cookie-name-as-salt; (🟤) cross-org subscription guard via API-surface design; (🟤) Next.js 15 instrumentation.ts hosting topology decision.
+Phase 7 #9 (j) nodemailer HIGH CVE mitigation shipped on 2026-05-17:
+- Tier 1 single-commit. Path (c) from the 3 documented paths in lessons.md (Phase 7 #5 entry): documented acceptance + `.npmrc audit-level=critical` lift. 3 files (1 new + 2 modified). ~15K Opus context.
+- NEW `.npmrc` at project root — `audit-level=critical`. Header comment links the policy back to DECISIONS_LOG + lessons.md so a future contributor sees the rationale before changing it.
+- `apps/web/src/server/lib/email.ts` — JSDoc header documenting why GHSA-rcmh-qjqh-p98v is unreachable: `from` is server-stamped from `env.SMTP_FROM`, `to` is the Zod-validated User.email column (never reflected unescaped from request bodies), subject/body composed from server-controlled constants (`resetUrl = env.NEXT_PUBLIC_APP_URL + server-generated token`). No user-controlled string reaches nodemailer's addressparser, so the DoS vector is unreachable. Doc also notes the revisit triggers: @auth/core widening its peer range OR replacing nodemailer.
+- `.github/workflows/ci.yml` — dropped hardcoded `--audit-level=high` flag from the security job's audit step. Bare `pnpm audit` now respects `.npmrc audit-level=critical`. `.npmrc` is now the single source of truth — change one file to revisit the policy.
+- New DECISIONS_LOG entry "Unfixed CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v" locked 2026-05-17 with 3 explicit revisit triggers: (i) @auth/core widens peer range, (ii) new HIGH CVE in another dep with reachable exploit path, (iii) Auth.js v5 swaps mail transport entirely.
+- New 🟤 lesson [[nodemailer-cve-mitigation]] codifies the documented-acceptance decision tree as the framework's default response to unfixed HIGH CVEs in transitively-pinned deps.
+- Verification: `pnpm audit` exit 0 (was exit 1 on HIGH) ✓; `pnpm audit --audit-level=critical` exit 0 ✓; eslint email.ts ✓; tsc apps/web ✓. TDD inapplicable (pure docs + config, no behavior). Two-stage review PASS.
+- Closes the only remaining `pnpm audit` failure on main. CI security job exits 0.
 
 ----------------------------------------------------------------------
-Candidates for Phase 7 #9 (any order, user picks):
+Candidates for Phase 7 #10 (any order, user picks):
 ----------------------------------------------------------------------
 
-(j) Resolve nodemailer HIGH CVE (GHSA-rcmh-qjqh-p98v)   [security — small + safe, RECOMMENDED NEXT]
-    addressparser DoS via recursive calls affects <=7.0.10; we run 6.9.16 pinned for
-    Auth.js v5 peer compat. Three documented paths in lessons.md:
-      (a) wait for @auth to widen its nodemailer peer range — cleanest, no code changes
-      (b) replace nodemailer with a different transport library — touches email.ts + callsites
-      (c) document mitigation (server-stamped addresses only, attacker cannot reach the
-          vulnerable parser through the password-reset flow) + add `audit-level=critical`
-          to .npmrc per phases.md decision tree step 3
-    Path (c) is the realistic short-term option; (a) is the long-term hope; (b) is
-    last-resort. Single-commit ticket — Tier 1. Pre-existing on main since before Phase 7 #5.
-    Closes the only remaining `pnpm audit` failure on main.
+(socket-client) Client-side socket.io-client provider hook   [Tier 1, RECOMMENDED NEXT for shortest path to first end-to-end realtime feature]
+    Small Tier 1 ticket. Build the React provider that connects to NEXT_PUBLIC_SOCKET_URL
+    with `credentials: include` (so the Auth.js cookie flows), exposes a useSocket() hook
+    returning a typed socket reference, and surfaces "session:invalidated" disconnect
+    events as a forced re-auth UX (redirect to /login). Prerequisite for (presence) —
+    the presence engine needs a client socket to consume.
 
-(presence) Real-time presence engine (NEW — unblocked by #8e)
+(presence) Real-time presence engine
     Now ready to consume the Socket.IO foundation. Scope: emit on socket.connect /
     socket.disconnect to broadcast online/offline state to org subscribers via
     joinOrgChannel(socket, "presence"). Pairs with Speed Dial Board UI
@@ -33,13 +29,7 @@ Candidates for Phase 7 #9 (any order, user picks):
     Department-binding presence (device_binding_token on Department model) is the
     natural extension. Tier 2-3. RED-GREEN test pattern: assert emitToOrg called
     with correct room name + payload on socket.io connect/disconnect events.
-
-(socket-client) Client-side socket.io-client provider hook (NEW — unblocked by #8e)
-    Small Tier 1 ticket. Build the React provider that connects to NEXT_PUBLIC_SOCKET_URL
-    with `credentials: include` (so the Auth.js cookie flows), exposes a useSocket() hook
-    returning a typed socket reference, and surfaces "session:invalidated" disconnect
-    events as a forced re-auth UX (redirect to /login). Pairs naturally with (presence)
-    since the first consumer needs a client socket; can ship together if scope allows.
+    Best shipped immediately after (socket-client) for end-to-end demo.
 
 (i) Periodic cleanup of expired/consumed password_reset_tokens
     A BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed
@@ -78,11 +68,12 @@ Rule 25 reminder for ALL of the above:
   → NEW (Phase 7 #6): for any new throttle/cap design on auth flows, follow [[per-user-24h-cap-pattern]].
   → NEW (Phase 7 #7c): for any work that touches CLAUDE.md / .claude/rules/* / governance docs, prefer Opus-executor over Sonnet dispatch — Sonnet subagents thrash on SessionStart hooks. See [[sonnet-thrash-sessionstart-hooks]].
   → NEW (Phase 7 #7c): for any middleware.ts edit, IGNORE the vercel-plugin nextjs auto-suggestion to rename to proxy.ts — Yelli is on Next.js 15.5.18. See [[proxy-ts-false-positive]].
+  → NEW (Phase 7 #9): for unfixed HIGH CVEs in transitively-pinned deps, follow the 5-step decision tree in [[nodemailer-cve-mitigation]] — trace exploit reachability, JSDoc the call site, DECISIONS_LOG entry with revisit triggers, `.npmrc audit-level=critical`, drop hardcoded CI flag.
 
-Recommended next: (j) nodemailer mitigation — Tier 1 single-commit ticket that clears the only remaining `pnpm audit` failure on main. Then either (presence) + (socket-client) as a paired Tier 2-3 ticket showing the first real-time feature end-to-end, OR (i) BullMQ cleanup as a clean Tier 2 housekeeping win. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
+Recommended next: (socket-client) — shortest path to the first end-to-end realtime feature. Pairs immediately with (presence) for a complete demo of the Socket.IO foundation. OR (i) BullMQ cleanup as clean Tier 2 housekeeping that closes the password-reset-token lifecycle started by #6. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
 
 Pending Rule 16 follow-up (accumulated debt — clear before Phase 7 #N):
   - smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover)
   - smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover). With the 24h cap live, manual /forgot-password smoke for the same email is limited to 5 requests per 24h — use distinct emails or trust test assertions
   - smoke-test subdomain routing (Phase 7 #7c carryover) — edit /etc/hosts with `acme.localhost` / `evil.localhost`, OR use the /t/{slug} path pattern. Log in as user with org "acme" → visit http://localhost:43512/t/evil/app → confirm redirects to /t/acme/app. Super-admin → visit /t/evil/superadmin/users → confirm allows (option C bypass); visit /t/evil/app → confirm redirects to own subdomain
-  - NEW from #8e: smoke-test Socket.IO handshake. (1) start dev env with SOCKET_PORT=43515; (2) `curl http://localhost:43515/socket.io/` returns Socket.IO handshake page; (3) browser session in /app connects to ws://localhost:43515 + console logs no errors; (4) trigger session invalidation in another tab (sign out, or admin disables user) → wait ≤60s → verify the connected socket receives `session:invalidated` event and disconnects.
+  - smoke-test Socket.IO handshake (Phase 7 #8e carryover). (1) start dev env with SOCKET_PORT=43515; (2) `curl http://localhost:43515/socket.io/` returns Socket.IO handshake page; (3) browser session in /app connects to ws://localhost:43515 + console logs no errors; (4) trigger session invalidation in another tab (sign out, or admin disables user) → wait ≤60s → verify the connected socket receives `session:invalidated` event and disconnects.

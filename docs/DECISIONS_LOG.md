@@ -201,3 +201,32 @@ Super-admin tenant URL policy (analog of Phase 7 #7c option C): super-admins on 
 paths bypass org-slug enforcement but still cannot cross-subscribe to other tenants' Socket.IO
 channels — they must use `platform:*` channels for cross-tenant administrative events.
 Locked: yes — 2026-05-16.
+
+## Unfixed CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v (Phase 7 #9)
+
+Decision: Accept the unfixed HIGH advisory GHSA-rcmh-qjqh-p98v (nodemailer `addressparser`
+recursive-call DoS, affects <=7.0.10) by raising `.npmrc audit-level` from the previous CI-hardcoded
+`high` to `critical`. Risk accepted because the exploit path is unreachable in this codebase:
+`apps/web/src/server/lib/email.ts` is the only `nodemailer.createTransport` call site, and it feeds
+the address parser only server-stamped values — `from` from `env.SMTP_FROM`, `to` from the
+Zod-validated User.email column, subject/body composed from server-controlled constants (`resetUrl`
+built from `env.NEXT_PUBLIC_APP_URL` plus a server-generated token). No user-controlled string
+reaches the vulnerable parser.
+Rationale: nodemailer is pinned to 6.9.16 by the Auth.js v5 peer range. Three resolution paths were
+documented in `.cline/memory/lessons.md` after Phase 7 #5: (a) wait for @auth/core to widen its peer
+range — unbounded wait; (b) replace nodemailer with a different transport library — touches
+email.ts + every callsite + adds a new dep with its own audit surface; (c) document mitigation and
+lift `.npmrc audit-level` per `.claude/rules/phases.md` Phase 5 CVE decision tree Step 3. Path (c)
+is the realistic short-term option and is single-commit reversible. The in-code mitigation is
+documented as a JSDoc header on `email.ts` so any future contributor sees the risk model before
+modifying the file.
+Implementation: NEW `.npmrc` at project root with `audit-level=critical` (was implicit pnpm default).
+CI's `pnpm audit` call in `.github/workflows/ci.yml` dropped its hardcoded `--audit-level=high` flag
+so `.npmrc` becomes the single source of truth for the audit threshold — change one file to revisit
+the policy. CRITICAL severity still blocks both local + CI.
+Revisit triggers: (1) `@auth/core` widens its nodemailer peer range to allow >=7.0.11 — at that
+point bump nodemailer in `apps/web/package.json` and drop `.npmrc audit-level` back to `high`;
+(2) a new HIGH CVE appears in any other dependency where the exploit path IS reachable —
+re-evaluate per the phases.md decision tree; (3) Auth.js v5 itself replaces its nodemailer
+dependency with a different mail transport — same as (1).
+Locked: yes — 2026-05-17.

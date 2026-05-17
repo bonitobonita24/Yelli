@@ -29,6 +29,16 @@ Framework: Spec-Driven Platform V31
 
 ## Built So Far
 
+- ✅ Phase 7 Feature Update — nodemailer HIGH CVE mitigation (2026-05-17, ticket (j), Tier 1)
+  - NEW `.npmrc` at project root — `audit-level=critical`. Header comment documents the rationale (GHSA-rcmh-qjqh-p98v, nodemailer 6.9.16 pinned by Auth.js v5 peer range, server-stamped addresses make the DoS unreachable) and points at DECISIONS_LOG + lessons.md.
+  - `apps/web/src/server/lib/email.ts` — JSDoc header documenting why the CVE is acceptable in this module: `from` server-stamped from `env.SMTP_FROM`, `to` from Zod-validated User.email column, subject/body composed from server-controlled values. No user-controlled string reaches nodemailer's address parser, so the DoS vector is unreachable. Revisit triggers documented inline.
+  - `.github/workflows/ci.yml` — dropped hardcoded `--audit-level=high` flag from the security job's audit step. Bare `pnpm audit` now respects `.npmrc audit-level=critical`. Single source of truth: change `.npmrc` once and both local + CI follow.
+  - Closes the only remaining `pnpm audit` failure on main. CI security job exits 0.
+  - **Locked decisions added to DECISIONS_LOG.md**: new "Unfixed CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v" entry. Risk accepted with email.ts JSDoc as in-code mitigation. Revisit when @auth/core widens peer range to allow nodemailer >=7.0.11.
+  - Verification: `pnpm audit` exit 0 ✓ / `pnpm audit --audit-level=critical` exit 0 ✓ / eslint email.ts ✓ / tsc apps/web ✓. TDD inapplicable (pure doc + config policy change, no behavior to RED→GREEN). Two-stage review (Rule 25): Stage 1 spec PASS, Stage 2 quality PASS.
+  - Tier 1 direct Opus 4.7, ~15K context. 3 files touched (1 new + 2 modified), all in mitigation blast radius.
+  - Lesson added: 1 new 🟤 decision entry `[[nodemailer-cve-mitigation]]` codifying the documented-acceptance pattern as the framework's default response to unfixed HIGH CVEs in transitively-pinned deps.
+
 - ✅ Phase 7 Feature Update — Socket.IO realtime foundation (2026-05-16, SHAs `dd57c9c` + `c399b43` + e-3 governance)
   - **Sub-session (e)-1 [SHA `dd57c9c`]** — bootstrap + auth middleware:
     - `inputs.yml` — `ports.dev.socket = 43515` (base+13, between worker at +11 and prisma_studio at +20)

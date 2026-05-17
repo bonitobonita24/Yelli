@@ -1,3 +1,25 @@
+/**
+ * Email transport — wraps nodemailer for outgoing transactional mail.
+ *
+ * Security: nodemailer is pinned to 6.9.16 (Auth.js v5 peer-range cap). This version
+ * is affected by GHSA-rcmh-qjqh-p98v (HIGH) — recursive `addressparser` DoS in
+ * versions <=7.0.10. The exploit path requires an attacker-controlled address string
+ * reaching the parser. In this module:
+ *
+ *   • `from` is server-stamped from env.SMTP_FROM (no user input).
+ *   • `to` is the email column on the User row, validated by Zod at registration time
+ *     and never reflected unescaped from request bodies.
+ *   • Subject + body are constants composed from server-controlled values
+ *     (resetUrl is built from env.NEXT_PUBLIC_APP_URL + a server-generated token).
+ *
+ * No user-controlled string flows into nodemailer's address parser, so the DoS vector
+ * is unreachable. Mitigation per .claude/rules/phases.md Phase 5 CVE decision tree
+ * Step 3 — risk accepted, .npmrc `audit-level=critical` set so the build stays clean
+ * while the HIGH advisory remains documented but unfixed upstream.
+ *
+ * Revisit when @auth/core widens its nodemailer peer range to allow >=7.0.11, or
+ * replace nodemailer with an alternative transport (touches this file's call sites).
+ */
 import nodemailer, { type Transporter } from "nodemailer";
 
 import { env } from "@/env";

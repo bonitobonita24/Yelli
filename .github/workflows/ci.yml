@@ -169,9 +169,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Audit for HIGH and CRITICAL vulnerabilities
-        # Blocks merge on HIGH or CRITICAL severity CVEs (V18 rule).
-        # To resolve: run `pnpm audit --fix` locally, or upgrade the affected package,
-        # or document mitigation in DECISIONS_LOG and add `audit-level=critical` to .npmrc
-        # (Phase 5 CVE resolution decision tree — phases.md).
-        run: pnpm audit --audit-level=high
+      - name: Audit for vulnerabilities at .npmrc threshold
+        # Threshold is set in /.npmrc via `audit-level=critical` (Phase 7 #9 ticket (j),
+        # 2026-05-17). Previously hardcoded `--audit-level=high` here, but that overrode
+        # .npmrc — moving the threshold into config means policy changes in one place.
+        # To resolve a new finding: run `pnpm audit --fix` locally, or upgrade the
+        # affected package, or document mitigation in DECISIONS_LOG and keep .npmrc
+        # `audit-level=critical` (Phase 5 CVE resolution decision tree — phases.md).
+        # CRITICAL severity still blocks the merge.
+        run: pnpm audit

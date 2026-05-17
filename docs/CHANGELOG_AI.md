@@ -22,6 +22,38 @@
 
 # ---
 
+## 2026-05-17 — Phase 7 #9: nodemailer HIGH CVE mitigation — documented acceptance + .npmrc threshold lift (Tier 1)
+
+- Agent: CLAUDE_CODE (Opus 4.7 direct — Tier 1 single-commit ticket, no decomposition warranted).
+- Why: Pre-existing HIGH CVE GHSA-rcmh-qjqh-p98v (nodemailer `addressparser` recursive-call DoS, affects <=7.0.10) has been flagged by every `pnpm audit --audit-level=high` since Phase 7 #4 pinned nodemailer at 6.9.16 for Auth.js v5 peer compatibility. Three resolution paths were documented in lessons.md after Phase 7 #5: (a) wait for @auth/core to widen its nodemailer peer range, (b) replace nodemailer with a different transport library, (c) document mitigation + lift `.npmrc audit-level`. Path (a) is unbounded wait; path (b) touches `email.ts` + every call site for marginal benefit; path (c) is the realistic short-term option per `.claude/rules/phases.md` Phase 5 CVE decision tree Step 3. User picked candidate (j) as recommended next.
+- Files added (1):
+  - `.npmrc` — new file at project root. Sets `audit-level=critical` so pnpm's default audit threshold (and CI's bare `pnpm audit`) treats HIGH advisories as warnings. CRITICAL still blocks. Header comment links the policy back to DECISIONS_LOG + lessons.md so a future contributor sees the rationale before changing it.
+- Files modified (2):
+  - `apps/web/src/server/lib/email.ts` — added JSDoc header documenting why GHSA-rcmh-qjqh-p98v is acceptable in this module: `from` is server-stamped from `env.SMTP_FROM`, `to` is the email column on the User row (Zod-validated at registration, never reflected unescaped from request bodies), subject + body are constants composed from server-controlled values (`resetUrl` is built from `env.NEXT_PUBLIC_APP_URL` + a server-generated token). No user-controlled string flows into nodemailer's address parser, so the DoS vector is unreachable. Doc also notes the revisit triggers: @auth/core widening its peer range OR replacing nodemailer.
+  - `.github/workflows/ci.yml` — dropped the hardcoded `--audit-level=high` flag on the `security` job's audit step. Was: `run: pnpm audit --audit-level=high` (overrode `.npmrc` policy). Now: `run: pnpm audit` (respects `.npmrc audit-level=critical`). Step name updated from "Audit for HIGH and CRITICAL vulnerabilities" → "Audit for vulnerabilities at .npmrc threshold". Comment block updated to point future contributors at `.npmrc` as the single source of truth for the audit threshold.
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered/resolved:
+  - **PreToolUse security_reminder_hook false positive on ci.yml edit**: same pattern observed in Phase 7 #5 and #7c. Hook fires on any `.github/workflows/*.yml` edit regardless of whether the diff introduces untrusted `github.event.*` interpolation. This edit only changes a static `run:` command (no event inputs), so the warning is precautionary not diff-aware. Confirmed no regression, retry succeeded. No new lesson needed — captured by Phase 7 #5's existing entry.
+  - **vercel-plugin auto-suggested next-forge + workflow + deployments-cicd skills**: same pattern as Phase 7 #7c's `[[proxy-ts-false-positive]]` lesson. Yelli is on Next.js 15.5.18, uses a custom Spec-Driven Platform V31 monorepo (not next-forge), and runs CI on GitHub Actions (not Vercel Workflow DevKit). Ignored per the existing lesson; no new lesson needed.
+- Decisions locked:
+  - **Unfixed HIGH CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v** locked in DECISIONS_LOG.md. Risk accepted with the email.ts JSDoc as the in-code mitigation reference. Revisit when @auth/core widens peer range to allow nodemailer >=7.0.11 — at that point bump nodemailer in `apps/web/package.json` and drop `.npmrc audit-level=critical` back to `high`.
+  - **`.npmrc` becomes the single source of truth for audit threshold.** CI no longer hardcodes a flag — `.npmrc` is read by `pnpm audit` directly. Future threshold changes touch one file.
+- Verification:
+  - `pnpm audit` (no flag, respects `.npmrc`): exit 0 — confirms HIGH no longer blocks. The 6 vulnerabilities (1 low / 4 moderate / 1 high) all still listed for visibility but only CRITICAL would fail.
+  - `pnpm audit --audit-level=critical`: exit 0 — same result, explicit confirmation.
+  - `pnpm exec eslint apps/web/src/server/lib/email.ts`: 0 errors (comment-only addition).
+  - `pnpm exec tsc --noEmit -p apps/web`: 0 errors.
+  - Two-stage review (Rule 25): Stage 1 spec PASS (path-(c) mitigation as documented in lessons.md + phases.md decision tree); Stage 2 quality PASS (no `any`, no scope creep — exactly 3 files touched all in mitigation blast radius, JSDoc is non-executable so no test required, no functional behavior change). TDD inapplicable: pure documentation + config policy change, no behavior to RED→GREEN.
+- Dispatch retrospective: Tier 1 direct Opus 4.7 execution. File count 3, modules 3 (lib/email + config + CI), depth 0 — no decomposition formula needed. ~15K Opus context including governance writes. Sonnet dispatch unnecessary at this size; skipped without §2.5b justification because the ticket fits comfortably in a single session.
+- Models used:
+  - planning: claude-code (Opus 4.7 — Architect role; classified as Tier 1 single-session)
+  - execution: claude-opus-4-7 direct (Tier 1, no §2.5b escalation needed)
+  - governance: gemini-2.5-flash-lite (non-critical doc writes — not invoked; Opus inline)
+- Branch `feat/nodemailer-cve-mitigation` → squash-merge pending. Closes the only remaining `pnpm audit` failure on main; CI security job now exits 0 cleanly.
+
+# ---
+
 ## 2026-05-16 — Phase 7 #8: Socket.IO realtime foundation — auth middleware + org channels + 60s revalidation (Tier 3)
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct, per memory-governance §4 Step 2.5b — Sonnet dispatch unviable here per Phase 7 #7c's [[sonnet-thrash-sessionstart-hooks]] precedent). Decomposed into 3 sub-sessions per memory-governance §1.
