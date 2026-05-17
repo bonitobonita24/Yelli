@@ -22,6 +22,36 @@
 
 # ---
 
+## 2026-05-18 — Phase 7 #14: In-call state — yellow dot derivation engine (Tier 2)
+
+- Agent: CLAUDE_CODE
+- Why: Phase 7 #12+#13 shipped the green dot (department-binding presence + admin self-service UI). The yellow `in_call` dot on `<SpeedDialButton>` was rendered + disabled-state-wired since Phase 4 Part 5b, but `selectDepartmentPresence` never produced the `"in_call"` value — the data plane was missing. This ticket adds a twin-roster + twin-hook engine parallel to Phase 7 #11's user-level presence: browser emits `call:joined`/`call:left` on LiveKit `Room.Connected`/`Room.Disconnected` via a new composable `useEmitCallParticipation(room)` hook invoked by BOTH `useLiveKitRoom` (intercom 1:1) and `useMeetingRoom` (multi-participant meetings). Server tracks per-org per-user socket-set roster with `{wasFirst}/{isLast}` coalescing in `createInCallRoster()`; broadcasts `call:active` org-scoped via `emitToOrg` on transitions only; sends `call:active-snapshot` socket-direct on connect. Client consumes via `useUsersInCall(userIds): ReadonlySet<string>`. Helper signature `selectDepartmentPresence(dept, online, inCall)` overlays in_call > online > offline. Closes the second deferred-scope item from Phase 7 #12.
+- Files added:
+  - apps/web/src/server/socket/in-call.ts (149 lines — createInCallRoster + attachInCallHandlers, with joinOrgChannel + socket-direct snapshot + 3 listeners: call:joined / call:left / disconnect; org-scoped broadcast via emitToOrg only on 0↔1 transitions)
+  - apps/web/src/server/socket/in-call.test.ts (242 lines, 11 RED→GREEN cases — 5 roster contract (wasFirst, second-socket wasFirst false, isLast, non-last, deduplicated org isolation) + 6 handler wiring (joins org room, snapshot includes existing, broadcast on wasFirst, no broadcast on second-socket, disconnect cleanup isLast, defensive no-session no-op))
+  - apps/web/src/lib/presence/in-call-handler.ts (77 lines — pure client handler attachInCallHandlers with MinimalInCallSocketTarget overloaded interface; node-testable per [[pure-helper-extraction-pattern]])
+  - apps/web/src/lib/presence/in-call-handler.test.ts (117 lines, 5 RED→GREEN cases — register both listeners, snapshot callback, update callback, disposer unwires, no-callbacks-after-dispose; hand-rolled MinimalSocket fake matching user-presence-handler.test.ts structure)
+  - apps/web/src/lib/presence/use-users-in-call.ts (69 lines — React hook returning ReadonlySet<string>; consumes useSocketOptional() + attachInCallHandlers; jsdom test deferred per Phase 7 #11 precedent)
+  - apps/web/src/lib/livekit/use-emit-call-participation.ts (52 lines — composable hook wiring socket.emit("call:joined"|"call:left") to RoomEvent.Connected/Disconnected; useEffect cleanup unwires; no-op when socket or room is null)
+  - docs/superpowers/specs/2026-05-17-in-call-state-design.md (290 lines — design doc per brainstorming skill; 8 locked decisions; commit 78d3c5e)
+  - docs/superpowers/plans/2026-05-18-in-call-state.md (1584 lines — 13-task TDD plan per writing-plans skill; commit 6e218ed)
+- Files modified:
+  - apps/web/src/lib/socket/types.ts (+12 lines — 2 new ServerToClient events `call:active` (transition broadcast) + `call:active-snapshot` (per-socket init); 2 new ClientToServer events `call:joined` + `call:left`. Distinct from `presence:user`/`presence:snapshot` to keep type-map collisions impossible.)
+  - apps/web/src/server/socket/server.ts (+11 lines — import createInCallRoster + attachInCallHandlers; instantiate inCallRoster once at server boot; wire attachInCallHandlers inside the existing io.on("connection") callback alongside attachPresenceHandlers)
+  - apps/web/src/components/speed-dial/department-presence.ts (+17 lines — 3rd inCall: ReadonlySet<string> parameter on selectDepartmentPresence with locked precedence JSDoc: unbound → offline; inCall → in_call (wins); online → online; else → offline)
+  - apps/web/src/components/speed-dial/department-presence.test.ts (+51 lines — existing 5 selectDepartmentPresence cases updated to pass empty Set as 3rd arg; +4 new cases: in_call basic, precedence wins over online, precedence wins over offline (transitional window edge case), null FK still wins as offline even with id in inCall set)
+  - apps/web/src/components/speed-dial/speed-dial-grid.tsx (+4 lines — useUsersInCall import + hook call + 3rd arg to selectDepartmentPresence)
+  - apps/web/src/lib/livekit/use-livekit-room.ts (+6 lines — useEmitCallParticipation import + invocation right before return statement)
+  - apps/web/src/lib/livekit/use-meeting-room.ts (+5 lines — same wiring as use-livekit-room.ts so meeting flow also feeds the in-call roster)
+  - apps/web/src/server/socket/in-call.test.ts (added role: "host" to TEST_SESSION constant during Task 3 — caught by typecheck, runtime vitest accepted the loose `as unknown as Socket` cast; same class as Phase 7 #13's makeCtx narrowing catch)
+- Files deleted: none
+- Schema/migrations: none — pure realtime-layer addition. The `default_user_id` FK on departments (Phase 7 #12 migration) and the `<SpeedDialButton>` PresenceState union with `in_call` member (Phase 4 Part 5b) were both already in place.
+- Errors encountered: 1 — Task 3 (socket types add) surfaced a latent typecheck error in in-call.test.ts: `TEST_SESSION` was missing the `role` field required by the `SocketSession` type. Vitest ran the tests successfully via the `as unknown as Socket` boundary cast, but `tsc --noEmit` caught it during the typecheck step.
+- Errors resolved: 1 — added `role: "host"` to TEST_SESSION constant. Same fix shape as Phase 7 #13's makeCtx parameter-type narrowing (test fakes built before full schema awareness). Not adding a new lesson — the existing `[[trpc-test-pattern]]` already covers this class of latent typecheck catch.
+- Squash SHA: `6d3b6f8`
+
+# ---
+
 ## 2026-05-17 — Phase 7 #13: Admin-binding UI — tenant-admin self-service for Department.default_user_id (Tier 2)
 
 - Agent: CLAUDE_CODE
