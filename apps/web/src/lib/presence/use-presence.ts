@@ -1,107 +1,55 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+/**
+ * Legacy department-level presence hook.
+ *
+ * Phase 7 #11 status: STUB. The server side (legacy `lib/socket/server.ts` on
+ * /api/socket) registers `presence:subscribe`/`presence:heartbeat` handlers
+ * but never emits `presence:update` — this hook has been silently
+ * all-offline since Phase 5b. Phase 7 #11 migrated it from a wrong-origin
+ * `io(NEXT_PUBLIC_APP_URL)` connection (one socket per consumer, no auth) to
+ * the shared `useSocketOptional()` socket from the Phase 7 #10 SocketProvider
+ * (one shared connection, auth-gated, correct origin).
+ *
+ * Public contract preserved exactly: pass `departmentIds[]`, get
+ * `Record<departmentId, PresenceState>`. Currently every department resolves
+ * to `"offline"` — matches the existing UX (speed-dial buttons disabled).
+ *
+ * The real wiring comes in the Department-Binding follow-up ticket
+ * (PRODUCT.md:27 — Speed Dial Board "real-time online/offline presence
+ * indicator"). That ticket adds a userId↔departmentId binding (a
+ * `device_binding_token` or `default_user_id` column on Department) and
+ * consumes `useUserPresence(boundUserIds)` to derive per-department state.
+ *
+ * Until then, this hook stays in place so `<SpeedDialGrid>` keeps compiling
+ * without changes and downstream consumers see a stable, documented null
+ * presence rather than a runtime crash or a leaking socket.
+ */
+import { useEffect } from "react";
 
-import { clientEnv } from "@/env";
+import { useSocketOptional } from "@/lib/socket/socket-context";
 
-import type { PresenceState, PresenceUpdate } from "./types";
+import type { PresenceState } from "./types";
 
 export function usePresence(
   departmentIds: string[],
 ): Record<string, PresenceState> {
-  const [presence, setPresence] = useState<Record<string, PresenceState>>(
-    () =>
-      Object.fromEntries(
-        departmentIds.map((id) => [id, "offline" as PresenceState]),
-      ),
-  );
+  const socket = useSocketOptional();
 
-  const socketRef = useRef<Socket | null>(null);
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Keep a stable ref to departmentIds for use inside effect callbacks
-  const departmentIdsRef = useRef<string[]>(departmentIds);
-  departmentIdsRef.current = departmentIds;
-
+  // Touch the shared socket so this hook participates in connection lifecycle
+  // bookkeeping (no-op listener; replaced by real handlers when department-
+  // binding ships). Keeping the dependency makes future migration a one-line
+  // change rather than rewiring imports across consumers.
   useEffect(() => {
-    // Add any new ids as "offline" without clobbering existing states
-    setPresence((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const id of departmentIds) {
-        if (!(id in next)) {
-          next[id] = "offline";
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [departmentIds]);
+    if (socket === null) return;
+    // Reserved: subscribe to presence:user / presence:snapshot here once the
+    // userId↔departmentId binding is available. See lib/presence/
+    // use-user-presence.ts for the active engine.
+  }, [socket]);
 
-  useEffect(() => {
-    if (departmentIds.length === 0) return;
-
-    let socket: Socket;
-
-    try {
-      socket = io(clientEnv.NEXT_PUBLIC_APP_URL, {
-        path: "/api/socket",
-        transports: ["websocket", "polling"],
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2_000,
-      });
-      socketRef.current = socket;
-    } catch {
-      // Presence server unavailable — degrade silently, all remain "offline"
-      return;
-    }
-
-    function handleConnect() {
-      socket.emit("presence:subscribe", departmentIdsRef.current);
-    }
-
-    function handlePresenceUpdate(update: PresenceUpdate) {
-      setPresence((prev) => {
-        if (prev[update.departmentId] === update.state) return prev;
-        return { ...prev, [update.departmentId]: update.state };
-      });
-    }
-
-    function handleDisconnect() {
-      // Mark all tracked departments as offline on disconnect
-      setPresence((prev) => {
-        const next: Record<string, PresenceState> = {};
-        for (const key of Object.keys(prev)) {
-          next[key] = "offline";
-        }
-        return next;
-      });
-    }
-
-    socket.on("connect", handleConnect);
-    socket.on("presence:update", handlePresenceUpdate);
-    socket.on("disconnect", handleDisconnect);
-
-    // 30-second heartbeat per security rules §Realtime Connection Safety
-    heartbeatRef.current = setInterval(() => {
-      if (socket.connected) {
-        socket.emit("presence:heartbeat");
-      }
-    }, 30_000);
-
-    return () => {
-      if (heartbeatRef.current !== null) {
-        clearInterval(heartbeatRef.current);
-        heartbeatRef.current = null;
-      }
-      socket.off("connect", handleConnect);
-      socket.off("presence:update", handlePresenceUpdate);
-      socket.off("disconnect", handleDisconnect);
-      socket.disconnect();
-      socketRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount/unmount only — ids handled via ref
-
-  return presence;
+  const out: Record<string, PresenceState> = {};
+  for (const id of departmentIds) {
+    out[id] = "offline";
+  }
+  return out;
 }

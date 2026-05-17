@@ -17,6 +17,10 @@ import { Server as IOServer } from "socket.io";
 
 import { env } from "@/env";
 import { socketAuthMiddleware } from "@/server/socket/auth";
+import {
+  attachPresenceHandlers,
+  createPresenceRoster,
+} from "@/server/socket/presence";
 
 import type { Server as HttpServer } from "http";
 
@@ -43,6 +47,15 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
       const message = err instanceof Error ? err.message : "INTERNAL_ERROR";
       next(new Error(message));
     });
+  });
+
+  // Phase 7 #11 — user-level presence engine. The roster is process-local
+  // in-memory; single-instance dev/staging/prod is fine. Phase 6 Redis adapter
+  // migration will swap the impl behind the same API. See presence.ts for the
+  // contract and the multi-tab coalescing semantics.
+  const presenceRoster = createPresenceRoster();
+  io.on("connection", (socket) => {
+    attachPresenceHandlers({ io, socket, roster: presenceRoster });
   });
 
   return io;
