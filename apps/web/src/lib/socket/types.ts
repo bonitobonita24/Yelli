@@ -11,6 +11,12 @@ export interface ServerToClientEvents {
     departmentId: string;
     state: PresenceState;
   }) => void;
+  // Phase 7 #8e-2 — emitted by the 60s revalidation loop immediately before
+  // socket.disconnect() when DB security_version no longer matches the JWT
+  // version (role change, suspension, password reset). The client surfaces
+  // this as a forced re-auth UX (redirect to /login) via Phase 7 #10's
+  // SocketProvider.
+  "session:invalidated": () => void;
 }
 
 export interface ClientToServerEvents {

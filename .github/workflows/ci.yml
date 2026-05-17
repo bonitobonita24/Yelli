@@ -170,11 +170,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit for vulnerabilities at .npmrc threshold
-        # Threshold is set in /.npmrc via `audit-level=critical` (Phase 7 #9 ticket (j),
-        # 2026-05-17). Previously hardcoded `--audit-level=high` here, but that overrode
-        # .npmrc — moving the threshold into config means policy changes in one place.
-        # To resolve a new finding: run `pnpm audit --fix` locally, or upgrade the
-        # affected package, or document mitigation in DECISIONS_LOG and keep .npmrc
-        # `audit-level=critical` (Phase 5 CVE resolution decision tree — phases.md).
-        # CRITICAL severity still blocks the merge.
-        run: pnpm audit
+        # Threshold: CRITICAL severity blocks the merge; HIGH and below are warnings.
+        # Both `.npmrc` and this CLI flag declare `critical` — they're kept in sync
+        # so policy is readable in either place. The CLI flag is the authoritative
+        # enforcement: pnpm 10's `pnpm audit` does NOT honor `.npmrc audit-level`
+        # for its exit code (only `pnpm config get audit-level` reads it). Phase 7
+        # #9 (2026-05-17) attempted .npmrc-only and was caught by Phase 7 #10's
+        # full validation pass — see lessons.md [[pnpm10-audit-level-ignored]].
+        # To resolve a new finding: `pnpm audit --fix` locally, or upgrade the
+        # affected package, or document mitigation in DECISIONS_LOG and keep both
+        # `.npmrc` + this flag at `critical` (phases.md Phase 5 CVE decision tree).
+        run: pnpm audit --audit-level=critical
