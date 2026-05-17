@@ -8,6 +8,26 @@
 
 # ---
 
+## 2026-05-17 — 🟤 Presence roster `{wasFirst}` / `{isLast}` coalescing pattern
+
+- Type:      🟤 decision  `[[presence-roster-coalesce-pattern]]`
+- Phase:     Phase 7 #11 (presence)
+- Files:     apps/web/src/server/socket/presence.ts, apps/web/src/server/socket/presence.test.ts
+- Concepts:  presence, multi-tab, broadcast, idempotency, socket-coalescing
+- Narrative: User-level realtime presence MUST coalesce per-socket events into per-user state changes. Naive impl: emit "online" on every socket.connect and "offline" on every socket.disconnect — flickers users offline/online during HMR reconnect, tab refresh, mobile-to-wifi handoff, page navigation. Fix: track a `Map<orgId, Map<userId, Set<socketId>>>`; `addSocket` returns `{wasFirst:true}` iff that user's socket-set went 0→1 (real online transition); `removeSocket` returns `{isLast:true}` iff the set went 1→0. The wiring layer emits ONLY on the boolean transitions. This makes the broadcast contract idempotent w.r.t. per-socket churn — what subscribers see matches user-perceived reality. The roster API is intentionally impl-agnostic: single-process in-memory Map now, Redis hash + Lua atomicity post-Phase 6 — the `{wasFirst, isLast}` contract stays the same so the wiring layer never changes when the storage swaps.
+
+# ---
+
+## 2026-05-17 — 🟤 Two parallel Socket.IO servers coexist — distinct-event-name discipline
+
+- Type:      🟤 decision  `[[parallel-socket-servers-coexistence]]`
+- Phase:     Phase 7 #11 (presence)
+- Files:     apps/web/src/lib/socket/types.ts, apps/web/src/lib/socket/server.ts (legacy), apps/web/src/server/socket/server.ts (auth-gated), apps/web/src/app/api/socket/route.ts
+- Concepts:  socket-server, type-collision, backwards-compat, event-namespacing
+- Narrative: Yelli currently runs TWO Socket.IO servers in parallel — legacy `apps/web/src/lib/socket/server.ts` on `/api/socket` (Phase 5b Speed Dial path, consumed by `app/api/socket/route.ts` + the calls router's `emitIncomingCall`) and the auth-gated `apps/web/src/server/socket/server.ts` on SOCKET_PORT (Phase 7 #8e+, auth middleware + revalidation loop). The shared `apps/web/src/lib/socket/types.ts` event-map is consumed by BOTH servers, so adding new events for the auth-gated server cannot reshape existing legacy event signatures. Discipline: use DISTINCT event names on the new server (`presence:user` + `presence:snapshot` for Phase 7 #11) — never overload the same event name with two different payload shapes across servers. Even if a client only ever connects to one server at a time, sharing the type map means name collision = compile-time war between the two servers' type contracts. Legacy server retirement is a separate ticket; until then, additive-only changes on the shared type map.
+
+# ---
+
 ## 2026-05-17 — 🔴 `pnpm audit` (pnpm 10) ignores `.npmrc audit-level` for its exit code
 
 - Type:      🔴 gotcha

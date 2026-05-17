@@ -1,34 +1,33 @@
-Phase 7 #11 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
+Phase 7 #12 — user picks from queued candidates (Socket.IO realtime foundation live since Phase 7 #8e; client-side socket-client provider + useSocket hook live since Phase 7 #10; user-level presence engine live since Phase 7 #11; nodemailer HIGH CVE mitigation locked in #9 + enforcement repaired in #10; JWT carries organizationSlug; middleware enforces URL↔session match; coverage gate live since Phase 7 #5; per-user 24h reset cap live since Phase 7 #6; TDD mandatory per Rule 25)
 
-Phase 7 #10 (socket-client) shipped on 2026-05-17:
-- Tier 1 single-session (~30K Opus context). User picked (socket-client) from the recommended-next slot.
-- NEW `apps/web/src/lib/socket/client.ts` — pure factory `createSocketClient(opts)` wrapping `socket.io-client`'s `io()` with `withCredentials:true` so the Auth.js cookie flows cross-origin from APP_PORT=43512 to SOCKET_PORT=43515.
-- NEW `apps/web/src/lib/socket/session-invalidation.ts` — pure handler subscribing to the server-emitted `session:invalidated` event from the Phase 7 #8e-2 60s revalidation loop. Returns a disposer. Node-testable (no React import).
-- NEW `apps/web/src/lib/socket/socket-context.tsx` — "use client" SocketProvider composing factory + handler with `useRouter().push("/login") + .refresh()` as the invalidation callback. Exports `useSocket()` (throws if outside provider) and `useSocketOptional()` (returns null).
-- NEW client.test.ts (6 cases) + session-invalidation.test.ts (4 cases) — 10 RED→GREEN cases proving the contract end-to-end in node env (jsdom not installed, so React component tests are out of scope; the Provider's testable behavior lives entirely in the two pure modules per the [[pure-helper-extraction-pattern]]).
-- MODIFIED `types.ts` — added `session:invalidated` to ServerToClientEvents (server already emits it at apps/web/src/server/socket/revalidation.ts:77).
-- MODIFIED `apps/web/src/app/app/layout.tsx` — wrap children in `<SocketProvider>` so every authenticated page under /app/* can consume `useSocket()`.
-- ALSO FIXED two pre-existing regressions caught by #10's `pnpm build` validation pass:
-  (a) Phase 7 #8e build break: webpack statically analyses dynamic-import string literals in instrumentation.ts for BOTH Node AND Edge graphs regardless of runtime gates. Edge has no `http`/`crypto`/`path`. Fixed by Edge-runtime webpack alias in next.config.ts: `config.resolve.alias = { ..., "socket.io": false, "@/server/socket/server": false, "@/server/socket/revalidation": false }` + `config.resolve.fallback = { http: false, https: false, crypto: false, path: false }`.
-  (b) Phase 7 #9 audit-threshold false claim: pnpm 10's `pnpm audit` doesn't honor `.npmrc audit-level` for its exit code. Restored `--audit-level=critical` CLI flag in ci.yml. `.npmrc` kept as human-readable documentation.
-- Test suite 75→85 (+10). pnpm build ✓ 27 routes (was failing on main since #8e). pnpm audit --audit-level=critical ✓ exit 0 (was exit 1 on main since #9). pnpm typecheck ✓ 0. pnpm lint ✓ 0 errors (1 pre-existing root-layout warning unchanged). Two-stage review (Rule 25) PASS.
-- 3 new lessons: 🔴 [[pnpm10-audit-level-ignored]], 🔴 [[instrumentation-edge-stub-required]], 🟤 socket-client provider pattern (pure factory + pure handler + thin React shell — extends [[pure-helper-extraction-pattern]] to React-incompatible test environments).
-- Squash SHA: `9d21461`. Closes (socket-client). Unblocks all real-time features that need a client socket — starting with (presence).
+Phase 7 #11 (presence) shipped on 2026-05-17:
+- Tier 2 single-session (~70K Opus context). User picked (presence) from the recommended-next slot.
+- NEW `apps/web/src/server/socket/presence.ts` — `createPresenceRoster()` returns a pure in-memory `Map<orgId, Map<userId, Set<socketId>>>` with `addSocket → {wasFirst}` / `removeSocket → {isLast}` semantics. Multi-tab coalescing means we broadcast ONLY on real online/offline transitions (the 0↔1 socket-count threshold for a user), not on every per-tab connect/disconnect.
+- NEW `attachPresenceHandlers({io, socket, roster})` — joins `${orgId}:presence:user` via `joinOrgChannel`, emits `presence:user {userId, online:true}` to the org channel iff wasFirst, sends `presence:snapshot {userIds[]}` socket-direct (including self), registers a disconnect handler that emits `presence:user {online:false}` iff isLast. Defensive no-session bail.
+- NEW `apps/web/src/lib/presence/user-presence-handler.ts` — pure handler `attachUserPresenceHandlers(socket, {onRoster, onUpdate})` returning disposer. Overloaded `MinimalSocketEventTarget` interface so real TypedSocket consumers get exact payload typing. Node-testable (no React import).
+- NEW `apps/web/src/lib/presence/use-user-presence.ts` — "use client" React hook `useUserPresence(userIds): Record<userId, boolean>`. Consumes `useSocketOptional()` from Phase 7 #10's SocketProvider — no new socket per consumer. Graceful degradation when socket null.
+- MODIFIED `apps/web/src/server/socket/server.ts` — `createPresenceRoster()` instantiated once, wired via `io.on("connection", socket => attachPresenceHandlers(...))` AFTER the auth middleware so `socket.data.session` is guaranteed.
+- MODIFIED `apps/web/src/lib/socket/types.ts` — added `presence:user` + `presence:snapshot` to ServerToClientEvents (distinct names from legacy `presence:update` to avoid type-map collision with the still-live /api/socket path).
+- MIGRATED `apps/web/src/lib/presence/use-presence.ts` — gutted the broken `io(NEXT_PUBLIC_APP_URL)` connection + `presence:subscribe`/`presence:heartbeat` emits + 30s heartbeat interval. Now consumes `useSocketOptional()` and returns a frozen all-offline `Record<departmentId, "offline">`. Public `<SpeedDialGrid>` contract preserved exactly so no consumers had to change. Department-Binding follow-up ticket wires real per-department state.
+- 23 new RED→GREEN cases (test suite 85→108). pnpm build ✓ 27 routes (per [[instrumentation-edge-stub-required]] — new module is in createSocketServer chain). pnpm audit ✓ exit 0 (Phase 7 #9 acceptance + #10 CLI flag still in effect). Two-stage review (Rule 25) PASS.
+- 2 new lessons: 🟤 [[presence-roster-coalesce-pattern]], 🟤 [[parallel-socket-servers-coexistence]].
+- Squash SHA: `81356e9`. Closes (presence). Unblocks every realtime org-scoped feature — `emitToOrg(io, organizationId, eventType, payload)` with `joinOrgChannel` enforcing zero cross-org leakage is now the framework precedent.
 
 ----------------------------------------------------------------------
-Candidates for Phase 7 #11 (any order, user picks):
+Candidates for Phase 7 #12 (any order, user picks):
 ----------------------------------------------------------------------
 
-(presence) Real-time presence engine   [Tier 2-3, RECOMMENDED NEXT — shortest path to first end-to-end realtime demo]
-    Now FULLY unblocked: useSocket hook available (Phase 7 #10) + Socket.IO foundation live (#8e) + 60s revalidation loop active (#8e-2).
-    Scope: emit `presence:update` on socket.connect / socket.disconnect to broadcast online/offline state to org subscribers via the
-    existing `joinOrgChannel(socket, "presence")` helper (added in Phase 7 #8e-2). Pairs with Speed Dial Board UI (PRODUCT.md:27 —
-    "real-time online/offline presence indicator"). RED-GREEN test pattern: mock io.fetchSockets + assert emitToOrg called with
-    correct room name + payload on connect/disconnect transitions.
-    SCOPE NOTE: also migrate the EXISTING `apps/web/src/lib/presence/use-presence.ts` to consume the shared `useSocket()` hook
-    instead of creating its own `io(NEXT_PUBLIC_APP_URL)` connection. Current hook opens N sockets per page with N presence
-    consumers AND connects to the wrong origin (APP_URL instead of SOCKET_URL). Migration is small but in-scope as housekeeping.
-    Department-binding presence (device_binding_token on Department model) is the natural extension after the core engine ships.
+(department-binding) Department-binding presence — Tier 2, RECOMMENDED NEXT
+    The natural follow-up to (presence): wire the user-level engine into the Speed Dial Board UI.
+    Scope: add `default_user_id` (or `device_binding_token`) to the Department Prisma model so
+    each department has a primary user whose presence drives the department's online indicator.
+    Then either (a) extend the server to also broadcast `presence:department {departmentId,state}`
+    by deriving from the userId↔department map at emit time, OR (b) keep server-side per-user
+    and resolve client-side via `useUserPresence(bindings.map(b => b.userId))` in the
+    `<SpeedDialGrid>` component. Option (b) is simpler and matches the existing per-user engine
+    without changing the type contract. Includes the migration + tests + integration of the new
+    hook into speed-dial-grid.tsx (currently consumes the legacy usePresence stub). Speed Dial
+    buttons go from "always disabled (offline)" to "live online state from the auth-gated socket".
 
 (i) Periodic cleanup of expired/consumed password_reset_tokens
     BullMQ scheduled job to DELETE consumed tokens > 30 days old and unconsumed expired tokens > 7 days. Keeps the table from
@@ -43,16 +42,28 @@ Candidates for Phase 7 #11 (any order, user picks):
 (f) Root landing page                          [verify scope first]
     Current /page.tsx is 11 lines — check PRODUCT.md for what's expected. Likely Tier 1.
 
-(rule-16-cleanup) Visual QA debt batch          [pairs naturally with presence — recommended companion]
+(legacy-socket-retirement) Retire legacy /api/socket Socket.IO server
+    Now that the auth-gated server on SOCKET_PORT is fully featured (auth + revalidation + presence),
+    the legacy `apps/web/src/lib/socket/server.ts` + `apps/web/src/app/api/socket/route.ts` exist
+    only for the calls router's `emitIncomingCall` flow. Migrate `emitIncomingCall` to use
+    `emitToOrg(io, organizationId, "call:incoming", payload)` via the new server, then delete
+    the legacy module + route + the `subscribedDepartmentIds`/`callIncomingRoom`/`callerRoom`
+    types in lib/socket/types.ts. Single source of truth for socket events. Tier 2.
+
+(rule-16-cleanup) Visual QA debt batch          [pairs naturally with department-binding — recommended companion]
     Now that build is green again on `main`, clear accumulated smoke tests:
     - /forgot-password + /reset-password (Phase 7 #4 carryover)
     - /app/meetings/new (#3 carryover)
     - subdomain redirect (#7c carryover) — `acme.localhost` / `evil.localhost` in /etc/hosts OR /t/{slug} path pattern
     - Socket.IO handshake (Phase 7 #8e carryover) — `curl http://localhost:43515/socket.io/` returns handshake page + browser
       session in /app connects to ws://localhost:43515
-    - NEW: Socket.IO session:invalidated trigger (Phase 7 #10) — open a tab in /app, trigger session invalidation in another tab
+    - Socket.IO session:invalidated trigger (Phase 7 #10) — open a tab in /app, trigger session invalidation in another tab
       (sign out OR admin disables user), wait ≤60s, verify connected socket receives `session:invalidated` event AND the tab
       redirects to /login automatically.
+    - NEW: Presence engine smoke (Phase 7 #11) — open two browser tabs (same user), verify the snapshot includes self AND
+      another peer in the same org. Sign out / close one tab — verify other tab does NOT see user go offline (multi-tab
+      coalescing held). Close the last tab — verify peers in the org receive `presence:user {online:false}` within transport
+      timeout (~25s pingInterval + 20s pingTimeout = ~45s worst-case).
 
 ----------------------------------------------------------------------
 Rule 25 reminder for ALL of the above:
@@ -62,11 +73,12 @@ Rule 25 reminder for ALL of the above:
       [[meetings-protected-route-test]] (Phase 7 #3)
       [[trpc-test-with-env-mock]] (Phase 7 #4)
       [[direct-callback-test-pattern]] (Phase 7 #7c-1 — exercises authConfig.callbacks directly)
-      [[pure-helper-extraction-pattern]] (Phase 7 #7c-2 / #8e / #10 — extract Edge-incompatible or React-incompatible code into separate file for Node test runner)
+      [[pure-helper-extraction-pattern]] (Phase 7 #7c-2 / #8e / #10 / #11 — extract Edge-incompatible or React-incompatible code into separate file for Node test runner)
       [[socket-auth-test-pattern]] (Phase 7 #8e-1 — mock next-auth/jwt decode + assert decode receives correct salt)
       [[socket-revalidation-test-pattern]] (Phase 7 #8e-2 — mock io.fetchSockets + prisma.user.findMany; assert disconnect/emit per stale-session branch)
       [[socket-client-factory-test-pattern]] (Phase 7 #10 — vi.mock("socket.io-client"); assert io() receives correct URL + opts)
       [[event-handler-disposer-test-pattern]] (Phase 7 #10 — hand-rolled MinimalSocket fake; assert register/fire/dispose/no-cross-fire)
+      [[presence-roster-coalesce-pattern]] (Phase 7 #11 — Map<orgId, Map<userId, Set<socketId>>> with {wasFirst}/{isLast} semantics; mock io.to(...).emit(...) per [[socket-revalidation-test-pattern]] precedent)
   → For forms: reuse the [[shadcn-form-primitive]] pattern from Phase 7 #3.
   → For shared schemas: `<Entity>CreateClientInputSchema` for client-facing input, `<Entity>CreateInputSchema` for admin/internal projection.
   → For new env vars consumed by routers: add `vi.mock("@/env", ...)` to the test file.
@@ -74,6 +86,9 @@ Rule 25 reminder for ALL of the above:
   → For new Auth.js v5 decode contexts (anywhere outside Next.js itself): pass the COOKIE NAME as the `salt` parameter — see [[authjs-v5-jwe-cookie-salt]].
   → For new Socket.IO room subscriptions: use the org-scoped helper pattern (`joinOrgChannel(socket, eventType)` with no org-id parameter) — see [[socket-cross-org-api-surface-guard]].
   → For new Socket.IO client events emitted from React: consume via `useSocket()` from `@/lib/socket/socket-context` — do NOT instantiate `io()` directly.
+  → For new realtime broadcast features (org-scoped fan-out): follow the `emitToOrg(io, organizationId, eventType, payload)` pattern; never accept an orgId parameter on the subscription path (sourced from session only).
+  → For multi-tab presence/notification engines: use the `{wasFirst}`/`{isLast}` roster coalescing pattern from Phase 7 #11 to avoid flicker on tab refresh / HMR / reconnect.
+  → For new events added to lib/socket/types.ts: use DISTINCT event names from any legacy event (the legacy /api/socket server still consumes the same type map — see [[parallel-socket-servers-coexistence]]).
   → When a router becomes fully tested (>95% across all four metrics), add a per-file threshold to apps/web/vitest.config.ts — see [[vitest-per-file-glob-thresholds]].
   → Coverage thresholds rise organically — add tests → measure → bump threshold. Do NOT lower thresholds to make a regression "fix" pass.
   → NEW (Phase 7 #6): for any new throttle/cap design on auth flows, follow [[per-user-24h-cap-pattern]].
@@ -82,11 +97,13 @@ Rule 25 reminder for ALL of the above:
   → NEW (Phase 7 #9): for unfixed HIGH CVEs in transitively-pinned deps, follow the 5-step decision tree in [[nodemailer-cve-mitigation]] — trace exploit reachability, JSDoc the call site, DECISIONS_LOG entry with revisit triggers, `.npmrc audit-level=critical`, AND a matching `--audit-level=critical` CLI flag in CI (per #10 correction).
   → NEW (Phase 7 #10): for any work touching `apps/web/src/instrumentation.ts` or its transitively-imported modules, MUST run `pnpm build` as part of validation per [[instrumentation-edge-stub-required]]. test/typecheck/lint are not sufficient to catch Edge-bundle webpack failures.
   → NEW (Phase 7 #10): for any audit policy claim, run `pnpm audit` BARE (no flag) and verify exit code — `.npmrc audit-level` does NOT control the bare exit code on pnpm 10. See [[pnpm10-audit-level-ignored]].
+  → NEW (Phase 7 #11): test fakes that need to satisfy overloaded interfaces (per-event-name payload typing) use a `loose as unknown as Interface` boundary cast — established precedent `} as never` (revalidation.test.ts) and `as unknown as IOServer` (channels.test.ts). Keeps production typing strict while letting test runtime be loose.
 
-Recommended next: (presence) — pairs immediately with #10's socket-client foundation for the first end-to-end realtime demo. OR (rule-16-cleanup) as a quick housekeeping pass now that build is green again. OR (i) BullMQ cleanup as clean Tier 2 housekeeping that closes the password-reset-token lifecycle started by #6. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
+Recommended next: (department-binding) — pairs with #11 to finally turn on the Speed Dial Board live presence indicators. OR (legacy-socket-retirement) — consolidate the two parallel socket servers, simplify lib/socket/types.ts, retire `subscribedDepartmentIds` + `callIncomingRoom`/`callerRoom`. OR (rule-16-cleanup) for accumulated smoke-test debt now that we have a fresh presence engine to smoke-test as well. OR (i) BullMQ cleanup as clean Tier 2 housekeeping. Save (d) join/[token] for when LIVEKIT_API_KEY is filled. (f) root landing is a tiny fill-in if you want to clear the smallest open ticket first.
 
 Pending Rule 16 follow-up (accumulated debt — clear before Phase 7 #N+M):
   - smoke-test /app/meetings/new in browser after next `pnpm dev` up (Phase 7 #3 carryover)
   - smoke-test /forgot-password + /reset-password/[token] — public routes, no credentials needed (Phase 7 #4 carryover). With the 24h cap live, manual /forgot-password smoke for the same email is limited to 5 requests per 24h — use distinct emails or trust test assertions
   - smoke-test subdomain routing (Phase 7 #7c carryover) — edit /etc/hosts with `acme.localhost` / `evil.localhost`, OR use the /t/{slug} path pattern. Log in as user with org "acme" → visit http://localhost:43512/t/evil/app → confirm redirects to /t/acme/app. Super-admin → visit /t/evil/superadmin/users → confirm allows (option C bypass); visit /t/evil/app → confirm redirects to own subdomain
   - smoke-test Socket.IO handshake + session:invalidated event (Phase 7 #8e + #10 carryover). (1) start dev env with SOCKET_PORT=43515; (2) `curl http://localhost:43515/socket.io/` returns Socket.IO handshake page; (3) browser session in /app connects to ws://localhost:43515 + console logs no errors; (4) trigger session invalidation in another tab (sign out, or admin disables user) → wait ≤60s → verify the connected socket receives `session:invalidated` event AND the tab redirects to /login automatically.
+  - NEW smoke-test Presence engine (Phase 7 #11). Open two browser tabs as the SAME user → both connect → both receive `presence:snapshot` containing self (plus any other peer in the org). Close ONE of the two tabs → OTHER tab should NOT see user go offline (multi-tab coalescing). Close the LAST tab → peers in the org should receive `presence:user {online:false}` within transport timeout (~25s pingInterval + 20s pingTimeout = ~45s worst case). Confirm the cross-org isolation: a user in `org-acme` should NEVER see a `presence:user` event for a user in `org-evil`.
