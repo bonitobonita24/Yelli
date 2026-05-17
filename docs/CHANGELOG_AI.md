@@ -22,6 +22,40 @@
 
 # ---
 
+## 2026-05-17 — Phase 7 #10: Socket.IO client provider + useSocket hook + 2 pre-existing regression fixes (Tier 1)
+
+- Agent: CLAUDE_CODE
+- Why: Build the React provider that connects browser to the Phase 7 #8e Socket.IO server with credentials:include, exposes a typed useSocket() hook, and surfaces "session:invalidated" disconnect events as a forced re-auth UX (redirect to /login). Prerequisite for (presence) — the next end-to-end realtime feature in PRODUCT.md.
+- Files added:
+  - apps/web/src/lib/socket/client.ts (60 lines — pure factory `createSocketClient(opts)` wrapping `socket.io-client`'s `io()` with withCredentials:true, transports:["websocket","polling"], reconnectionAttempts:5)
+  - apps/web/src/lib/socket/session-invalidation.ts (35 lines — pure handler `attachSessionInvalidationHandler(socket, onInvalidated)` returns disposer; node-testable, no React import)
+  - apps/web/src/lib/socket/socket-context.tsx (109 lines — "use client" SocketProvider composing factory + handler with useRouter; exports `useSocket()` + `useSocketOptional()`)
+  - apps/web/src/lib/socket/client.test.ts (65 lines, 6 cases — URL, withCredentials, transports, reconnection cap, autoConnect default, autoConnect override)
+  - apps/web/src/lib/socket/session-invalidation.test.ts (84 lines, 4 cases — register, fire callback, dispose, ignore unrelated events)
+- Files modified:
+  - apps/web/src/lib/socket/types.ts (+6 lines — added `"session:invalidated": () => void` to ServerToClientEvents; server already emits this at apps/web/src/server/socket/revalidation.ts:77)
+  - apps/web/src/app/app/layout.tsx (+2 lines — wrap children in <SocketProvider>)
+  - apps/web/next.config.ts (+24 lines — Edge-runtime webpack stub for socket.io chain; fixes Phase 7 #8e build regression — see "Errors resolved")
+  - .github/workflows/ci.yml (+8 / -3 lines — restored `pnpm audit --audit-level=critical` CLI flag; fixes Phase 7 #9 false-completion — see "Errors resolved")
+- Files deleted: none
+- Schema/migrations: none (client-side only; server-side `session:invalidated` was scaffolded in Phase 7 #8e-2)
+- Errors encountered:
+  1. `pnpm build` failed with `Module not found: Can't resolve 'http'/'crypto'/'path'` in the `./src/instrumentation.ts → ./src/server/socket/server.ts → socket.io` chain. Caught on FIRST validation pass — surfaced a pre-existing Phase 7 #8e regression: webpack statically analyses dynamic-import string literals and bundles for BOTH Node AND Edge graphs regardless of runtime gates. STATE.md `CURRENT_BUILD: 27 routes — unchanged` claim from #8e + #9 was stale (carried forward from #7 without re-verification).
+  2. `pnpm audit` exit 1 despite Phase 7 #9's `.npmrc audit-level=critical` policy. Caught: pnpm 10's `pnpm audit` does NOT honor `.npmrc audit-level` for its exit code — only `pnpm config get audit-level` reads it. CI security job would have failed on first push to origin.
+- Errors resolved:
+  1. Edge-runtime webpack stub in next.config.ts: `webpack: (config, { nextRuntime }) => { if (nextRuntime === "edge") config.resolve.alias = { ..., "socket.io": false, "@/server/socket/server": false, "@/server/socket/revalidation": false }; config.resolve.fallback = { http: false, https: false, crypto: false, path: false }; }`. Node runtime gate in instrumentation.ts keeps Node behavior intact; alias satisfies webpack static analysis on Edge. `serverExternalPackages` already had `["isomorphic-dompurify", "jsdom"]`; added "socket.io" for defense-in-depth but the webpack alias is the load-bearing fix.
+  2. Restored `pnpm audit --audit-level=critical` CLI flag in ci.yml security job. `.npmrc audit-level=critical` kept as human-readable documentation (`pnpm config get audit-level` still returns the intent). Both declarations stay in sync; CLI flag is the authoritative enforcement. Comments updated to document the pnpm 10 quirk for future contributors.
+- Validation: tests 75 → 85 (+10 new RED→GREEN cases), typecheck 0 errors, lint 0 errors (1 pre-existing warning in src/app/layout.tsx unchanged — `@next/next/no-css-tags` in root layout, not mine), `pnpm build` 27 routes ✓ compiled successfully, `pnpm audit --audit-level=critical` exit 0. Two-stage review (Rule 25): Stage 1 spec PASS (every behavior from `.whatsnext` spec implemented), Stage 2 quality PASS (no `any`, RED→GREEN proven, scope additions documented + traced to pre-existing bugs not introduced by this ticket).
+- Lessons added (3):
+  - 🔴 [[pnpm10-audit-level-ignored]] — pnpm 10's `pnpm audit` does NOT honor `.npmrc audit-level` for exit code; only CLI flag works. Rule: keep both as belt-and-suspenders.
+  - 🔴 [[instrumentation-edge-stub-required]] — Next.js instrumentation hook needs Edge-runtime webpack stub for Node-only deps despite dynamic-import gates. Every ticket touching instrumentation.ts MUST validate with `pnpm build`, not just test/typecheck/lint.
+  - 🟤 (socket-client provider pattern) — pure factory + pure handler + thin React shell. Extends [[pure-helper-extraction-pattern]] to React-incompatible test environments (no jsdom installed).
+- Hook noise (ignored, per [[proxy-ts-false-positive]] precedent): vercel-plugin auto-injected next-forge / next-cache-components / nextjs / react-best-practices / next-upgrade / turbopack / workflow / deployments-cicd / auth (Clerk) skill chains on Read/Write of files matching `apps/web/**`, `app/**`, `react` imports, `next.config.*`, `workflows/**`. All ignored (Yelli is custom V31 monorepo on Next.js 15.5.18 stable + Auth.js v5). PostToolUse validator falsely flagged `headers()` async/await in next.config.ts 3 times (config-time `async headers()` returning a header config is unrelated to runtime `headers()` from `next/headers`). PreToolUse security_reminder_hook fired the 4th time on a ci.yml edit with zero `github.event.*` inputs.
+
+Squash SHA: 9d21461. Closes the `(socket-client)` candidate from Phase 7 #10's `.whatsnext` queue. Unblocks `(presence)` — the next end-to-end realtime feature can now consume `useSocket()` from any client component under `/app/*`.
+
+# ---
+
 ## 2026-05-17 — Phase 7 #9: nodemailer HIGH CVE mitigation — documented acceptance + .npmrc threshold lift (Tier 1)
 
 - Agent: CLAUDE_CODE (Opus 4.7 direct — Tier 1 single-commit ticket, no decomposition warranted).

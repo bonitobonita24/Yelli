@@ -8,6 +8,36 @@
 
 # ---
 
+## 2026-05-17 — 🔴 `pnpm audit` (pnpm 10) ignores `.npmrc audit-level` for its exit code
+
+- Type:      🔴 gotcha
+- Phase:     Phase 7 #10 (socket-client) — caught Phase 7 #9 false-completion claim
+- Files:     .github/workflows/ci.yml, .npmrc
+- Concepts:  pnpm, audit, .npmrc, ci-gate, exit-code, false-completion, vulnerability-threshold
+- Narrative: Phase 7 #9 attempted to lift the audit threshold from HIGH to CRITICAL by adding `audit-level=critical` to a new `.npmrc` at project root AND dropping the `--audit-level=high` CLI flag from ci.yml's security job, theorising that `.npmrc` would become the single source of truth. STATE.md from that ticket claimed "`pnpm audit` exit 0". This is FALSE on pnpm 10.0.0. Verified empirically: `pnpm config get audit-level` returns `critical` (the .npmrc IS read) but `pnpm audit` STILL exits 1 when HIGH advisories are present, even with `npm_config_audit_level=critical` set as an env var. The exit code only respects the explicit `--audit-level=<level>` CLI flag. `.npmrc` becomes documentation-only for the audit command. CI was silently broken from Phase 7 #9 (no push to origin caught it; Phase 7 #10's `pnpm build` validation caught both this AND the #8e Edge-stub regression in one pass). **Rule:** for unfixed HIGH CVEs with documented acceptance, keep `.npmrc audit-level=critical` AS DOCUMENTATION (so `pnpm config get audit-level` returns the intent) AND add `--audit-level=critical` to the CI command line as the authoritative enforcement. Two declarations of the same policy in two places is the price of pnpm 10's behavior. Revisit when pnpm fixes this or migrates to a different audit pipeline. Cross-links: [[nodemailer-cve-mitigation]] (the documented-acceptance pattern this gotcha refines).
+
+# ---
+
+## 2026-05-17 — 🔴 Next.js instrumentation hook needs Edge-runtime webpack stub for Node-only deps
+
+- Type:      🔴 gotcha
+- Phase:     Phase 7 #10 (socket-client) — caught Phase 7 #8e build regression
+- Files:     apps/web/next.config.ts, apps/web/src/instrumentation.ts
+- Concepts:  nextjs-15, instrumentation, webpack, edge-runtime, server-external-packages, dynamic-import, runtime-gate, static-analysis, socket-io
+- Narrative: Phase 7 #8e's instrumentation.ts uses the textbook pattern — early-return `if (process.env.NEXT_RUNTIME !== "nodejs") return;` then `await import("http")` + `await import("@/server/socket/server")`. The comments at line 36-38 of instrumentation.ts explicitly claim "Dynamic imports keep this file Edge-bundle-safe". This is FALSE. Webpack performs STATIC analysis of dynamic-import string literals and creates chunks for BOTH the Node AND Edge graphs, regardless of any runtime gate. The chunks then try to resolve every transitive import — the Edge graph has no `http`/`crypto`/`path` because Edge runtime is V8 isolate, not Node. Result: `Module not found: Can't resolve 'http'` on every `pnpm build` after Phase 7 #8e. STATE.md from #8e and #9 both claimed "CURRENT_BUILD: 27 routes — unchanged"; the value was stale from Phase 7 #7 and was never re-verified by re-running `pnpm build`. Phase 7 #10 caught it on the first validation pass. **Fix:** in next.config.ts `webpack: (config, { nextRuntime }) => { if (nextRuntime === "edge") config.resolve.alias = { ..., "socket.io": false, "@/server/socket/server": false, "@/server/socket/revalidation": false } }` plus `config.resolve.fallback = { http: false, https: false, crypto: false, path: false }`. The runtime gate keeps Node behaviour intact; the alias satisfies webpack's static analysis pass on Edge. `serverExternalPackages` does NOT help here — it applies to Server Components, not the instrumentation Edge chunk. **Discipline:** every ticket that adds an instrumentation.ts import MUST run `pnpm build` as part of validation, not just test+typecheck+lint. Add `pnpm build` explicitly to Phase 7 step 19 validation reminders for any ticket touching server-only imports. Cross-links: [[edge-safe-vs-db-revalidating-callback-duplication]] (sibling pattern — Edge runtime constraints surface late).
+
+# ---
+
+## 2026-05-17 — 🟤 Socket.IO client provider pattern — pure factory + pure handler + thin React shell
+
+- Type:      🟤 decision
+- Phase:     Phase 7 #10 (socket-client)
+- Files:     apps/web/src/lib/socket/client.ts, apps/web/src/lib/socket/session-invalidation.ts, apps/web/src/lib/socket/socket-context.tsx
+- Concepts:  socket-io, react-context, pure-helper-extraction, node-env-vitest, jsdom-not-installed, ssr-safety, lazy-useState, withCredentials
+- Narrative: The client-side Socket.IO foundation factors into three concerns: (1) `createSocketClient(opts)` — pure factory wrapping `io()` with the Yelli contract (`withCredentials:true` so the Auth.js cookie flows cross-origin since SOCKET_PORT=43515 ≠ APP_PORT=43512 = separate origins, `transports: ["websocket", "polling"]`, `reconnectionAttempts: 5`, `reconnectionDelay: 2_000`). (2) `attachSessionInvalidationHandler(socket, onInvalidated)` — pure helper that subscribes to the `session:invalidated` server event (emitted by the 60s revalidation loop landed in Phase 7 #8e-2) and returns a disposer. (3) `SocketProvider` — thin React Context provider that composes (1) + (2) with `useRouter` from `next/navigation`, injecting `() => { router.push("/login"); router.refresh(); }` as the invalidation callback. Why this factoring: Yelli's vitest config uses `environment: "node"` and jsdom is NOT installed, so React component tests with `@testing-library/react` are impossible. By extracting the testable behavior into pure modules, RED→GREEN runs in node env (10 tests covering URL, withCredentials, transports, reconnection cap, autoConnect default + override, event registration, callback invocation, disposer, no-fire-on-unrelated-events). The Provider has zero unit tests but is shielded by typecheck + lint + manual Visual QA. This matches and extends the [[pure-helper-extraction-pattern]] from Phase 7 #7c-2 / #8e (separate-file extraction of Edge-incompatible logic) — same insight applied to React-incompatible test environments. Pattern reusable for any future React Context where the testable behavior can be lifted into a non-React module: feature flags, theme switcher, websocket reconnect orchestration. Provider stays minimal; logic stays node-testable. Cross-links: [[pure-helper-extraction-pattern]] (Phase 7 #7c-2 + #8e), [[socket-cross-org-api-surface-guard]] (Phase 7 #8e-2 — companion server-side correct-by-construction pattern).
+
+# ---
+
 ## 2026-05-16 — 🟤 Auth.js v5 JWE decode requires cookie name as `salt` — wrong salt returns null even with right secret
 
 - Type:      🟤 decision
