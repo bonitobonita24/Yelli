@@ -3,8 +3,9 @@ import { prisma } from "@yelli/db";
 import { z } from "zod";
 
 import { mintLiveKitToken } from "@/lib/livekit/client";
-import { emitIncomingCall, getIO } from "@/lib/socket/server";
 import { recordIntercomCallLog } from "@/server/lib/call-log";
+import { emitToOrg } from "@/server/socket/channels";
+import { getIO } from "@/server/socket/server";
 import { router, protectedProcedure } from "@/server/trpc/trpc";
 
 export const callsRouter = router({
@@ -56,16 +57,12 @@ export const callsRouter = router({
 
       const io = getIO();
       if (io !== null) {
-        emitIncomingCall(io, {
-          callerUserId: ctx.userId,
-          recipientOrgId: ctx.organizationId,
+        emitToOrg(io, ctx.organizationId, "call:incoming", {
+          callId,
+          callerName: ctx.user.name ?? ctx.userId,
+          callerDepartment: null,
+          roomName,
           recipientDeptId: department.id,
-          payload: {
-            callId,
-            callerName: ctx.user.name ?? ctx.userId,
-            callerDepartment: null,
-            roomName,
-          },
         });
       }
 
@@ -76,25 +73,6 @@ export const callsRouter = router({
         wsUrl,
         recipientDepartmentName: department.name,
       };
-    }),
-
-  /**
-   * Rejects an incoming call — notifies the caller via Socket.IO.
-   */
-  reject: protectedProcedure
-    .input(
-      z.object({ callId: z.string().min(1).max(128) }).strict(),
-    )
-    .mutation(({ input }) => {
-      const io = getIO();
-      if (io !== null) {
-        io.to(`call:reject:${input.callId}`).emit("call:rejected", {
-          callId: input.callId,
-          reason: "declined",
-        });
-      }
-
-      return { ok: true } as const;
     }),
 
   /**

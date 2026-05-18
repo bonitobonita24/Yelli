@@ -16,4 +16,5 @@ export interface IncomingCallPayload {
   callerName: string;
   callerDepartment: string | null;
   roomName: string;
+  recipientDeptId: string;
 }

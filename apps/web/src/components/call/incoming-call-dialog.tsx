@@ -10,15 +10,11 @@ import {
 } from "@yelli/ui";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+
+import { attachIncomingCallHandler } from "@/lib/calls/incoming-call-handler";
+import { useSocketOptional } from "@/lib/socket/socket-context";
 
 import type { IncomingCallPayload } from "@/lib/livekit/types";
-
-// Socket.IO server URL — reads from env to support different environments
-const SOCKET_URL =
-  typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_SOCKET_URL ?? window.location.origin)
-    : "";
 
 function createRingtone(audioCtx: AudioContext): () => void {
   // Alternates between 440 Hz (A4) and 523 Hz (C5) every 600 ms
@@ -57,7 +53,7 @@ function createRingtone(audioCtx: AudioContext): () => void {
 
 export function IncomingCallDialog() {
   const router = useRouter();
-  const socketRef = useRef<Socket | null>(null);
+  const socket = useSocketOptional();
   const audioCtxRef = useRef<AudioContext | null>(null);
   const stopRingtoneRef = useRef<(() => void) | null>(null);
 
@@ -83,29 +79,38 @@ export function IncomingCallDialog() {
   }, []);
 
   useEffect(() => {
-    if (!SOCKET_URL) return;
+    if (socket === null) return;
 
-    const socket = io(SOCKET_URL, {
-      path: "/api/socket",
-      transports: ["websocket", "polling"],
-      autoConnect: true,
-    });
-
-    socketRef.current = socket;
-
-    socket.on("call:incoming", (incoming: IncomingCallPayload) => {
+    const handleIncoming = (incoming: IncomingCallPayload): void => {
+      // TODO follow-up (Phase 7 #16 candidate):
+      // filter by `incoming.recipientDeptId === currentUser.boundDeptId`
+      // once department-binding context reaches the dialog. For now every
+      // org member rings — matches current production behavior, which was
+      // a no-op end-to-end.
       setPayload(incoming);
       setOpen(true);
       startRingtone();
+    };
+
+    const handleRejected = ({ callId }: { callId: string; reason: "declined" | "unavailable" }): void => {
+      setPayload((current) => {
+        if (current === null || current.callId !== callId) return current;
+        stopRingtone();
+        setOpen(false);
+        return null;
+      });
+    };
+
+    const dispose = attachIncomingCallHandler(socket, {
+      onIncoming: handleIncoming,
+      onRejected: handleRejected,
     });
 
     return () => {
-      socket.off("call:incoming");
-      socket.disconnect();
-      socketRef.current = null;
+      dispose();
       stopRingtone();
     };
-  }, [startRingtone, stopRingtone]);
+  }, [socket, startRingtone, stopRingtone]);
 
   const handleAccept = useCallback(() => {
     if (!payload) return;
@@ -116,11 +121,11 @@ export function IncomingCallDialog() {
 
   const handleReject = useCallback(() => {
     if (!payload) return;
-    socketRef.current?.emit("call:reject", { callId: payload.callId });
+    socket?.emit("call:reject", { callId: payload.callId });
     stopRingtone();
     setOpen(false);
     setPayload(null);
-  }, [payload, stopRingtone]);
+  }, [payload, socket, stopRingtone]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {

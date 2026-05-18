@@ -17,6 +17,7 @@ import { Server as IOServer } from "socket.io";
 
 import { env } from "@/env";
 import { socketAuthMiddleware } from "@/server/socket/auth";
+import { attachCallHandlers } from "@/server/socket/calls";
 import {
   attachInCallHandlers,
   createInCallRoster,
@@ -28,7 +29,18 @@ import {
 
 import type { Server as HttpServer } from "http";
 
+let ioInstance: IOServer | null = null;
+
+export function getIO(): IOServer | null {
+  return ioInstance;
+}
+
 export function createSocketServer(httpServer: HttpServer): IOServer {
+  // Idempotent on Next.js dev HMR re-execution of instrumentation.ts.
+  // Mirrors the legacy initSocketServer's guarantee — without it, a second
+  // call silently reassigns ioInstance and orphans every existing connection.
+  if (ioInstance !== null) return ioInstance;
+
   const io = new IOServer(httpServer, {
     cors: {
       // The Next.js app on APP_PORT (or the prod domain) is the only client
@@ -43,6 +55,10 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
     // re-validation, not transport ping — kept distinct for clarity.
     transports: ["websocket", "polling"],
   });
+
+  // Expose singleton so the tRPC side (calls.initiate) can broadcast via
+  // emitToOrg without going through the dead legacy lib/socket/server.ts.
+  ioInstance = io;
 
   io.use((socket, next) => {
     socketAuthMiddleware(socket, next).catch((err: unknown) => {
@@ -67,6 +83,7 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
   io.on("connection", (socket) => {
     attachPresenceHandlers({ io, socket, roster: presenceRoster });
     attachInCallHandlers({ io, socket, roster: inCallRoster });
+    attachCallHandlers({ io, socket });
   });
 
   return io;
