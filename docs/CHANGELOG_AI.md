@@ -22,6 +22,52 @@
 
 # ---
 
+## 2026-05-19 — Phase 7 #15: Legacy socket retirement — incoming-call wired end-to-end (Tier 2)
+
+- Agent: CLAUDE_CODE (Opus 4.7 controller + Sonnet subagents per task with two-stage review)
+- Why: Phase 7 #14 shipped the in-call state engine, leaving only one event flow (`call:incoming` / `call:rejected`) still pointing at the unbootstrapped legacy `lib/socket/server.ts` + `app/api/socket/route.ts`. Investigation revealed the legacy `initSocketServer()` has ZERO call sites in `apps/web/src` — the phantom `server/custom-server.ts` referenced in module comments was abandoned at Phase 7 #8e-1 in favor of the separate-SOCKET_PORT bootstrap via `instrumentation.ts`. Consequence: `getIO()` in calls.ts always returned null, `emitIncomingCall` never executed, `incoming-call-dialog` connected to a 503 placeholder. Incoming-call had been broken end-to-end in production since the #8e-1 architectural pivot. Phase 7 #15 is the FIRST real implementation, not a migration of working legacy. Adds `attachCallHandlers` to the auth-gated server alongside existing presence + in-call handlers; exposes a module-level `getIO()` singleton with idempotent guard for HMR safety; migrates `calls.initiate` to emit via `emitToOrg`; deletes the orphan `calls.reject` tRPC mutation (zero call sites; rejection now flows through `socket.emit("call:reject")` in the dialog); migrates `incoming-call-dialog` from raw `io()` to `useSocketOptional()` + new pure helper `attachIncomingCallHandler`. Strict retirement: deletes legacy server.ts (159 lines) + api/socket/route.ts (39 lines) + 17 lines of dead types in lib/socket/types.ts (presence:subscribe/heartbeat/update events, subscribedDepartmentIds field, callIncomingRoom/callerRoom helpers, PresenceState import). Closes `[[parallel-socket-servers-coexistence]]` from Phase 7 #11 — the auth-gated server is now the single source of truth for all socket events.
+- Files added:
+  - apps/web/src/server/socket/calls.ts (53 lines — attachCallHandlers, no roster, joins both org-scoped channels on connect, listens for client-emitted call:reject with server-resolved caller identity, broadcasts call:rejected via emitToOrg)
+  - apps/web/src/server/socket/calls.test.ts (122 lines, 8 RED→GREEN cases — session-guard no-op / both channels joined / valid relay / 5 malformed-payload rejects: non-object, missing-callId, non-string callId, empty-string callId, callId.length > 128)
+  - apps/web/src/lib/calls/incoming-call-handler.ts (43 lines — pure helper attachIncomingCallHandler mirroring lib/presence/in-call-handler.ts byte-for-byte; exports MinimalIncomingCallSocketTarget + RejectedPayload + IncomingCallCallbacks + IncomingCallDisposer types matching Phase 7 #14 precedent; Node-testable, no jsdom)
+  - apps/web/src/lib/calls/incoming-call-handler.test.ts (107 lines, 5 RED→GREEN cases — register both listeners / onIncoming fires / onRejected fires declined / disposer unwires no-callbacks-after-dispose / onRejected fires unavailable union member)
+  - apps/web/src/server/trpc/routers/calls.test.ts (156 lines, 3 RED→GREEN cases — happy path emit via emitToOrg with org-scoped channel + recipientDeptId / department not found NOT_FOUND no emit / getIO returns null no emit graceful degradation; file did not exist before)
+- Files modified:
+  - apps/web/src/server/socket/server.ts (+17 lines — module-level `let ioInstance: IOServer | null = null` + `export function getIO()` accessor + idempotent guard `if (ioInstance !== null) return ioInstance` at top of createSocketServer + `ioInstance = io` after IOServer construction + `attachCallHandlers({io, socket})` in io.on("connection") alongside presence + in-call)
+  - apps/web/src/server/trpc/routers/calls.ts (-25 net — switched import from @/lib/socket/server (dead) to @/server/socket/server + @/server/socket/channels; replaced legacy emitIncomingCall call with inline `emitToOrg(io, ctx.organizationId, "call:incoming", {callId, callerName, callerDepartment, roomName, recipientDeptId})`; DELETED reject mutation lines 81-98)
+  - apps/web/src/lib/livekit/types.ts (+1 line — recipientDeptId field on IncomingCallPayload for future client-side dept filter)
+  - apps/web/src/lib/socket/types.ts (-17 lines — deleted presence:subscribe + presence:heartbeat + presence:update events, subscribedDepartmentIds field on SocketData, callIncomingRoom + callerRoom helper exports, PresenceState import)
+  - apps/web/src/components/call/incoming-call-dialog.tsx (-55+30 net — drop `import { io, type Socket } from "socket.io-client"`; drop SOCKET_URL constant; drop socketRef ref; switch to `useSocketOptional()` for shared socket + `attachIncomingCallHandler(socket, {onIncoming, onRejected})` for listener wiring; reject button emits via shared socket `socket?.emit("call:reject", {callId})`; embeds TODO follow-up for Phase 7 #16 recipient-dept filter)
+- Files deleted:
+  - apps/web/src/lib/socket/server.ts (159 lines — initSocketServer had ZERO call sites; phantom server/custom-server.ts never existed)
+  - apps/web/src/app/api/socket/route.ts (39 lines — 503 placeholder for the abandoned custom-server path; Route Handlers can't perform WebSocket upgrades anyway)
+- Schema/migrations: none (realtime layer retirement only)
+- Tests added: +16 (8 server calls handler + 5 pure client handler + 3 router initiate). Suite: 144 → 160.
+- Errors encountered:
+  - Task 5 implementer subagent (Sonnet) thrashed its 30K context budget on the multi-file router rewire (needed to read calls.ts + sibling router test pattern + apply 3-edit cascade + write new test file in one dispatch).
+  - Task 12 implementer subagent (Sonnet) thrashed on the 2217-line governance-file edit set (STATE.md + CHANGELOG_AI.md + IMPLEMENTATION_MAP.md + agent-log.md + .whatsnext).
+- Errors resolved: Controller (Opus 4.7) recovered both by gathering context inline (parallel grep + targeted Reads of just the needed sections + pre-computing exact insert points) and completing the edits directly via Edit/Write tools. Tasks 6, 7, 8 were completed inline by controller for momentum after the Task 5 thrash signal. Reviewer subagents stayed within budget throughout (their scope was narrower: diff-only review of single-commit-sized changes).
+- Two-stage review (Rule 25):
+  - Stage 1 spec PASS (10/10): attachCallHandlers exists with locked signature, wired in connection alongside presence + in-call, getIO singleton + idempotent guard, calls.initiate imports from new paths, emit payload carries recipientDeptId, reject mutation deleted, both legacy files removed, types cleanup verified by grep, dialog uses useSocketOptional + attachIncomingCallHandler, reject button via shared socket
+  - Stage 2 quality PASS (8/8): zero `any` types, no unjustified type assertions (the few `as never`/`as unknown as MinimalIncomingCallSocketTarget` casts are confined to test infra and documented), TDD RED→GREEN proven via commit log, blast-radius files only, conventional commits on every commit, event-name strings identical across types.ts ↔ calls.ts ↔ incoming-call-handler.ts ↔ incoming-call-dialog.tsx, disposer pattern in incoming-call-handler.ts mirrors lib/presence/in-call-handler.ts exactly, Edge-runtime build passes (instrumentation.ts guards preserved)
+- Lessons: 0 new typed lessons logged. Existing patterns covered everything ([[pure-helper-extraction-pattern]], [[socket-revalidation-test-pattern]], [[event-handler-disposer-test-pattern]], [[instrumentation-edge-stub-required]], [[nodemailer-cve-mitigation]]). Process observation worth noting: Sonnet subagents handle single-file TDD tasks well but thrash on (a) multi-file integration touching 3+ files in one dispatch and (b) governance-doc edits spanning 1000+ lines per file. Future tickets with similar shape should pre-bake context aggressively (one bash with all needed excerpts in one tool call) or stay inline. This was not encoded as a typed lesson because it's already implicit in [[sonnet-thrash-sessionstart-hooks]] + memory-governance.md §1 Step 2.5 — the 30K budget gate. The Phase 7 #15 thrash recoveries are evidence of the gate working as designed: detect → re-decompose → controller fallback.
+- 12 branch commits before squash:
+  1. `9a54051` feat(calls): pure client handler — initial test + impl (4 RED→GREEN)
+  2. `45be0db` refactor(calls): export RejectedPayload + IncomingCallCallbacks + IncomingCallDisposer; add unavailable-reason test (5th RED→GREEN)
+  3. `6d7b109` fix(calls): typecheck — cast FakeSocket to MinimalIncomingCallSocketTarget
+  4. `a2fcb97` feat(server/socket): call:incoming/call:rejected handler attach — initial test + impl (8 RED→GREEN)
+  5. `64d560a` docs(server/socket/calls): add missing file-level JSDoc
+  6. `8c49ea4` feat(server/socket): getIO singleton + wire attachCallHandlers
+  7. `6dceb35` fix(server/socket): idempotent guard on createSocketServer
+  8. `4c8d9ed` feat(livekit/types): add recipientDeptId to IncomingCallPayload
+  9. `14893b0` feat(calls): rewire initiate to new server; delete reject mutation (3 RED→GREEN router tests)
+  10. `57499bb` chore(socket): delete legacy server.ts + api/socket/route.ts
+  11. `13ad407` feat(call/dialog): migrate to useSocketOptional + attachIncomingCallHandler
+  12. `1eec9c1` chore(socket/types): delete dead events + helpers + import
+- Squash SHA: `af43276`
+- Spec: docs/superpowers/specs/2026-05-18-legacy-socket-retirement-design.md (committed straight to main on 2026-05-18 as `d633ad2` per Phase 7 framework precedent for docs)
+- Plan: docs/superpowers/plans/2026-05-18-legacy-socket-retirement.md (committed straight to main on 2026-05-19 as `263285b`)
+
 ## 2026-05-18 — Phase 7 #14: In-call state — yellow dot derivation engine (Tier 2)
 
 - Agent: CLAUDE_CODE
