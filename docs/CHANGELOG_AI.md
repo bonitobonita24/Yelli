@@ -22,6 +22,50 @@
 
 # ---
 
+## 2026-05-19 — Phase 7 #16: Department-binding filter for incoming-call dialog (Tier 1)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch this ticket)
+- Why: Phase 7 #15 shipped the end-to-end auth-gated `call:incoming` broadcast flow but left a deferred TODO in `incoming-call-dialog.tsx`: the dialog rang every org member because the dept filter hadn't been wired yet. After #15 landed the broadcast actually worked (vs. prior production no-op state), so the org-wide ring became user-visible — incorrect behavior that needed closing. This ticket plumbs the user's bound department(s) into the dialog via a new tRPC read query and filters the `onIncoming` callback against the payload's `recipientDeptId` (added to `IncomingCallPayload` in #15). Design decision rejected JWT/session encoding: bindings are mutable via Phase 7 #13's admin UI, so a session-encoded `boundDeptId` would go stale on admin re-bind and require sign-out/in to recover. tRPC's default `useQuery` (refetch-on-window-focus) catches admin edits without bespoke invalidation wiring. Return type is `string[]` not single id because `Department.default_user_id` has no `@unique` constraint — one user may legitimately man multiple departments (e.g. one receptionist covering Front Desk AND Reception on small deployments); filter uses `Array.prototype.includes` for the membership test.
+- Files added:
+  - apps/web/src/lib/calls/select-incoming-call.ts (22 lines — pure filter helper per [[pure-helper-extraction-pattern]]; `selectIncomingCall(payload, boundDeptIds): boolean`; returns false on undefined (loading) and [] (no binding) per design decisions 3+4; node-testable, no React imports)
+  - apps/web/src/lib/calls/select-incoming-call.test.ts (35 lines, 4 RED→GREEN cases — undefined → false / [] → false / mismatch → false / multi-binding match → true)
+- Files modified:
+  - apps/web/src/server/trpc/routers/departments.ts (+18 lines — new `myBoundDepartmentIds: protectedProcedure.query` returning `string[]` of dept ids where default_user_id === ctx.userId; placed between `list` and `create` for read-grouping; L6 scopes to org via runWithTenantContext; no L5 audit log because read-only)
+  - apps/web/src/server/trpc/routers/departments.test.ts (+47 lines — 3 RED→GREEN cases for the new query: empty result → [] / multi-binding → all ids in order / findMany where: { default_user_id: ctx.userId } exact-shape assertion + writeAuditLog not called; required extending the existing `prisma.department` mock factory with a `findMany: vi.fn()` and adding it to the `$transaction` pass-through tx; audit-log test moved into its own `describe` block for clarity)
+  - apps/web/src/components/call/incoming-call-dialog.tsx (+16/-6 — imports `trpc` from `@/lib/trpc/react` and `selectIncomingCall` from `@/lib/calls/select-incoming-call`; adds `const { data: boundDeptIds } = trpc.departments.myBoundDepartmentIds.useQuery()` near the existing useState declarations; `handleIncoming` now short-circuits on `!selectIncomingCall(incoming, boundDeptIds)` before any state update or ringtone; `useEffect` dep array updated to `[socket, boundDeptIds, startRingtone, stopRingtone]` so the listener re-binds when the query resolves; drops the Phase 7 #15 TODO block)
+- Files deleted: none
+- Schema/migrations: none — `default_user_id` already existed since Phase 7 #12 migration `20260517075117_add_department_default_user_id`
+- Errors encountered:
+  - During T2: initial Edit insertion to add new `myBoundDepartmentIds` describe block accidentally fell inside the existing `setDefaultUser` describe and split its audit-log test from its other 6 tests. Caught immediately by file inspection — followed up with a corrective Edit that pulled the audit-log test into its own describe block. No test runs were affected (the broken intermediate state was never executed). Lesson: when adding multiple describe blocks alongside existing ones, use the closing `});` of the prior describe as the anchor, not a test inside it.
+- Errors resolved:
+  - Above intermediate state — corrected via single follow-up Edit that removed the placeholder anchor and merged the cleanup into the same diff hunk.
+
+Validation:
+  - pnpm typecheck ✓ 0 errors across 8 packages
+  - pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged: layout.tsx no-css-tags + calls.test.ts non-null assertion)
+  - pnpm test ✓ 167/167 (was 160; +7 new RED→GREEN distributed 4 helper + 3 router)
+  - pnpm build ✓ 21 routes compiled + middleware 141 kB (MANDATORY per [[instrumentation-edge-stub-required]] — departments.ts joins the tRPC bundle transitively imported by Edge middleware)
+  - pnpm audit --audit-level=critical ✓ exit 0 (1 HIGH = documented nodemailer per [[nodemailer-cve-mitigation]])
+
+Two-stage review (Rule 25):
+  - Stage 1 spec PASS (8/8 locked decisions traceable to code): tRPC query exists (not session-encoded) / string[] return type with multi-binding test / no-binding → false / loading → false / pure helper extracted to lib/calls/ / no audit log on read query / no socket type changes (lib/socket/types.ts not in diff) / no cache invalidation wiring (useQuery default semantics only)
+  - Stage 2 quality PASS (6/6): zero `any` in new production code (grep confirmed) / no unjustified casts (only `as never` on vi.mocked test mocks per established Phase 7 #13/#14/#15 pattern) / TDD RED→GREEN evidenced in T1.a + T2.a terminal output / 5-file blast radius matches spec inventory exactly / conventional commits on all 3 task commits / useEffect deps now [socket, boundDeptIds, startRingtone, stopRingtone]
+
+Lessons (Rule 18 typed format):
+  - 0 new lessons logged. Existing patterns covered everything: [[pure-helper-extraction-pattern]] for the filter helper (direct precedent: #12 selectDepartmentPresence, #14 in-call-handler, #15 attachIncomingCallHandler); [[trpc-test-pattern]] for the router test additions (vi.mock factory + createCaller + makeCtx with ADMIN_SESSION). The schema-correctness catch during plan-phase (no `@unique` on `Department.default_user_id` → return string[] not single id) is captured as design decision 2 in the spec doc — it's a one-time observation about this specific schema, not a recurring pattern worth a typed lesson.
+
+Commits (3 branch + 1 squash + 2 governance):
+  - a74f8fd docs(spec): department-binding-filter design (Phase 7 #16) — on main directly
+  - 68f5a45 docs(plan): department-binding-filter implementation plan (Phase 7 #16) — on main directly
+  - 5d62cb6 feat(calls): pure helper selectIncomingCall for dept-binding filter (Phase 7 #16 T1) — feat/department-binding-filter
+  - 5a7d481 feat(departments): myBoundDepartmentIds query for incoming-call filter (Phase 7 #16 T2) — feat/department-binding-filter
+  - 4ecfb04 feat(call): filter IncomingCallDialog by user's bound departments (Phase 7 #16 T3) — feat/department-binding-filter
+  - fdfc3ca feat(call): filter incoming-call by user's bound departments (Phase 7 #16) — squash to main; closes (department-binding-filter)
+
+End-to-end flow now correct: caller initiates → `calls.initiate` emits via `emitToOrg` on `${orgId}:call:incoming` with `recipientDeptId` payload field → all org sockets receive the broadcast (cross-org isolation guarded by `joinOrgChannel` since Phase 7 #15) → only the bound user's IncomingCallDialog passes the `selectIncomingCall` filter → only that user rings. Per-dept isolation now guarded client-side. Closes the only deferred-scope item from Phase 7 #15.
+
+---
+
 ## 2026-05-19 — Phase 7 #15: Legacy socket retirement — incoming-call wired end-to-end (Tier 2)
 
 - Agent: CLAUDE_CODE (Opus 4.7 controller + Sonnet subagents per task with two-stage review)
