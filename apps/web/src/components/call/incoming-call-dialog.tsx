@@ -12,7 +12,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { attachIncomingCallHandler } from "@/lib/calls/incoming-call-handler";
+import { selectIncomingCall } from "@/lib/calls/select-incoming-call";
 import { useSocketOptional } from "@/lib/socket/socket-context";
+import { trpc } from "@/lib/trpc/react";
 
 import type { IncomingCallPayload } from "@/lib/livekit/types";
 
@@ -60,6 +62,13 @@ export function IncomingCallDialog() {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<IncomingCallPayload | null>(null);
 
+  // Phase 7 #16: which department(s) is the current user bound to? Used to
+  // filter call:incoming broadcasts to only those destined for this user.
+  // useQuery refetches on window focus → admin re-bind via Phase 7 #13 UI is
+  // picked up without bespoke socket invalidation. boundDeptIds === undefined
+  // while loading; selectIncomingCall treats that as "do not ring".
+  const { data: boundDeptIds } = trpc.departments.myBoundDepartmentIds.useQuery();
+
   const stopRingtone = useCallback(() => {
     stopRingtoneRef.current?.();
     stopRingtoneRef.current = null;
@@ -82,11 +91,12 @@ export function IncomingCallDialog() {
     if (socket === null) return;
 
     const handleIncoming = (incoming: IncomingCallPayload): void => {
-      // TODO follow-up (Phase 7 #16 candidate):
-      // filter by `incoming.recipientDeptId === currentUser.boundDeptId`
-      // once department-binding context reaches the dialog. For now every
-      // org member rings — matches current production behavior, which was
-      // a no-op end-to-end.
+      if (!selectIncomingCall(incoming, boundDeptIds)) {
+        // Not for this user's bound department(s) — silently drop. Covers
+        // both the loading state (boundDeptIds === undefined) and the
+        // no-binding state ([]) per Phase 7 #16 decisions 3 + 4.
+        return;
+      }
       setPayload(incoming);
       setOpen(true);
       startRingtone();
@@ -110,7 +120,7 @@ export function IncomingCallDialog() {
       dispose();
       stopRingtone();
     };
-  }, [socket, startRingtone, stopRingtone]);
+  }, [socket, boundDeptIds, startRingtone, stopRingtone]);
 
   const handleAccept = useCallback(() => {
     if (!payload) return;

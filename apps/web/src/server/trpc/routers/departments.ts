@@ -78,6 +78,24 @@ export const departmentsRouter = router({
   }),
 
   /**
+   * Return the ids of every Department whose default_user_id equals the caller.
+   * Used by IncomingCallDialog (Phase 7 #16) to filter call:incoming broadcasts
+   * down to calls actually destined for this user. L6 scopes to caller's org.
+   *
+   * Returns string[] (not single id) because Department.default_user_id has no
+   * @unique constraint — one user may legitimately man multiple departments
+   * (e.g. one receptionist covering both Front Desk and Reception). Read-only,
+   * no AuditLog entry — L5 is for mutations.
+   */
+  myBoundDepartmentIds: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await prisma.department.findMany({
+      where: { default_user_id: ctx.userId },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }),
+
+  /**
    * Create a new department. tenant_admin only.
    * organization_id supplied explicitly to satisfy Prisma strict TS; L6 still
    * enforces tenant safety at runtime (5d 🟤 decision — UncheckedCreateInput cast).

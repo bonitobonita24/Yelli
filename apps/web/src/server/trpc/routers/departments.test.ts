@@ -12,6 +12,7 @@ vi.mock("@yelli/db", () => ({
   prisma: {
     department: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     user: {
@@ -21,6 +22,7 @@ vi.mock("@yelli/db", () => ({
     $transaction: vi.fn((cb: (tx: unknown) => unknown) => cb({
       department: {
         findUnique: vi.fn(),
+        findMany: vi.fn(),
         update: vi.fn(),
       },
       user: { findUnique: vi.fn() },
@@ -237,6 +239,51 @@ describe("departmentsRouter.setDefaultUser", () => {
     expect(prisma.department.update).not.toHaveBeenCalled();
   });
 
+});
+
+describe("departmentsRouter.myBoundDepartmentIds (Phase 7 #16)", () => {
+  it("returns an empty array when the caller is bound to no departments", async () => {
+    vi.mocked(prisma.department.findMany).mockResolvedValue([] as never);
+
+    const caller = createCaller(makeCtx());
+    const res = await caller.myBoundDepartmentIds();
+
+    expect(res).toEqual([]);
+  });
+
+  it("returns ALL matching dept ids when the caller is bound to multiple departments", async () => {
+    vi.mocked(prisma.department.findMany).mockResolvedValue([
+      { id: "clh3z8t3d0010qzpqdeptaaaa" },
+      { id: "clh3z8t3d0011qzpqdeptbbbb" },
+    ] as never);
+
+    const caller = createCaller(makeCtx());
+    const res = await caller.myBoundDepartmentIds();
+
+    expect(res).toEqual([
+      "clh3z8t3d0010qzpqdeptaaaa",
+      "clh3z8t3d0011qzpqdeptbbbb",
+    ]);
+  });
+
+  it("queries findMany with where: { default_user_id: ctx.userId } and writes no audit log", async () => {
+    vi.mocked(prisma.department.findMany).mockResolvedValue([] as never);
+
+    const caller = createCaller(makeCtx());
+    await caller.myBoundDepartmentIds();
+
+    expect(prisma.department.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.department.findMany).toHaveBeenCalledWith({
+      where: { default_user_id: "user-admin-cuid" },
+      select: { id: true },
+    });
+
+    // Read-only query — must NOT write to AuditLog (L5 is for mutations only).
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("departmentsRouter.setDefaultUser audit-log", () => {
   it("writes audit log on bind with correct entity / action / before-after shape", async () => {
     vi.mocked(prisma.department.findUnique).mockResolvedValue({
       ...DEPT_FIXTURE,
