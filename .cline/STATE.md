@@ -37,7 +37,7 @@ BLOCKERS:
 - ✅ Phase 7 #15 dept-filter TODO — RESOLVED via Phase 7 #16.
 - ✅ admin.users.list cross-org leak — RESOLVED via Task #21 (`ab711da`).
 
-GIT_BRANCH: feat/coturn-config-fix (squash-merge pending — diff: 3 files / 3 deletions / 0 insertions in tracked compose YAML; gitignored env files + CREDENTIALS.md changed but not in tracked diff). Prior main tip: `ddcbcad` (Task #21 governance record). Before: `ab711da` (Task #21 squash).
+GIT_BRANCH: main (coturn-config-fix squash-merged 2026-05-20 as `75ab34f` — final stats: 9 files / 86 insertions / 49 deletions including all governance writes; in tracked code itself: 3 compose YAML files / 3 deletions / 0 insertions. Gitignored env files + CREDENTIALS.md changed but not in tracked diff). Implementation branch `feat/coturn-config-fix` deleted post-squash (was `60bb930`). Prior main tip: `ddcbcad` (Task #21 governance record). Before: `ab711da` (Task #21 squash).
 
 PORTS: APP=43512 DB=43502 PGBOUNCER=43503 CACHE=43504 MINIO=43505 MINIO_CONSOLE=43506 MAILHOG_SMTP=43507 MAILHOG_UI=43508 PGADMIN=43509 SOCKET=43515 LIVEKIT_SIGNAL=43532 LIVEKIT_TURN_UDP_START=43537 COTURN=43542 (unchanged — coturn now actually serving on 43542 ✓).
 
