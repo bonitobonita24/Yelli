@@ -22,6 +22,33 @@
 
 # ---
 
+## 2026-05-19 — Rule 16 cleanup smoke pass + LIVEKIT_URL env naming fix
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch)
+- Why: First full Rule 16 visual-QA smoke pass since 10 smoke items had accumulated as deferred-scope across Phase 7 #3 (meetings/new), #4 (forgot-password), #7c (subdomain), #8e (socket handshake), #10 (session:invalidated), #11 (presence), #12 (Speed Dial green-dot), #13 (admin-binding-ui), #14 (in-call yellow-dot), #15 (incoming-call dialog), #16 (dept-filter routing). User picked (rule-16-cleanup) as the recommended next ticket after #16 shipped. Ran all 12 smoke tasks via Playwright MCP with system Chrome (user installed google-chrome-stable via Google's apt repo). Found and fixed one real config bug inline (LIVEKIT_WS_URL → LIVEKIT_URL env naming mismatch); queued three further findings as separate tickets.
+- Files added: none (test fixtures created via tsx + Prisma raw client, not committed)
+- Files modified:
+  - apps/web/src/env.ts (5 refs: serverSchema + clientSchema + getServerEnv + getClientEnv all renamed LIVEKIT_WS_URL → LIVEKIT_URL + NEXT_PUBLIC_LIVEKIT_WS_URL → NEXT_PUBLIC_LIVEKIT_URL)
+  - apps/web/src/lib/livekit/client.ts (1 ref: env.LIVEKIT_WS_URL → env.LIVEKIT_URL inside mintLiveKitToken)
+- Files deleted: none
+- Schema/migrations: none (Rule 16 is a smoke pass, no schema changes; manual `prisma migrate reset --force --skip-generate` to clean DB + `pnpm db:seed` for webmaster + tsx fixture script for additional test users/orgs/depts/bindings)
+- Errors encountered:
+  - **#3 /app/meetings/new — meetings.getJoinToken returned HTTP 503** "Video service is temporarily unavailable" on every meeting creation. Root cause: apps/web/src/env.ts schema declared LIVEKIT_WS_URL but every .env file (.env.dev/.env.example/.env.staging/.env.prod) AND every compose file (deploy/compose/{dev,stage,prod}/docker-compose.app.yml) uses LIVEKIT_URL. mintLiveKitToken's wsUrl was always undefined → threw "LiveKit not configured" → tRPC catch returned 503. Unit tests passed because they mock mintLiveKitToken at the import boundary; Edge bundle build passed because env validation is bypassed with SKIP_ENV_VALIDATION=1. The bug had been latent since the partial rename was applied.
+  - **#3 secondary — WebRTC peer connection fails** even on localhost: "could not establish pc connection" because coturn container is restarting (255) per known STATE.md blocker. CORRECTION: STATE.md previously claimed "dev video calls work without it on localhost" — Rule 16 #3 smoke proved that's WRONG; coturn IS required even for localhost-to-localhost WebRTC. Queued as separate (coturn-config-fix) ticket.
+  - **#7c subdomain redirect — /t/{slug}/* always 404** because no Next.js route handlers exist under apps/web/src/app/t/ and middleware doesn't rewrite the path. Middleware extracts the slug + resolveTenantRedirect makes correct decision + buildTenantRedirectUrl returns the right URL string — but Next.js routing has no /t/[slug] page to serve. Unit tests for buildTenantRedirectUrl pass because they only check URL strings, never serve the page. Queued as (t-slug-dev-routes-broken).
+  - **#13 admin-binding-ui — cross-org user (Mallory in evil org) appears in Reception's user picker dropdown** when current user is webmaster (tenant_admin + is_super_admin=true). May be intentional super-admin cross-org visibility OR a leak. Per security.md §SUPERADMIN: "NEVER add an inline if (isSuperadmin) skip tenant filter inside a regular tenant-scoped resolver" — needs verification with a plain tenant_admin (is_super_admin=false). Queued as (admin-users-list-tenant-scope).
+  - **#10 session:invalidated took ~120s** (2 revalidation ticks of the 60s loop) — not "≤60s" as the smoke description claimed. Plain sign-out alone does NOT trigger session:invalidated; only role/status/security_version changes do. Worth correcting the smoke spec text.
+- Errors resolved:
+  - Renamed LIVEKIT_WS_URL → LIVEKIT_URL in env.ts (5 refs) + client.ts (1 ref) on branch `fix/livekit-url-env-rename` (commit `417ed97`). Validation: pnpm test 167/167 ✓, pnpm typecheck ✓ 0 errors 8 packages, pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged), pnpm build ✓ 22 routes + middleware 141kB. Two-stage review (Rule 25): Stage 1 spec PASS (every env file already uses LIVEKIT_URL → schema now matches), Stage 2 quality PASS (zero `any`, 5-line rename + 1-line consumer, conventional commit). Squash-merged to main as `f9f88bf`.
+- Smoke results summary (6 PASS, 1 PARTIAL, 5 BLOCKED):
+  - PASS: #8e socket handshake (curl + browser session id verified), #10 session:invalidated (security_version path; ~120s latency), #4 forgot-password full flow (MailHog + reset → new password → login), #11 presence multi-tab (snapshot + coalescing + listeners attached), #12 Speed Dial green-dot (alice signs in → Reception bound to alice goes online), #13 admin-binding-ui (table + dropdowns render; non-admin redirect verified).
+  - PARTIAL: #3 meetings/new (form + creation + token mint OK after env fix; WebRTC blocked on coturn).
+  - BLOCKED: #14 in-call yellow-dot + #15 incoming-call dialog + #16 dept-filter routing (need multi-user concurrent sessions which Playwright MCP single-context cookie-sharing cannot provide + WebRTC blocked on coturn); #7c subdomain redirect (/t/{slug}/* 404s, no route handlers exist).
+- Follow-up tickets queued: (t-slug-dev-routes-broken), (admin-users-list-tenant-scope), (coturn-config-fix), (rule-16-followup-multi-user). All preserve the 4 prior Phase 7 #17 backlog items: (i) BullMQ token cleanup, (d) join/[token] tRPC, (f) root landing, (binding-realtime-invalidate).
+- Lessons added: 3 typed entries to lessons.md — 🔴 [[livekit-env-name-mismatch]], 🔴 [[t-slug-dev-routes-broken]], 🟤 [[rule-16-cleanup-2026-05-19]] (locks multi-user testing limitation as framework decision).
+
+---
+
 ## 2026-05-19 — Phase 7 #16: Department-binding filter for incoming-call dialog (Tier 1)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch this ticket)
