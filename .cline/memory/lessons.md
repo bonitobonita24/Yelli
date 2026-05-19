@@ -8,6 +8,16 @@
 
 # ---
 
+## 2026-05-19 — 🔴 L6 super-admin bypass leaks cross-org data — never embed bypass in the guarded client
+
+- Type:      🔴 gotcha  `[[l6-super-admin-bypass-leak]]`
+- Phase:     Task #21 (admin-users-list-tenant-scope, Rule 16 follow-up)
+- Files:     packages/db/src/client.ts, packages/db/src/tenant-context.ts, apps/web/src/server/trpc/trpc.ts, apps/web/src/server/trpc/routers/*.ts
+- Concepts:  security, L6, tenant-isolation, super-admin, defense-in-depth, prisma-extension, ALS, IDOR
+- Narrative: The L6 tenant-guard Prisma extension shipped in Phase 4 Part 3 originally contained an `if (!ctx || ctx.isSuperAdmin) return query(args)` bypass at the `$allOperations` interceptor. The intent was "super-admins can see across orgs" — but the effect was that EVERY tenant_admin who also happened to carry `is_super_admin=true` (common for the seeded webmaster + any platform-staff dual-role account) silently bypassed tenant filtering on EVERY route using the guarded prisma client. Mallory (user in `evil` org) appeared in webmaster's `/admin/departments` user picker dropdown during Rule 16 smoke verification. security.md §SUPERADMIN AND PLATFORM-LEVEL ROLES rule 4 explicitly forbids this pattern: "NEVER add an inline `if (isSuperadmin) skip tenant filter` inside a regular tenant-scoped resolver" — and the same prohibition applies to the L6 extension itself, because the extension IS the floor of every tenant-scoped resolver. The architectural fix is two-layer: (1) remove the `ctx.isSuperAdmin` bypass at the L6 extension — keep only the `!ctx` pass-through for genuine no-context scripts (bootstrap, seed, data migrations); (2) make cross-tenant code use `platformPrisma` (the unguarded singleton in `packages/db/src/platform-client.ts`) from a dedicated `superAdminProcedure` router (`apps/web/src/server/trpc/routers/superadmin.ts`). Defense-in-depth: also add explicit `where: { organization_id: ctx.organizationId }` to every list/count/aggregate query — clarity-of-intent at the call site plus a backstop if a future regression accidentally drops the L6 extension. PATTERN TO RECOGNIZE: any phrase like "bypass for super-admin" or "skip tenant guard if X" inside a Prisma extension, middleware, or shared resolver helper. The bypass is invisible at the call site — the resolver looks tenant-safe but isn't. Fix at the extension layer, not by trying to patch every resolver.
+
+# ---
+
 ## 2026-05-17 — 🟤 Presence roster `{wasFirst}` / `{isLast}` coalescing pattern
 
 - Type:      🟤 decision  `[[presence-roster-coalesce-pattern]]`

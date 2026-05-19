@@ -124,12 +124,14 @@ export const callsRouter = router({
         .strict()
         .optional(),
     )
-    .query(async ({ input }) => {
-      // Conditional spread keeps the literal type intact so the `select`
-      // narrowing flows into the return type, while still satisfying
-      // exactOptionalPropertyTypes (no `where: undefined`).
+    .query(async ({ ctx, input }) => {
+      // Defense-in-depth: explicit org filter on every list. Optional
+      // call_type narrowing merges into the same where clause.
       const logs = await prisma.callLog.findMany({
-        ...(input?.type ? { where: { call_type: input.type } } : {}),
+        where: {
+          organization_id: ctx.organizationId,
+          ...(input?.type ? { call_type: input.type } : {}),
+        },
         take: input?.limit ?? 50,
         orderBy: { started_at: "desc" },
         select: {

@@ -35,7 +35,7 @@ export const chatRouter = router({
         })
         .strict(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       // Confirm the meeting exists in the caller's tenant. L6 keeps this safe.
       const meeting = await prisma.meeting.findUnique({
         where: { id: input.meetingId },
@@ -45,8 +45,12 @@ export const chatRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found." });
       }
 
+      // Defense-in-depth: explicit org filter alongside the meeting_id filter.
       const messages = await prisma.chatMessage.findMany({
-        where: { meeting_id: input.meetingId },
+        where: {
+          organization_id: ctx.organizationId,
+          meeting_id: input.meetingId,
+        },
         take: input.limit,
         orderBy: { created_at: "asc" },
         select: {

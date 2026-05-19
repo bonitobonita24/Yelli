@@ -12,11 +12,12 @@ import type { Prisma } from "@yelli/db";
 export const meetingsRouter = router({
   /**
    * List meetings for the current tenant (most recent first, limit 100).
-   * L6 tenant-guard auto-injects organization_id — no explicit where needed.
+   * Defense-in-depth: explicit org filter in addition to L6 auto-injection.
    * Never returns organization_id in the response shape.
    */
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const meetings = await prisma.meeting.findMany({
+      where: { organization_id: ctx.organizationId },
       take: 100,
       orderBy: { created_at: "desc" },
       select: {

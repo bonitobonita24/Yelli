@@ -55,11 +55,12 @@ const setDefaultUserInput = z
 export const departmentsRouter = router({
   /**
    * List all departments in the caller's org.
-   * L6 tenant-guard injects organization_id via AsyncLocalStorage.
+   * Defense-in-depth: explicit org filter in addition to L6 auto-injection.
    * Used by speed-dial board (any role) and /admin/departments (tenant_admin).
    */
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const departments = await prisma.department.findMany({
+      where: { organization_id: ctx.organizationId },
       orderBy: [{ group_label: "asc" }, { sort_order: "asc" }, { name: "asc" }],
       select: {
         id: true,
@@ -89,7 +90,10 @@ export const departmentsRouter = router({
    */
   myBoundDepartmentIds: protectedProcedure.query(async ({ ctx }) => {
     const rows = await prisma.department.findMany({
-      where: { default_user_id: ctx.userId },
+      where: {
+        organization_id: ctx.organizationId,
+        default_user_id: ctx.userId,
+      },
       select: { id: true },
     });
     return rows.map((r) => r.id);

@@ -30,9 +30,12 @@ export const recordingsRouter = router({
         .strict()
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      // Defense-in-depth: explicit org filter. recording.file_path also
+      // carries an org prefix that verifyKeyOwnership checks on download.
       const recordings = await prisma.recording.findMany({
         where: {
+          organization_id: ctx.organizationId,
           deleted_at: null,
           ...(input?.meetingId ? { meeting_id: input.meetingId } : {}),
         },

@@ -11,7 +11,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface TenantContext {
   organizationId: string;
   userId: string | null;
-  isSuperAdmin: boolean;
 }
 
 export const tenantContextStore = new AsyncLocalStorage<TenantContext>();

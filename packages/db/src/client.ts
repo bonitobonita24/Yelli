@@ -9,11 +9,17 @@
 // Exempt models: AuditLog, Organization, PlatformSettings
 // (system-level tables that are not tenant-scoped).
 //
-// Super-admin bypass: if isSuperAdmin === true in ALS context,
-// the tenant filter is skipped entirely. Super-admin queries
-// should use platformPrisma (platform-client.ts) for clarity,
-// but tenant-guarded client is still safe to use because the
-// bypass is explicit and logged.
+// No super-admin bypass. Per security.md §SUPERADMIN AND
+// PLATFORM-LEVEL ROLES, cross-tenant reads/writes MUST use
+// platformPrisma (platform-client.ts) from a superAdminProcedure
+// router. A user happening to carry is_super_admin=true on a
+// tenant-scoped route does NOT escape tenant filtering — they
+// see their own org's data exactly like any tenant_admin.
+//
+// Pass-through is only granted when ALS context is absent
+// (bootstrap/seed scripts and other code running outside of
+// runWithTenantContext). Those code paths must accept the
+// responsibility of scoping their own queries explicitly.
 // =============================================================
 
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -38,10 +44,11 @@ function buildTenantGuardExtension() {
 
           const ctx = getTenantContext();
 
-          // If no tenant context is set (e.g. background bootstrap tasks),
-          // or if the caller is a super-admin, pass through unfiltered.
-          // Super-admin code should prefer platformPrisma for clarity.
-          if (!ctx || ctx.isSuperAdmin) {
+          // Pass through unfiltered only when no tenant context is set
+          // (e.g. background bootstrap tasks, seed scripts). Super-admin
+          // status carried via session is intentionally ignored here —
+          // tenant-bypassing code must use platformPrisma explicitly.
+          if (!ctx) {
             return query(args);
           }
 

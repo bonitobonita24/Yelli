@@ -41,9 +41,11 @@ function generateTempPassword(): string {
 }
 
 const usersRouter = router({
-  list: adminProcedure.query(async () => {
-    // L6 scopes by org. Order by display_name ASC for stable admin UI.
+  list: adminProcedure.query(async ({ ctx }) => {
+    // Defense-in-depth: explicit org filter in addition to L6 auto-injection.
+    // Belt-and-suspenders against any future regression in the L6 extension.
     const users = await prisma.user.findMany({
+      where: { organization_id: ctx.organizationId },
       orderBy: { display_name: "asc" },
       select: {
         id: true,
@@ -66,9 +68,10 @@ const usersRouter = router({
       const hash = await bcrypt.hash(tempPassword, 12);
 
       return prisma.$transaction(async (tx) => {
-        // Pre-check duplicate (org-scoped via L6). Generic error msg per security.md.
+        // Pre-check duplicate within this org only. Explicit org filter as
+        // defense-in-depth — same email can legitimately exist in another org.
         const existing = await tx.user.findFirst({
-          where: { email: input.email },
+          where: { email: input.email, organization_id: ctx.organizationId },
           select: { id: true },
         });
         if (existing) {
@@ -298,10 +301,14 @@ function csvEscape(value: string | number | Date | null): string {
 const reportsRouter = router({
   exportCallLogsCsv: adminProcedure
     .input(exportCallLogsInput)
-    .mutation(async ({ input }) => {
-      // L6 scopes to caller's org. Hard upper limit prevents OOM on huge exports.
+    .mutation(async ({ ctx, input }) => {
+      // Defense-in-depth: explicit org filter. CSV exports without org
+      // scoping would dump every tenant's call_logs into one file —
+      // exactly the failure mode security.md §DATABASE SAFETY rule 10
+      // is designed to prevent.
       const rows = await prisma.callLog.findMany({
         where: {
+          organization_id: ctx.organizationId,
           started_at: { gte: input.start, lte: input.end },
         },
         orderBy: { started_at: "desc" },
@@ -378,17 +385,30 @@ const dashboardRouter = router({
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+    // Defense-in-depth: every aggregate query carries an explicit
+    // organization_id filter. Counts and time-series exports are the
+    // queries that leak ALL tenants' data into one screen/file if L6
+    // ever regresses (security.md §DATABASE SAFETY rule 10).
     const [departmentCount, userCount, activeUserCount, org, recentCalls] =
       await Promise.all([
-        prisma.department.count(),
-        prisma.user.count(),
-        prisma.user.count({ where: { status: "active" } }),
+        prisma.department.count({
+          where: { organization_id: ctx.organizationId },
+        }),
+        prisma.user.count({
+          where: { organization_id: ctx.organizationId },
+        }),
+        prisma.user.count({
+          where: { organization_id: ctx.organizationId, status: "active" },
+        }),
         prisma.organization.findUnique({
           where: { id: ctx.organizationId },
           select: { plan_tier: true, subscription_status: true },
         }),
         prisma.callLog.findMany({
-          where: { started_at: { gte: thirtyDaysAgo } },
+          where: {
+            organization_id: ctx.organizationId,
+            started_at: { gte: thirtyDaysAgo },
+          },
           select: { started_at: true, status: true, call_type: true },
           orderBy: { started_at: "asc" },
           take: 10000,

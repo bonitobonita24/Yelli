@@ -22,6 +22,28 @@
 
 # ---
 
+## 2026-05-19 — Task #21 cross-org tenant-scope hardening (admin-users-list-tenant-scope)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch)
+- Why: Rule 16 smoke pass found Mallory (user in `evil` org) appearing in `admin.users.list` dropdown when the calling tenant_admin also held `is_super_admin=true`. Root cause was a super-admin bypass embedded in the L6 tenant-guard extension itself (`packages/db/src/client.ts:44` — `if (!ctx || ctx.isSuperAdmin) return query(args)`). This violated security.md §SUPERADMIN AND PLATFORM-LEVEL ROLES, which forbids "inline if (isSuperadmin) skip tenant filter" patterns — bypass must come via an explicit dedicated `platformPrisma` client, not implicit ALS-context routing. The leak surface spanned every admin.* route plus calls/meetings/departments/chat/recordings/billing for any user with `is_super_admin=true`. Fix removes the bypass at the L6 layer (root cause) and adds explicit `where: { organization_id: ctx.organizationId }` to every list/count/aggregate query (defense-in-depth).
+- Files added: apps/web/src/server/trpc/routers/admin.test.ts (6 cross-org isolation tests — list explicit-org assertion for both regular + super-admin sessions, dashboard.stats per-count org filter assertion, reports.exportCallLogsCsv org filter assertion, RBAC short-circuit before any DB call)
+- Files modified:
+  - packages/db/src/client.ts (L6 super-admin bypass removed; comment header rewritten to state "no super-admin bypass — cross-tenant code MUST use platformPrisma"; pass-through retained only for `!ctx` bootstrap/seed contexts)
+  - packages/db/src/tenant-context.ts (`isSuperAdmin: boolean` field dropped from TenantContext interface — vestigial after L6 fix; no other ALS consumer)
+  - apps/web/src/server/trpc/trpc.ts (`isSuperAdmin` no longer forwarded into runWithTenantContext payload — kept on ctx.user for RBAC checks)
+  - apps/web/src/server/trpc/routers/admin.ts (defense-in-depth org filter added to users.list, users.invite duplicate-check, dashboard.stats department.count + user.count × 2, reports.exportCallLogsCsv)
+  - apps/web/src/server/trpc/routers/calls.ts (defense-in-depth org filter on callLog.findMany — listHistory)
+  - apps/web/src/server/trpc/routers/meetings.ts (defense-in-depth org filter on meeting.findMany — list)
+  - apps/web/src/server/trpc/routers/departments.ts (defense-in-depth org filter on department.findMany — list + myBoundDepartmentIds)
+  - apps/web/src/server/trpc/routers/chat.ts (defense-in-depth org filter on chatMessage.findMany — listByMeeting)
+  - apps/web/src/server/trpc/routers/recordings.ts (defense-in-depth org filter on recording.findMany — list)
+  - apps/web/src/server/trpc/routers/billing.ts (defense-in-depth org filter on subscription.findFirst + invoice.findMany)
+  - apps/web/src/server/trpc/routers/departments.test.ts (myBoundDepartmentIds assertion updated for new defense-in-depth where shape — organization_id + default_user_id)
+- Files deleted: none
+- Schema/migrations: none — pure runtime + type changes
+- Errors encountered: 1 typecheck error on first test draft (HOST_SESSION cast through ADMIN_SESSION literal type — fix: hoist HOST_SESSION to top-level fixture, widen makeCtx union); 1 pre-existing departments.test.ts assertion failed because Phase 7 #16 test expected single-key where — fix: updated assertion to new defense-in-depth shape
+- Errors resolved: both inline before commit; pnpm test 173/173 ✓, typecheck/lint/build/audit all green
+
 ## 2026-05-19 — Rule 16 cleanup smoke pass + LIVEKIT_URL env naming fix
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch)

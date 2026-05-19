@@ -55,9 +55,12 @@ export const protectedProcedure = procedure
     return next({ ctx: { ...ctx, user } });
   })
   .use(async ({ ctx, next }) => {
-    const { id: userId, organizationId, isSuperAdmin } = ctx.user;
+    const { id: userId, organizationId } = ctx.user;
+    // isSuperAdmin is intentionally NOT forwarded into the ALS payload —
+    // L6 ignores it (security.md §SUPERADMIN). Cross-tenant code must use
+    // platformPrisma from a superAdminProcedure router.
     return runWithTenantContext(
-      { organizationId, userId, isSuperAdmin },
+      { organizationId, userId },
       () =>
         next({
           ctx: { ...ctx, organizationId, userId },

@@ -266,15 +266,20 @@ describe("departmentsRouter.myBoundDepartmentIds (Phase 7 #16)", () => {
     ]);
   });
 
-  it("queries findMany with where: { default_user_id: ctx.userId } and writes no audit log", async () => {
+  it("queries findMany with where: { organization_id, default_user_id } and writes no audit log", async () => {
     vi.mocked(prisma.department.findMany).mockResolvedValue([] as never);
 
     const caller = createCaller(makeCtx());
     await caller.myBoundDepartmentIds();
 
     expect(prisma.department.findMany).toHaveBeenCalledTimes(1);
+    // Task #21 defense-in-depth: explicit organization_id is now part of
+    // every list query's where clause, alongside the user binding filter.
     expect(prisma.department.findMany).toHaveBeenCalledWith({
-      where: { default_user_id: "user-admin-cuid" },
+      where: {
+        organization_id: "org-tenant-cuid",
+        default_user_id: "user-admin-cuid",
+      },
       select: { id: true },
     });
 

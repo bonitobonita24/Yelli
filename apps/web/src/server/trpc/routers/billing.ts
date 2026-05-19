@@ -15,8 +15,12 @@ const subscriptionRouter = router({
    * yet (free-tier orgs may not have a Subscription record until first upgrade).
    * L6 scopes by org automatically.
    */
-  current: adminProcedure.query(async () => {
+  current: adminProcedure.query(async ({ ctx }) => {
+    // Defense-in-depth: explicit org filter alongside L6 auto-injection.
+    // findFirst without a where would return ANY tenant's most recent
+    // subscription if L6 ever regresses — exactly the leak Task #21 fixes.
     const sub = await prisma.subscription.findFirst({
+      where: { organization_id: ctx.organizationId },
       orderBy: { created_at: "desc" },
       select: {
         id: true,
@@ -47,9 +51,11 @@ const listInvoicesInput = z
 const invoicesRouter = router({
   list: adminProcedure
     .input(listInvoicesInput.optional())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const limit = input?.limit ?? 20;
+      // Defense-in-depth: explicit org filter on every invoice list.
       const items = await prisma.invoice.findMany({
+        where: { organization_id: ctx.organizationId },
         take: limit + 1,
         ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
         orderBy: { issued_at: "desc" },
