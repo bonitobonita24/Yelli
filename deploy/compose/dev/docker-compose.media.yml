@@ -87,7 +87,6 @@ services:
       - --no-multicast-peers
       - --no-cli
       - --no-tlsv1
-      - --no-tlsv1_1
     ports:
       - "${COTURN_PORT}:3478"
       - "${COTURN_PORT}:3478/udp"

@@ -8,6 +8,14 @@
 
 # ---
 
+## 2026-05-20 — 🟡 coturn `--no-tlsv1_1` flag removed in modern image — use minimum-version flags instead
+
+- Type:      🟡 fix
+- Phase:     Rule 16 follow-up (coturn-config-fix)
+- Files:     deploy/compose/{dev,stage,prod}/docker-compose.media.yml
+- Concepts:  coturn, turnserver, TLS, webrtc, docker-image-upgrade, deprecated-flag
+- Narrative: `coturn/coturn:latest` (image current at 2026-05-20) silently dropped the `--no-tlsv1_1` flag. Newer coturn inverted the TLS flag scheme: deny-list `--no-tlsv1_X` → minimum-version `--tlsv1_X` / `--no-tlsv1_2`. When the dropped flag is passed, turnserver exits 255 and dumps full `-h` help-text to stdout. The crash loop is hard to diagnose because (a) `docker logs --tail` shows only the help-text (not the actual error at the very top of the log — must `head`, not `tail`), and (b) the deprecation message `0: ERROR: no-cli option is deprecated, see --cli` is just a warning, not the exit cause. Fix: remove `      - --no-tlsv1_1` from coturn command-block in all 3 compose files. `--no-tlsv1` (singular) is still valid in the same image — verified by `docker run --rm coturn/coturn:latest turnserver --no-tlsv1` which started successfully and blocked-on-listen. Modern coturn default already excludes TLS 1.0/1.1, so removal is functionally equivalent to the old behavior. Recognition heuristic for future coturn-image upgrades: when coturn restart-loops with empty `docker logs --tail`, ALWAYS check `docker logs ... 2>&1 | head -20` — the actual error is always on line 1-2, but coturn writes ~135k lines of help-text after it that drown the tail. Related to [[livekit-env-name-mismatch]]: both bugs caused dev WebRTC to fail silently, both diagnosed via Rule 16 cleanup smoke pass.
+
 ## 2026-05-19 — 🔴 L6 super-admin bypass leaks cross-org data — never embed bypass in the guarded client
 
 - Type:      🔴 gotcha  `[[l6-super-admin-bypass-leak]]`

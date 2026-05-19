@@ -22,6 +22,24 @@
 
 # ---
 
+## 2026-05-19 — Coturn config fix (coturn-config-fix)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope, 3 YAML lines + 3 env values + 1 CREDENTIALS.md section)
+- Why: Rule 16 #3 smoke proved the dev coturn container was restarting (exit 255) — corrected the prior STATE.md claim that "dev video calls work without it on localhost". WebRTC peer connection fails on `coturn restarting 255` even on localhost, blocking all in-call manual smoke (#14/#15/#16). The visible blocker was the `COTURN_STATIC_AUTH_SECRET` placeholder string `devturnsecret_replace_with_real_value` in `.env.dev`, but root cause investigation revealed a SECOND latent bug: `coturn/coturn:latest` dropped the `--no-tlsv1_1` flag (modern coturn uses minimum-version flags `--tlsv1_1` / `--no-tlsv1_2`, not deny-list flags). The container crashed at startup with `turnserver: unrecognized option '--no-tlsv1_1'` and dumped help-text. Real HMAC secret alone would not have unblocked WebRTC — both fixes were required.
+- Files added: none (CREDENTIALS.md is gitignored; added a new `## 🔁 Coturn (WebRTC TURN/STUN Server) ✅ FILLED` section there but the file itself is untracked)
+- Files modified:
+  - deploy/compose/dev/docker-compose.media.yml (-1 line: removed deprecated `--no-tlsv1_1` flag)
+  - deploy/compose/stage/docker-compose.media.yml (-1 line: same)
+  - deploy/compose/prod/docker-compose.media.yml (-1 line: same)
+  - .env.dev (gitignored — `COTURN_STATIC_AUTH_SECRET=` set to 48-char base64-stripped openssl value)
+  - .env.staging (gitignored — same field filled with separate 48-char value)
+  - .env.prod (gitignored — same field filled with separate 48-char value, distinct from staging)
+  - CREDENTIALS.md (gitignored — new Coturn section appended before "Where Each File Lives", documents realm + 48-char-length + port per env, generation method, rotation guidance)
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: (a) coturn container restarting (255) on every retry; baseline restart count was 80 when the session started. (b) After patching the secret and the first restart attempt, container still crashed — investigation of full log (not the tail, which was just help-text repetition) revealed `turnserver: unrecognized option '--no-tlsv1_1'`. (c) `docker compose up -d coturn --force-recreate` against the standalone media.yml failed with `service "livekit" depends on undefined service "valkey"` — media.yml's livekit references valkey via depends_on, which requires the cache.yml file to be chained. (d) Quick test `docker run --rm coturn/coturn:latest turnserver --no-tlsv1` blocked-on-start (server runs successfully — confirms only `--no-tlsv1_1` was dropped, `--no-tlsv1` is still valid).
+- Errors resolved: (a)+(b) removed `--no-tlsv1_1` from all 3 compose files (dev/stage/prod) — modern coturn already disables TLS 1.0/1.1 by default, so removal is functionally equivalent; (c) used the project's official `bash deploy/compose/start.sh dev up -d` which chains all compose files and properly resolves cross-file dependencies; (d) verification — coturn now `status=running, restarts=0, exitCode=0` for 30+ seconds; STUN binding test via `turnutils_stunclient -p 43542 127.0.0.1` returned `IPv4. UDP reflexive addr: 172.25.0.1:49796` confirming protocol-level functionality. Ports correctly mapped: 43542→3478 on both TCP and UDP (IPv4 + IPv6).
+
 ## 2026-05-19 — Task #21 cross-org tenant-scope hardening (admin-users-list-tenant-scope)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch)
