@@ -36,7 +36,7 @@ const serverSchema = z.object({
   SMTP_FROM: z.string().email().optional(),
   LIVEKIT_API_KEY: z.string().optional(),
   LIVEKIT_API_SECRET: z.string().optional(),
-  LIVEKIT_WS_URL: z.string().url().optional(),
+  LIVEKIT_URL: z.string().url().optional(),
   XENDIT_SECRET_KEY: z.string().optional(),
   XENDIT_WEBHOOK_TOKEN: z.string().optional(),
 });
@@ -44,7 +44,7 @@ const serverSchema = z.object({
 const clientSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1),
-  NEXT_PUBLIC_LIVEKIT_WS_URL: z.string().url().optional(),
+  NEXT_PUBLIC_LIVEKIT_URL: z.string().url().optional(),
   NEXT_PUBLIC_SOCKET_URL: z.string().url().optional(),
 });
 
@@ -71,7 +71,7 @@ function getServerEnv() {
     SMTP_FROM: process.env.SMTP_FROM,
     LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY,
     LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET,
-    LIVEKIT_WS_URL: process.env.LIVEKIT_WS_URL,
+    LIVEKIT_URL: process.env.LIVEKIT_URL,
     XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
     XENDIT_WEBHOOK_TOKEN: process.env.XENDIT_WEBHOOK_TOKEN,
   };
@@ -81,7 +81,7 @@ function getClientEnv() {
   return {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
-    NEXT_PUBLIC_LIVEKIT_WS_URL: process.env.NEXT_PUBLIC_LIVEKIT_WS_URL,
+    NEXT_PUBLIC_LIVEKIT_URL: process.env.NEXT_PUBLIC_LIVEKIT_URL,
     NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL,
   };
 }

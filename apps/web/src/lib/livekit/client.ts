@@ -22,7 +22,7 @@ export function mintLiveKitToken(options: MintOptions): {
 } {
   const apiKey = env.LIVEKIT_API_KEY;
   const apiSecret = env.LIVEKIT_API_SECRET;
-  const wsUrl = env.LIVEKIT_WS_URL;
+  const wsUrl = env.LIVEKIT_URL;
 
   if (!apiKey || !apiSecret || !wsUrl) {
     throw new Error("LiveKit not configured");
