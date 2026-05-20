@@ -22,6 +22,25 @@
 
 # ---
 
+## 2026-05-20 — /t/{slug}/* dev routes broken (t-slug-dev-routes-broken)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope, 3 files / 146 insertions / 8 deletions)
+- Why: Rule 16 cleanup smoke found that `/t/{slug}/<anything>` always 404s on localhost dev. The middleware extracted the slug correctly into `x-tenant-slug` but never stripped the prefix, so Next.js route resolution looked for a non-existent `/t/[slug]/app/...` handler tree. Unit tests for `buildTenantRedirectUrl` passed because they only verify URL strings, never route serving. Blocks (#7c) subdomain redirect smoke and is the primary reason in-dev tenant URLs don't work.
+- Files added: none
+- Files modified:
+  - apps/web/src/server/tenant-redirect.ts — added pure helper `stripTenantPathPrefix(path, slug)` returning the canonical path that downstream Next.js route resolution should serve (`/t/yelli/app/foo` + `yelli` → `/app/foo`; `/t/yelli` → `/`; lookalike + regex-special-char slugs handled defensively).
+  - apps/web/src/server/tenant-redirect.test.ts — added 13 tests covering happy path, single segment, no-trailing, /-trailing, admin/superadmin/api paths, no-/t/-prefix no-op, empty slug no-op, slug-arg-mismatch no-op, `/tenants/*` non-match, `/t/yelli-other/*` non-match, regex-special-char-in-slug defensive escape. Total file: 26 tests.
+  - apps/web/src/middleware.ts — compute `effectivePath = stripTenantPathPrefix(path, tenantSlug ?? "")` once; use `effectivePath` for `isProtected` check AND `resolveTenantRedirect.path` (so /superadmin bypass works on dev URLs); when `wasPathStripped` return `NextResponse.rewrite(effectivePath, { request: { headers: requestHeaders } })` so existing /app, /admin, /superadmin handlers serve the request. `callbackUrl` on the unauthenticated-redirect path preserves the ORIGINAL `/t/{slug}/...` so login returns the user to the same tenant-prefixed URL.
+- Files deleted: none
+- Schema/migrations: none
+- Tests: 173 → 186 (13 new for `stripTenantPathPrefix`). All passing. RED→GREEN confirmed.
+- Validation: pnpm lint (0 errors, 2 pre-existing warnings outside diff), pnpm typecheck (clean), pnpm build (middleware 141kB unchanged, 22 routes compiled). Build required per [[instrumentation-edge-stub-required]] permanent rule.
+- Two-stage review (Rule 25): Stage 1 PASS (`/t/yelli/app`, `/admin`, `/superadmin`, `/api/*` all rewrite to canonical paths; headers preserved; tenant cross-check uses effective path), Stage 2 PASS (no any, TDD verified, 3 files in blast radius, no scope creep).
+- Out of scope: Next.js 16 `proxy.ts` rename (suggested by routing-middleware skill hook) — project is on Next.js 15 and that's a separate `next-upgrade` migration.
+- Errors encountered: none
+- Errors resolved: /t/{slug}/* dev routing — fixed via middleware rewrite path
+- Unblocks: (#7c) subdomain redirect smoke (was blocked on path-pattern dev URL serving).
+
 ## 2026-05-19 — Coturn config fix (coturn-config-fix)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope, 3 YAML lines + 3 env values + 1 CREDENTIALS.md section)

@@ -8,6 +8,40 @@
 
 # ---
 
+## 2026-05-20 — 🟡 [[t-slug-dev-routes-broken]] middleware must REWRITE, not just extract
+
+- Type:      🟡 fix
+- Phase:     Phase 7 (t-slug-dev-routes-broken)
+- Files:     apps/web/src/middleware.ts, apps/web/src/server/tenant-redirect.ts
+- Concepts:  middleware, routing, tenant, rewrite, /t/{slug}, NextResponse.rewrite, edge
+- Narrative:
+  Symptom: `/t/yelli/app/anything` always 404'd in localhost dev even though the
+  middleware extracted `tenantSlug="yelli"` into `x-tenant-slug` correctly.
+  Root cause: extractTenantSlug() returned the slug but the middleware NEVER
+  modified the request path. Next.js then tried to serve `/t/[slug]/app/...`
+  which has no route handler. The bug was invisible to existing tests because
+  buildTenantRedirectUrl tests only assert URL STRINGS — they never serve a
+  request through the middleware → route stack.
+  Fix: added pure helper `stripTenantPathPrefix(path, slug)` and wired
+  `NextResponse.rewrite(effectivePath, { request: { headers } })` into the
+  middleware after the tenant cross-check passes. Three places needed the
+  stripped path: (a) `isProtected` check — without it `/t/yelli/app/foo`
+  wasn't being treated as a protected route, so unauthenticated users
+  silently passed through; (b) `resolveTenantRedirect.path` — without it the
+  `/superadmin` bypass didn't match dev URLs; (c) the rewrite itself.
+  Diagnostic heuristic worth remembering: if pure-function tests pass but
+  the route still 404s, the integration layer (middleware/rewrites/route
+  resolution) is the gap — pure tests cover decision logic, NOT request
+  serving. Next time, write at least one e2e or supertest-style integration
+  test that asserts a 200 from an actual fetch through middleware.
+  Headers (including x-tenant-slug) DO survive `NextResponse.rewrite` when
+  passed via the `{ request: { headers } }` option — verified via build
+  output (middleware bundle unchanged at 141kB, no regressions in 186 tests).
+  callbackUrl preserves the ORIGINAL `/t/{slug}/...` so login lands the user
+  back on the same tenant URL after auth.
+
+# ---
+
 ## 2026-05-20 — 🟡 coturn `--no-tlsv1_1` flag removed in modern image — use minimum-version flags instead
 
 - Type:      🟡 fix

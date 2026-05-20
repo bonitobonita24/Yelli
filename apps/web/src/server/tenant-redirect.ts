@@ -96,3 +96,28 @@ export function buildTenantRedirectUrl(args: {
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * Strip `/t/{slug}` prefix from a pathname, returning the effective path
+ * that downstream Next.js route resolution should serve.
+ *
+ *   /t/yelli/app/foo + slug="yelli" → /app/foo
+ *   /t/yelli/app     + slug="yelli" → /app
+ *   /t/yelli/        + slug="yelli" → /
+ *   /t/yelli         + slug="yelli" → /
+ *   /app/foo         + slug="yelli" → /app/foo  (no-op)
+ *   /t/other/app     + slug="yelli" → /t/other/app  (no-op — slug arg mismatch)
+ *
+ * Pure function. The middleware passes the strip result to
+ * `NextResponse.rewrite` so existing /app, /admin, /superadmin route
+ * handlers serve dev URLs that carry the tenant slug in the path.
+ */
+export function stripTenantPathPrefix(path: string, slug: string): string {
+  if (!slug) return path;
+  const match = path.match(
+    new RegExp(`^/t/${escapeRegex(slug)}(?:/(.*))?$`),
+  );
+  if (!match) return path;
+  const rest = match[1] ?? "";
+  return rest === "" ? "/" : `/${rest}`;
+}

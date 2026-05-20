@@ -12,6 +12,7 @@ import { authConfig } from "@/server/auth.config";
 import {
   buildTenantRedirectUrl,
   resolveTenantRedirect,
+  stripTenantPathPrefix,
 } from "@/server/tenant-redirect";
 
 // Edge-safe Auth.js instance — uses the shell config without Credentials/bcrypt/Prisma.
@@ -62,13 +63,29 @@ export default auth(async (req) => {
     return NextResponse.next();
   }
 
+  const host = req.headers.get("host") ?? "";
+  const hostname = host.split(":")[0] ?? "";
+  const tenantSlug = extractTenantSlug(hostname, path);
+
+  // (t-slug-dev-routes-broken): when slug arrives via /t/{slug}/<rest> on
+  // localhost dev, strip the prefix so isProtected, the tenant cross-check,
+  // and downstream route resolution all see the canonical /app, /admin,
+  // /superadmin paths. Without the strip, /t/yelli/app always 404s because
+  // there is no route handler under /t/[slug]/.
+  const effectivePath = tenantSlug
+    ? stripTenantPathPrefix(path, tenantSlug)
+    : path;
+  const wasPathStripped = effectivePath !== path;
+
   const isProtected = PROTECTED_PREFIXES.some(
-    (p) => path === p || path.startsWith(`${p}/`),
+    (p) => effectivePath === p || effectivePath.startsWith(`${p}/`),
   );
 
   const session = req.auth;
 
-  // Redirect unauthenticated users attempting protected routes to login
+  // Redirect unauthenticated users attempting protected routes to login.
+  // callbackUrl preserves the ORIGINAL /t/{slug}/... so login returns the
+  // user to the same tenant-prefixed URL.
   if (isProtected && !session?.user) {
     const loginUrl = new URL("/login", nextUrl.origin);
     loginUrl.searchParams.set(
@@ -78,21 +95,18 @@ export default auth(async (req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  const host = req.headers.get("host") ?? "";
-  const hostname = host.split(":")[0] ?? "";
-  const tenantSlug = extractTenantSlug(hostname, path);
-
   // §TENANT MIDDLEWARE SAFETY (security.md): on protected routes, the
   // URL-derived org slug must match the session's organizationSlug, or
   // we redirect to the user's correct subdomain. Super-admins get an
   // exception on /superadmin paths only (Phase 7 #7c option C). The
   // slug now lives in the JWT (Phase 7 #7c-1) so no DB round-trip here.
+  // Pass effectivePath so the /superadmin bypass matches dev URLs too.
   if (isProtected && session?.user && tenantSlug) {
     const decision = resolveTenantRedirect({
       urlSlug: tenantSlug,
       sessionSlug: session.user.organizationSlug,
       isSuperAdmin: session.user.isSuperAdmin,
-      path,
+      path: effectivePath,
     });
     if (decision.kind === "redirect") {
       const redirectUrl = buildTenantRedirectUrl({
@@ -119,6 +133,19 @@ export default auth(async (req) => {
     requestHeaders.set("x-user-id", session.user.id);
     requestHeaders.set("x-organization-id", session.user.organizationId);
     requestHeaders.set("x-organization-slug", session.user.organizationSlug);
+  }
+
+  // (t-slug-dev-routes-broken): rewrite to the stripped path so Next.js
+  // route resolution serves the existing /app, /admin, /superadmin tree.
+  // Headers (including x-tenant-slug) are preserved through the rewrite.
+  if (wasPathStripped) {
+    const rewriteUrl = new URL(
+      effectivePath + nextUrl.search,
+      nextUrl.origin,
+    );
+    return NextResponse.rewrite(rewriteUrl, {
+      request: { headers: requestHeaders },
+    });
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } });

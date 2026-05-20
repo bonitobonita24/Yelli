@@ -16,7 +16,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildTenantRedirectUrl, resolveTenantRedirect } from "@/server/tenant-redirect";
+import {
+  buildTenantRedirectUrl,
+  resolveTenantRedirect,
+  stripTenantPathPrefix,
+} from "@/server/tenant-redirect";
 
 describe("resolveTenantRedirect", () => {
   it("allows when no URL slug (apex / localhost without /t/ prefix)", () => {
@@ -176,5 +180,87 @@ describe("buildTenantRedirectUrl", () => {
     });
     expect(url.hostname).toBe("acme.yelli.powerbyte.app");
     expect(url.port).toBe("8443");
+  });
+});
+
+describe("stripTenantPathPrefix", () => {
+  // (t-slug-dev-routes-broken) — middleware rewrites /t/{slug}/<rest> → /<rest>
+  // so existing /app, /admin, /superadmin route handlers serve dev URLs that
+  // carry the tenant slug in the path. Without this, /t/yelli/app/foo always
+  // 404s because no route handler exists under /t/[slug]/.
+
+  it("strips /t/{slug}/ prefix with trailing path", () => {
+    expect(stripTenantPathPrefix("/t/yelli/app/meetings", "yelli")).toBe(
+      "/app/meetings",
+    );
+  });
+
+  it("strips /t/{slug}/ prefix with single trailing segment", () => {
+    expect(stripTenantPathPrefix("/t/yelli/app", "yelli")).toBe("/app");
+  });
+
+  it("strips /t/{slug} (no trailing slash) to /", () => {
+    expect(stripTenantPathPrefix("/t/yelli", "yelli")).toBe("/");
+  });
+
+  it("strips /t/{slug}/ (trailing slash, no further segments) to /", () => {
+    expect(stripTenantPathPrefix("/t/yelli/", "yelli")).toBe("/");
+  });
+
+  it("strips /t/{slug}/ prefix from admin paths", () => {
+    expect(stripTenantPathPrefix("/t/acme/admin/users", "acme")).toBe(
+      "/admin/users",
+    );
+  });
+
+  it("strips /t/{slug}/ prefix from superadmin paths", () => {
+    expect(
+      stripTenantPathPrefix("/t/acme/superadmin/platform-settings", "acme"),
+    ).toBe("/superadmin/platform-settings");
+  });
+
+  it("strips /t/{slug}/ prefix from api paths", () => {
+    expect(stripTenantPathPrefix("/t/acme/api/trpc/foo", "acme")).toBe(
+      "/api/trpc/foo",
+    );
+  });
+
+  it("returns path unchanged when no /t/ prefix present", () => {
+    expect(stripTenantPathPrefix("/app/meetings", "yelli")).toBe(
+      "/app/meetings",
+    );
+  });
+
+  it("returns path unchanged when slug is empty string", () => {
+    expect(stripTenantPathPrefix("/t/yelli/app", "")).toBe("/t/yelli/app");
+  });
+
+  it("returns path unchanged when slug arg does not match path slug", () => {
+    // Should never occur in practice — extractTenantSlug returns the slug FROM
+    // the path. But if it ever does, do not strip (defensive: never invent
+    // routes that don't reflect the actual URL).
+    expect(stripTenantPathPrefix("/t/other/app", "yelli")).toBe("/t/other/app");
+  });
+
+  it("does not strip /tenants/* — only the exact /t/ segment", () => {
+    expect(stripTenantPathPrefix("/tenants/yelli/app", "yelli")).toBe(
+      "/tenants/yelli/app",
+    );
+  });
+
+  it("does not strip slug-lookalike sub-paths like /t/yelli-other", () => {
+    // The slug is "yelli" and the path is /t/yelli-other/app — the SECOND
+    // segment is not "yelli", so no strip. extractTenantSlug would not have
+    // returned "yelli" for this path; this is a defensive guard.
+    expect(stripTenantPathPrefix("/t/yelli-other/app", "yelli")).toBe(
+      "/t/yelli-other/app",
+    );
+  });
+
+  it("escapes regex-special characters in slug (defensive — slug should be alphanumeric)", () => {
+    // Slugs are validated upstream to be [a-z0-9-]+; this guard ensures the
+    // helper itself doesn't blow up if a regex-special char ever leaks in.
+    expect(stripTenantPathPrefix("/t/a.b/app", "a.b")).toBe("/app");
+    expect(stripTenantPathPrefix("/t/acme/app", "a.b")).toBe("/t/acme/app");
   });
 });
