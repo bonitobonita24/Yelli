@@ -9,7 +9,10 @@ import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
 import { authConfig } from "@/server/auth.config";
-import { shouldBypassAuthForGuest } from "@/server/guest-bypass";
+import {
+  GUEST_BYPASS_HEADER,
+  shouldBypassAuthForGuest,
+} from "@/server/guest-bypass";
 import {
   buildTenantRedirectUrl,
   resolveTenantRedirect,
@@ -147,6 +150,16 @@ export default auth(async (req) => {
     requestHeaders.set("x-user-id", session.user.id);
     requestHeaders.set("x-organization-id", session.user.organizationId);
     requestHeaders.set("x-organization-slug", session.user.organizationSlug);
+  }
+
+  // (guest-meeting-layout-bypass): propagate the bypass decision to the
+  // /app/* Server Component layout so it can skip its own auth() gate +
+  // skip wrapping the guest tree in <SocketProvider>. The decision was
+  // made up at line 87 using the URL — the layout has no way to read the
+  // URL in a Server Component, so we pass the boolean through a request
+  // header. See @/server/guest-bypass for the consumer side.
+  if (isGuestBypass) {
+    requestHeaders.set(GUEST_BYPASS_HEADER, "1");
   }
 
   // (t-slug-dev-routes-broken): rewrite to the stripped path so Next.js

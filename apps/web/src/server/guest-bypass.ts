@@ -33,3 +33,21 @@ export function shouldBypassAuthForGuest(args: {
   if (!MEETING_PATH_RE.test(args.path)) return false;
   return args.searchParams.get("guest") === "1";
 }
+
+/**
+ * Custom request header the middleware sets when the bypass applies.
+ * The /app/* Server Component layout reads this header to skip its own
+ * auth() + redirect("/login") gate and skip wrapping the guest tree in
+ * the authenticated SocketProvider + IncomingCallDialog.
+ *
+ * Header naming: `x-yelli-guest-bypass` is project-namespaced to avoid
+ * any collision with platform headers (e.g. CDN/proxy/Vercel custom
+ * headers all use `x-vercel-*` or `x-fwd-*` style names). Strict
+ * equality on the value `"1"` (no fuzzy truthiness — never accept
+ * `"true"`, `"on"`, or empty/whitespace).
+ */
+export const GUEST_BYPASS_HEADER = "x-yelli-guest-bypass" as const;
+
+export function isGuestBypassFromHeaders(headers: Headers): boolean {
+  return headers.get(GUEST_BYPASS_HEADER) === "1";
+}
