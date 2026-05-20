@@ -8,7 +8,102 @@
 
 # ---
 
-## 2026-05-20 — 🔴 [[dev-app-redis-url-invalid]] yelli_dev_app instrumentation crash on REDIS_URL
+## 2026-05-20 — ⚖️ [[url-unsafe-chars-in-interpolated-passwords]] base64 `/+=` + inline compose URL = boot crash
+
+- Type:      ⚖️ trade-off (also acts as a 🟤 decision for future Phase 3 generation)
+- Phase:     Phase 7 (dev-app-redis-url ticket)
+- Files:     packages/db/prisma/schema.prisma, .env.dev, deploy/compose/dev/docker-compose.app.yml (compose pattern, NOT modified this ticket)
+- Concepts:  env-validation, url-encoding, base64, openssl, compose-interpolation, prisma-binary-targets, musl, alpine, docker
+- Narrative:
+  Two bugs stacked. The visible one (REDIS_URL) was on the ticket; the
+  Prisma binary issue surfaced only after the first was cleared, and
+  fixing both was necessary to deliver the ticket's actual value.
+
+  BUG A — base64 `/+=` × inline compose URL interpolation:
+  Phase 3 generates service passwords via:
+    openssl rand -base64 32 | tr -d '\n' | head -c 22
+  Base64 alphabet includes `/`, `+`, `=`. For REDIS_PASSWORD this is
+  fine when consumed as-is by valkey-server (it accepts any bytes via
+  --requirepass). But compose/dev/docker-compose.app.yml constructs:
+    REDIS_URL: redis://:${REDIS_PASSWORD}@${COMPOSE_PROJECT_NAME}_valkey:6379
+  by raw string interpolation. With password `Ro2JxvBIBJ/aEkhvALnFB3`,
+  the result is `redis://:Ro2JxvBIBJ/aEkhvALnFB3@yelli_dev_valkey:6379`
+  — WHATWG URL parses this as user="" password="Ro2JxvBIBJ" path=
+  "aEkhvALnFB3@yelli_dev_valkey:6379" which is structurally malformed.
+  Zod's `.url()` rejects → instrumentation hook throws → app crashes
+  at boot. All routes return HTTP 500. Container shows `Up (unhealthy)`.
+
+  Recognition heuristic: any `Up (unhealthy)` Next.js app + uniform
+  HTTP 500 across all routes + `instrumentation` in the stack trace =
+  env-validation crash at startup. Diagnostic:
+    docker logs <container> 2>&1 | grep -B2 -A8 "Invalid server"
+  Zod prints the field name + failure reason.
+
+  FIX (this ticket, dev only): regenerate REDIS_PASSWORD via
+    openssl rand -hex 16   # 32 chars, no /+= ever
+  Update .env.dev REDIS_PASSWORD AND REDIS_URL to match (both fields
+  in lockstep). `docker compose down && up -d` to apply.
+
+  FUTURE PHASE-3 POLICY (decision, not yet implemented): when a
+  password feeds into a URL via raw compose interpolation, it MUST
+  be URL-safe. Either:
+    (a) generate as hex: `openssl rand -hex N`
+    (b) strip URL-special chars: `openssl rand -base64 32 | tr -d '/+=\n' | head -c 22`
+    (c) build the full URL_DOCKER env var in .env.* with URL-encoded
+        password, and have compose reference `${REDIS_URL_DOCKER}`
+        instead of constructing inline — moves the encoding burden to
+        the env file (where humans can verify) instead of compose
+        (where Docker offers no URL-encode function).
+
+  Same class of bug applies anywhere a Phase 3 password feeds into a
+  URL via compose: PostgreSQL DATABASE_URL, PgBouncer DATABASE_URL,
+  MinIO endpoints, etc. The current bootstrap may have produced
+  similar latent vulnerabilities in staging/prod env files — gitignored,
+  can't verify from here, but worth auditing.
+
+  BUG B — Prisma engine binary mismatch on Alpine runtime:
+  After clearing BUG A, app boots past instrumentation but crashes
+  on first DB query with:
+    PrismaClientInitializationError: Prisma Client could not locate
+    the Query Engine for runtime "linux-musl-openssl-3.0.x".
+    This happened because Prisma Client was generated for
+    "debian-openssl-3.0.x", but the actual deployment required
+    "linux-musl-openssl-3.0.x".
+  Root cause: host (WSL2 debian/glibc) regenerates the Prisma client
+  on every pnpm install / pnpm db:generate. The Dockerfile builds on
+  node:22-alpine (musl) and the COPY step brings .prisma/client/ from
+  the host build context — so the wrong .so.node ships into the
+  container.
+
+  FIX: in packages/db/prisma/schema.prisma, declare both targets:
+    generator client {
+      provider      = "prisma-client-js"
+      binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+    }
+  Run `pnpm db:generate`. Confirm both files exist in
+    node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/
+  — namely libquery_engine-debian-openssl-3.0.x.so.node AND
+  libquery_engine-linux-musl-openssl-3.0.x.so.node. Prisma picks the
+  right one at runtime per `process.platform` + libc detection.
+
+  ⚠ Recognition heuristic for ANY Prisma-in-Alpine deployment in this
+  repo or others derived from it: if schema.prisma omits binaryTargets,
+  the Dockerfile build WILL produce a container that crashes on first
+  query the moment any path actually queries the DB (instrumentation
+  alone might not, but any tRPC mutation/query will).
+
+  STACKED-BUG RULE: when a ticket fix uncovers a second blocker that
+  was latent BEHIND the first, fix both in the same ticket if (and
+  only if) the second is small AND was masked by the first AND
+  delivering the ticket's stated value requires fixing both. Precedent:
+  [[coturn-no-tlsv1-1-flag-dropped]] — that ticket fixed BOTH a
+  placeholder HMAC secret AND a deprecated `--no-tlsv1_1` flag because
+  neither alone would unblock WebRTC. This ticket follows the same
+  pattern: REDIS_URL alone wouldn't unblock browser smoke (the actual
+  stated value); Prisma binary was the second gate. Document in
+  CHANGELOG_AI as "scope expanded mid-ticket" with reasoning.
+
+# ---
 
 - Type:      🔴 gotcha
 - Phase:     Phase 7 (root-landing-page session — incidental finding, NOT this ticket's scope)

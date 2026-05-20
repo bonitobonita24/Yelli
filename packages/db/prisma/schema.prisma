@@ -15,7 +15,12 @@
 // =============================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // native = host (WSL2 dev, debian glibc); linux-musl-openssl-3.0.x =
+  // the alpine-based runtime in apps/web/Dockerfile. Both engines must
+  // be available so the .prisma/client copied from host into the Alpine
+  // image at build time can resolve the right .so for its libc variant.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
