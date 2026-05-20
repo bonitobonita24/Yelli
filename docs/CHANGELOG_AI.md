@@ -22,6 +22,27 @@
 
 # ---
 
+## 2026-05-20 — Root landing page (f) (root-landing-page)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; minimal stub per user choice of 2 options).
+- Why: Per PRODUCT.md line 233 (`/` = "Public landing page (SaaS) or login redirect (self-hosted)") and Yelli is the SaaS deployment (multi-tenant). The prior root page was a 10-line auth-redirect (self-hosted style) — never matched the SaaS spec. Closes (f) Root landing page from the Phase 7 #17 backlog queue.
+- Files added:
+  - apps/web/src/lib/landing/cta.ts (~28 lines) — pure helper `getLandingCTAs({isAuthed}): {primary, secondary?}` returning plain-data CTA descriptors. Authed visitors get `{ primary: { href:"/app", label:"Go to app" } }` only; unauthed get `{ primary: { href:"/register", label:"Get started" }, secondary: { href:"/login", label:"Sign in" } }`. Plain data (no functions, no JSX) so Server→Client serialization is safe if a Client Component ever consumes it.
+  - apps/web/src/lib/landing/cta.test.ts (~50 lines, 6 RED→GREEN cases) — covers both branches, locks the funnel priority (primary=/register for unauthed not /login), guards against accidental Sign-in promotion, asserts plain-data shape, ensures /app never becomes /login for authed.
+- Files modified:
+  - apps/web/src/app/page.tsx — replaced the 10-line redirect with a minimal public landing: header (Yelli logo + nav with secondary + primary CTAs), hero (h1 + lede + CTA buttons), thin footer. Server Component awaits `auth()` once and calls `getLandingCTAs({ isAuthed: Boolean(session?.user) })`. Uses `<Button asChild>` + `<Link>` from `@yelli/ui/button` + `next/link` per established login-page pattern. All Tailwind utility classes via shadcn/ui CSS variables — no hardcoded colors (Rule 21 graceful degradation: no design-system/MASTER.md present, falling back to shadcn defaults).
+- Files deleted: none
+- Schema/migrations: none
+- Behavior: authed visitors see the same landing with a "Go to app" → /app primary CTA (per user choice over force-redirect — matches Vercel/Stripe pattern, lets users share the brand URL); unauthed see "Get started" + "Sign in" buttons.
+- Tests: 186 → 192 (+6 RED→GREEN for `getLandingCTAs`).
+- Validation: pnpm lint ✓ 0 errors (2 pre-existing warnings outside diff unchanged); pnpm typecheck ✓ clean; pnpm build ✓ 22 routes + middleware 141kB unchanged; `/` route now ƒ 1.75kB / 115kB first-load (was a 10-line redirect — same dynamic SSR posture, just renders HTML instead of issuing 307).
+- Browser smoke: BLOCKED on pre-existing dev infra issue (yelli_dev_app container has been failing instrumentation hook with `REDIS_URL: Invalid url` for 2h+ before this session — see queue note). Risk-mitigated by: (a) build compilation success, (b) full unit coverage of the only branching logic (CTA selection), (c) Server Component with no client interactivity / no client-side data fetching, (d) Tailwind utility classes only (no custom CSS), (e) shadcn `<Button asChild>` pattern already battle-tested across `/login`, `/register`, `/forgot-password`.
+- Two-stage review (Rule 25): Stage 1 spec PASS (PRODUCT.md `/` is public + landing + matches user-confirmed scope: hero + two CTAs + footer + authed-show-Go-to-app); Stage 2 quality PASS (no `any` types, TDD RED→GREEN evidenced, scope = 3 files matching plan, no scope creep, conventional commit ahead, shadcn primitives only — no MUI/etc.).
+- Out of scope: design-system/MASTER.md generation (Rule 21 graceful degradation — fall back to shadcn neutral defaults); marketing depth (features, pricing teaser, multi-column footer) — user chose minimal stub; routing-middleware skill's `proxy.ts` Next.js 16 rename suggestion (different ticket).
+- New finding queued (NOT fixed in this ticket): 🔴 yelli_dev_app container fails instrumentation hook with `REDIS_URL: Invalid url` — likely .env.dev REDIS_URL was clobbered by an unrelated session OR schema added a stricter URL parse. Worth a (dev-app-redis-url) ticket if it doesn't self-heal on next container rebuild.
+- Errors encountered: none in this ticket's code path
+- Errors resolved: prior root page didn't match PRODUCT.md spec — replaced with public landing
+
 ## 2026-05-20 — /t/{slug}/* dev routes broken (t-slug-dev-routes-broken)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope, 3 files / 146 insertions / 8 deletions)

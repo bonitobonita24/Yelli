@@ -8,6 +8,41 @@
 
 # ---
 
+## 2026-05-20 — 🔴 [[dev-app-redis-url-invalid]] yelli_dev_app instrumentation crash on REDIS_URL
+
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (root-landing-page session — incidental finding, NOT this ticket's scope)
+- Files:     apps/web/.env.dev (suspected), apps/web/src/env.ts (suspected schema tightening)
+- Concepts:  dev-infra, env-validation, instrumentation, redis-url, zod, container-restart
+- Narrative:
+  Symptom: `curl http://localhost:43512/` → HTTP 500 "Internal Server Error".
+  All routes (/, /login, /api/health) return 500. Container is in `Up Xh
+  (unhealthy)` state — running but failing healthcheck. Root cause from
+  `docker logs yelli_dev_app | grep -A8 "Invalid server"`:
+    ❌ Invalid server environment variables:
+      REDIS_URL: Invalid url
+    Failed to prepare server Error: An error occurred while loading
+    instrumentation hook: Invalid server environment variables.
+  The instrumentation hook (apps/web/src/instrumentation.ts and its
+  transitive imports) runs the @yelli/web env.ts Zod schema at startup.
+  Either: (a) the value of REDIS_URL in .env.dev no longer parses as a
+  valid URL (someone clobbered it with a non-URL string), OR (b) the
+  schema was tightened to require a stricter URL form than what's in
+  .env.dev (e.g. redis:// → rediss://, or trailing-slash sensitivity).
+  Diagnostic discovered: when an app shows `Up (unhealthy)` for hours,
+  ALL routes 500 — there's nothing dynamic returning the 500, the
+  instrumentation hook crashed and the server never finished init.
+  Recovery path (NOT exercised in this session — punted to a follow-up
+  ticket): (1) compare .env.dev REDIS_URL value against env.ts schema
+  for the REDIS_URL field, (2) verify the format matches what BullMQ +
+  ioredis expect (redis://[:password@]host:port[/db]), (3) restart the
+  container so the new env is picked up — `docker compose restart app`.
+  Recognition heuristic: any `Up (unhealthy)` Next.js app + uniform
+  HTTP 500 across all routes + instrumentation in the stack trace =
+  env-validation crash at startup. Always check `docker logs ... |
+  grep -B2 -A8 "Invalid server"` first — that's where Zod prints the
+  field name and the failure reason.
+
 ## 2026-05-20 — 🟡 [[t-slug-dev-routes-broken]] middleware must REWRITE, not just extract
 
 - Type:      🟡 fix
