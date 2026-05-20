@@ -24,14 +24,42 @@ LAST_DONE_TWO_PRIOR_X: 2026-05-19 Task #21 (admin-users-list-tenant-scope) — T
 
 LAST_DONE_TWO_PRIOR: 2026-05-19 Rule 16 cleanup smoke pass — Tier 2 single-session Opus 4.7 controller (~110K context). Playwright MCP with system Chrome ran 12 smoke tasks: 6 PASSED, 1 PARTIAL (#3 meeting WebRTC failed on coturn), 5 BLOCKED. One code fix shipped inline: LIVEKIT_WS_URL → LIVEKIT_URL env rename across env.ts + lib/livekit/client.ts (squash SHA `f9f88bf`). Three findings queued as tickets — closed: `(admin-users-list-tenant-scope)` via Task #21, closed: `(coturn-config-fix)` via this session.
 
-NEXT: 1 follow-up ticket from Rule 16 cleanup findings + 3 new tickets queued from this session + remaining Phase 7 #17 backlog:
-  ✅ (dev-app-redis-url) — RESOLVED via this session. Browser smoke now unblocked for every UI ticket.
-  (phase-3-password-url-safety) — NEW. Update Phase 3 password generation spec to mandate URL-safe characters for any password that feeds into a URL via raw compose interpolation. Either `openssl rand -hex N` OR `openssl rand -base64 32 | tr -d '/+=\n' | head -c 22`. Affects future projects bootstrapped from this framework — not Yelli itself. Tier 1.
-  (compose-url-encoding-pattern) — NEW. Generalize compose to reference `${REDIS_URL_DOCKER}` (and analogous `${DATABASE_URL_DOCKER}` etc.) from .env.* — moves URL encoding burden to the env file where humans can verify, instead of compose where Docker offers no URL-encode function. Touches 9 compose files across dev/stage/prod for redis/postgres. Tier 2.
-  (staging-prod-env-audit) — NEW. Staging/prod env files are gitignored and likely have the same /+= class issue. Recommend fresh URL-safe regen on next deploy. Tier 1 per env. Cannot verify from this machine.
-  (rule-16-followup-multi-user) — When a multi-browser testing rig is available (e.g. 2 incognito Chrome profiles, or 2 machines, or Playwright extended to multi-context), re-run #14 in-call yellow-dot + #15 incoming-call dialog + #16 dept-filter routing as proper e2e smoke. Now unblocked from the coturn dimension (this session). Still needs multi-browser rig. Unit-test coverage for all 3 already shipped — this is the visual verification.
-  (i) Periodic cleanup of expired/consumed password_reset_tokens (BullMQ scheduled job) — pairs with Phase 7 #6's count-query pattern; Tier 2. UNCHANGED from prior queue.
-  (d) join/[token] tRPC — NOW UNBLOCKED on the coturn side (LiveKit + coturn both healthy as of this session). Unit tests OK against mocked mint. Ready when prioritized.
+NEXT — RESUME HERE on next session: ▶▶▶ (d) join/[token] tRPC ◀◀◀
+  ★ RECOMMENDED START — user selected this on 2026-05-20 ~12:00 GMT+8 before resting.
+  WHAT: Wire the public guest meeting join page (apps/web/src/app/(auth)/join/[token]/) end-to-end via tRPC. The page already exists from Phase 4 + Phase 7 #4 work; unit tests exist against a mocked LiveKit token mint. This ticket fully wires it: real tRPC mutation that validates the join token (DB lookup → expiry check → org scope → mint LiveKit token → return JWT + room name + display-name input form bindings).
+  WHY NOW: Both blockers cleared as of 2026-05-20 — LiveKit healthy (env rename `f9f88bf`), coturn healthy (squash `75ab34f`), dev env fully booted (squash `3677af2`), browser smoke reliable (HTTP 200 on / confirmed).
+  PRE-FLIGHT (run BEFORE coding — Phase 7 sequence):
+    1. Branch: `git checkout -b feat/join-token-trpc` from main (current tip: `c5023a3`).
+    2. Re-read STATE.md (this file) + lessons.md 🔴 + 🟤 — especially [[l6-super-admin-bypass-leak]] (any new query MUST have explicit organization_id filter for defense-in-depth) and [[livekit-env-name-mismatch]] (LIVEKIT_URL not LIVEKIT_WS_URL).
+    3. Search for existing join-token Prisma model + scaffold: `grep -rn "join_token\|JoinToken\|guest_join\|/join/" packages/db/prisma/ apps/web/src/app/\(auth\)/join/ apps/web/src/server/trpc/` — confirm the table + page scaffold + helper layout.
+    4. Search for existing LiveKit mint helper: `grep -rn "mintLiveKitToken\|getJoinToken" apps/web/src/lib/livekit/` — this is the function meetings.getJoinToken already uses; the new public router likely calls the same.
+    5. Apply Tiered Decomposition §1: file count + token estimate. Likely Tier 1 (≤4 files: page.tsx wire + new tRPC router/procedure + colocated test + maybe a pure helper for token validation).
+  TDD ORDER (Rule 25):
+    a. Write failing test for the new tRPC procedure (e.g. `join.validate({ token, displayName }) → { ok, roomName, livekitJwt, wsUrl }` happy path + expired-token + unknown-token + cross-org-leak-guard cases).
+    b. Implement procedure under publicProcedure (NOT protectedProcedure — guests have no session). MUST manually verify token belongs to a valid + non-expired join row + return only the org-scoped LiveKit JWT for the specific room. NEVER include organizationId in the response.
+    c. Wire page.tsx form submit to call the mutation; on success connect via LiveKit client.
+    d. Add display-name + token-expiry edge cases per security.md §INPUT VALIDATION (Zod .strict, bounded display-name length, reject unknown fields).
+  SECURITY GUARDS (security.md §INPUT VALIDATION + §AUTH DEFAULTS + §SUPERADMIN):
+    - Use a separate `platformPrisma` (no L6) or explicit `where: { token, expires_at: { gt: now } }` lookup — join tokens are inherently org-less at request time (guest, no session) but the row itself encodes the target org. Validate the row, then mint the LiveKit token for ONLY that room. NEVER trust client-sent room name or org id.
+    - Rate-limit per IP (rateLimiters.public — 30/min already configured).
+    - Generic error responses: "Invalid or expired link." (no enumeration — same message for unknown-token, expired-token, consumed-token).
+    - Token single-use OR time-bounded: check existing JoinToken schema for consumed_at / expires_at semantics; if consumed-once semantics are declared, mark consumed atomically inside the validation transaction.
+  BROWSER SMOKE: Now reliable. After implementing, generate a test token in DB (seed script or pgAdmin), visit `http://localhost:43512/join/<token>`, fill display name, click join, confirm LiveKit room connects + video+audio enumerate.
+  GOTCHAS:
+    - LiveKit env var: LIVEKIT_URL (not LIVEKIT_WS_URL) — [[livekit-env-name-mismatch]].
+    - Coturn auth secret already valid + WebRTC works on localhost as of `75ab34f`.
+    - Any new aggregate/list query MUST include explicit `organization_id` filter — [[l6-super-admin-bypass-leak]] defense-in-depth pattern.
+    - Build is MANDATORY per [[instrumentation-edge-stub-required]] if you touch anything transitively imported by middleware or instrumentation hook.
+  OUT OF SCOPE (do NOT pull in): turn the join token into a multi-use invite link; add chat to the join page; record the join session; analytics on join attempts. All deferrable.
+
+OTHER QUEUE (run only if you choose not to do (d) — listed in current priority order):
+  (phase-3-password-url-safety) — NEW (2026-05-20). Update Phase 3 password generation spec to mandate URL-safe characters for any password feeding URL interpolation. Affects future projects bootstrapped from this framework — not Yelli itself. Tier 1.
+  (compose-url-encoding-pattern) — NEW (2026-05-20). Generalize compose to reference `${REDIS_URL_DOCKER}` (and analogous `${DATABASE_URL_DOCKER}` etc.) from .env.* — moves URL encoding burden to the env file. Touches 9 compose files. Tier 2.
+  (staging-prod-env-audit) — NEW (2026-05-20). Staging/prod env files (gitignored) likely have the same /+= class issue. Recommend fresh URL-safe regen on next deploy. Tier 1 per env. Cannot verify from this machine.
+  (rule-16-followup-multi-user) — re-run #14/#15/#16 e2e once multi-browser rig available. Unit-test coverage shipped; this is visual verification. Now unblocked from BOTH coturn AND dev-env sides.
+  (i) Periodic cleanup of expired/consumed password_reset_tokens (BullMQ scheduled job) — Tier 2. UNCHANGED from prior queue.
+  (binding-realtime-invalidate) — Real-time bound-dept cache invalidation; Phase 7 #16 decision 8 explicitly deferred. UNCHANGED from prior queue.
+  ✅ (dev-app-redis-url) — RESOLVED 2026-05-20 (this session). Browser smoke now unblocked for every UI ticket.
   ✅ (f) Root landing page — RESOLVED via this session as `feat/root-landing-page`. Minimal stub shipped: hero + two CTAs + footer; authed users see "Go to app" primary CTA.
   (binding-realtime-invalidate) — Real-time bound-dept cache invalidation; Phase 7 #16 decision 8 explicitly deferred. UNCHANGED from prior queue.
 All tickets must write failing test first (Rule 25; vitest infra alive since Phase 7 #2; coverage gate live since Phase 7 #5). PERMANENT for any work touching `apps/web/src/instrumentation.ts` or transitively-imported modules: MUST run `pnpm build` as part of validation per [[instrumentation-edge-stub-required]].
