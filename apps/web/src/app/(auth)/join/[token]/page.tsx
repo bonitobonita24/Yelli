@@ -10,8 +10,8 @@ import { use, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { trpc } from "@/lib/trpc/react";
 
 import { FormCard } from "../../_components/form-card";
 
@@ -25,6 +25,12 @@ const joinSchema = z.object({
 
 type JoinInput = z.infer<typeof joinSchema>;
 
+// SessionStorage key the meeting page reads to pick up the guest's LiveKit
+// JWT after redirect. Per-meeting so multiple tabs don't clobber each other.
+function guestSessionStorageKey(meetingId: string): string {
+  return `yelli:guest-meeting:${meetingId}`;
+}
+
 export default function JoinPage({
   params,
 }: {
@@ -36,7 +42,6 @@ export default function JoinPage({
   const { toast } = useToast();
 
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
@@ -44,7 +49,36 @@ export default function JoinPage({
     formState: { errors },
   } = useForm<JoinInput>({ resolver: zodResolver(joinSchema) });
 
-  async function onSubmit(values: JoinInput) {
+  const exchangeMutation = trpc.meetings.exchangeGuestToken.useMutation({
+    onSuccess: ({ meetingId, livekitJwt, wsUrl, roomName }, variables) => {
+      // Persist the JWT + room metadata for the meeting page to consume.
+      // sessionStorage is per-tab and cleared on close — appropriate for an
+      // ephemeral guest credential. The JWT itself has a 6h server-side cap.
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(
+          guestSessionStorageKey(meetingId),
+          JSON.stringify({
+            livekitJwt,
+            wsUrl,
+            roomName,
+            displayName: variables.displayName,
+          }),
+        );
+      }
+      router.push(`/app/meeting/${meetingId}?guest=1`);
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not join meeting",
+        description: error.message,
+        variant: "destructive",
+      });
+      // Reset captcha — each Turnstile token is single-use.
+      setCaptchaToken(null);
+    },
+  });
+
+  function onSubmit(values: JoinInput) {
     if (!captchaToken) {
       toast({
         title: "Verification required",
@@ -53,16 +87,20 @@ export default function JoinPage({
       });
       return;
     }
-    setSubmitting(true);
-    // TODO Part 5d: trpc.meeting.exchangeGuestToken.mutate({ token, displayName: values.displayName, turnstileToken: captchaToken })
-    //              returns { meetingId, guestSessionToken }; redirect to /app/meeting/[meetingId]
-    // Temporary routing until Part 5d wires the token exchange
-    const encoded = encodeURIComponent(values.displayName);
-    router.push(`/app/meeting/${token}?guest=1&name=${encoded}`);
+    exchangeMutation.mutate({
+      token,
+      displayName: values.displayName,
+      turnstileToken: captchaToken,
+    });
   }
 
+  const submitting = exchangeMutation.isPending;
+
   return (
-    <FormCard title="Join meeting" description="Enter your name to join as a guest.">
+    <FormCard
+      title="Join meeting"
+      description="Enter your name to join as a guest."
+    >
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
         <div className="space-y-2">
           <Label htmlFor="displayName">Your name</Label>

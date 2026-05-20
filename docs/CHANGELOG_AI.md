@@ -22,6 +22,35 @@
 
 # ---
 
+## 2026-05-20 — Guest meeting join via tRPC publicProcedure (join-token-trpc)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 3 files / +345 net insertions including tests).
+- Why: Phase 7 (d) ticket. The public guest join page (`apps/web/src/app/(auth)/join/[token]/page.tsx`) existed as a form skeleton since Phase 4 Part 5d with a TODO for the tRPC mutation. Both prior blockers cleared 2026-05-20 (LiveKit env rename `f9f88bf`, coturn squash `75ab34f`, dev env REDIS+Prisma squash `3677af2`), so this ticket wires the form to a real backend.
+- Files added: none
+- Files modified:
+  - apps/web/src/server/trpc/routers/meetings.ts — new `exchangeGuestToken` publicProcedure (~115 lines incl. doc comment). Input: `{ token, displayName, turnstileToken }` strict Zod schema. Flow: rate-limit by IP → Turnstile verify → `platformPrisma.meeting.findUnique` by `meeting_link_token` (no L6 — guests have no session context) → generic NOT_FOUND for unknown/cancelled/ended/locked (no enumeration leak) → mint LiveKit JWT → record Participant row (org_id stamped from looked-up meeting, NEVER client-trusted) → return `{ meetingId, livekitJwt, wsUrl, roomName }`. Response never contains organization_id (Rule 0).
+  - apps/web/src/server/trpc/routers/meetings.test.ts — added 15 RED→GREEN tests + extended `@yelli/db` mock to expose `platformPrisma.meeting.findUnique` + `platformPrisma.participant.create` + added `verifyTurnstileToken` mock. Coverage: happy path, IP-keyed rate-limit, rate-limit-first-no-DB, turnstile failure (UNAUTHORIZED), unknown/cancelled/ended/locked all returning same generic NOT_FOUND, LiveKit mint failure (SERVICE_UNAVAILABLE), Zod min/max on token + displayName, missing turnstileToken, strict() rejection of client-injected organizationId, displayName whitespace trim verification.
+  - apps/web/src/app/(auth)/join/[token]/page.tsx — replaced `router.push` placeholder with `trpc.meetings.exchangeGuestToken.useMutation` wiring. On success: persists `{ livekitJwt, wsUrl, roomName, displayName }` to `sessionStorage` under key `yelli:guest-meeting:${meetingId}` (per-tab, ephemeral, 6h server-side JWT cap), then `router.push('/app/meeting/${meetingId}?guest=1')`. On error: resets captcha token (Turnstile is single-use). Submit disabled while `mutation.isPending`.
+- Files deleted: none
+- Schema/migrations: none (uses existing `Meeting.meeting_link_token @unique` and `Participant.guest_display_name` fields scaffolded since Phase 4 Part 3).
+- Security guards (security.md compliance):
+  - publicProcedure NOT protectedProcedure — guests have no account, the meeting_link_token IS the auth credential.
+  - `platformPrisma` used (no L6 tenant guard) — defensible because tenant context cannot be derived from a session; the looked-up meeting row carries org_id.
+  - Strict Zod schema `.strict()` rejects unknown keys (e.g. client trying to inject `organizationId`).
+  - Generic "Invalid or expired link." for ALL of unknown/cancelled/ended/locked → prevents token-validity enumeration.
+  - Rate-limit `rateLimiters.public.check(\`guestJoin:${ip}\`)` — 30/min per IP (security.md §SECURE PRODUCTION DEFAULTS tier).
+  - Turnstile verified server-side with siteverify (single-use token; server-side TURNSTILE_SECRET_KEY).
+  - LiveKit identity = `guest-${meetingId}-${Date.now()}` (unique per join, throwaway).
+  - Organization id NEVER returned to client.
+  - Participant row's org_id stamped from the looked-up meeting, NEVER from input.
+- Validation: pnpm vitest run 207/207 ✓ (was 192, +15 new for exchangeGuestToken). pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged: app/layout.tsx no-css-tags + calls.test.ts non-null assertion). pnpm typecheck ✓ clean. pnpm build ✓ 22 routes; middleware 141 kB UNCHANGED (no middleware touched); `/join/[token]` route now 7.19 kB / 172 kB first-load (was 4.06 kB / 168 kB — accounts for trpc.useMutation client wiring).
+- Two-stage review (Rule 25): Stage 1 spec PASS — STATE.md TDD acceptance criteria met: real tRPC procedure validates token + status guard + locked guard + mint LiveKit + return JWT+room+meetingId. Stage 2 quality PASS — TDD RED→GREEN evidenced (15 tests failed BEFORE procedure was implemented), zero `any` types added, scope = 3 files matching pre-declared plan (test + procedure + page wiring), strict Zod with `.strict()`, conventional commit ahead, shadcn primitives only.
+- Out of scope (logged as follow-up tickets): (a) `(guest-meeting-page-render)` — `/app/meeting/[id]?guest=1` currently hits `PROTECTED_PREFIXES` in middleware.ts:22 and 302s to /login. Need either a middleware bypass for `?guest=1` w/ sessionStorage credential OR move guest rendering to a public `/meeting/[id]` route OR inline the LiveKit room render on the join page itself. Sessionstorage payload IS ready for whichever path is chosen. (b) `(meeting-token-expiry)` — Meeting model has no `expires_at` field; tokens are effectively perpetual until host cancels or ends the meeting. Could add TTL semantics. (c) `(meeting-token-single-use)` — current tokens are re-usable (anyone with the link can join repeatedly). Could add `consumed_at` for single-use semantics. (d) `(lobby-admit-step)` — `Meeting.lobby_enabled` flag exists but isn't honored by exchangeGuestToken yet (lobby admit-by-host flow is deferred). (e) `(participant-trim-cleanup)` — `Participant.left_at` is currently never stamped by guest flow; needs a websocket/livekit-webhook integration.
+- New typed lessons: 0 — straightforward Tier 1 implementation following the established auth.register publicProcedure pattern + existing meeting.getJoinToken protectedProcedure pattern. No new gotchas surfaced; no architectural decisions made.
+- Errors encountered: 1 lint error (`@trpc/server` import-order violation in meetings.test.ts — auto-import placed `@trpc/server` after `@yelli/db`). Errors resolved: reordered imports manually per eslint-plugin-import rule.
+
+---
+
 ## 2026-05-20 — Dev app boot blocker: REDIS_URL + Prisma binary (dev-app-redis-url)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; scope expanded mid-ticket to include Prisma binary fix because REDIS_URL alone did NOT deliver the ticket's stated value of "unblock browser smoke for UI work").

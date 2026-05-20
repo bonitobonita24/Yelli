@@ -1,13 +1,24 @@
 import { TRPCError } from "@trpc/server";
-import { prisma } from "@yelli/db";
+import { platformPrisma, prisma } from "@yelli/db";
 import { MeetingCreateClientInputSchema } from "@yelli/shared";
 import { z } from "zod";
 
 import { mintLiveKitToken } from "@/lib/livekit/client";
 import { recordMeetingCallLog } from "@/server/lib/call-log";
-import { protectedProcedure, router } from "@/server/trpc/trpc";
+import { rateLimiters } from "@/server/lib/rate-limit";
+import { verifyTurnstileToken } from "@/server/lib/turnstile";
+import {
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "@/server/trpc/trpc";
 
 import type { Prisma } from "@yelli/db";
+
+// Generic error to prevent enumeration. Same message for unknown-token,
+// expired-token, cancelled/ended meetings, and locked meetings — an attacker
+// scraping links must not learn which tokens map to real meetings.
+const INVALID_LINK_MESSAGE = "Invalid or expired link.";
 
 export const meetingsRouter = router({
   /**
@@ -284,5 +295,129 @@ export const meetingsRouter = router({
       });
 
       return { ok: true, alreadyEnded: false } as const;
+    }),
+
+  /**
+   * Exchange a public meeting join token for a LiveKit JWT (guest flow).
+   *
+   * No session — guests have no account. The `meeting_link_token` (a unique
+   * field on Meeting) IS the auth credential: holding the token proves the
+   * caller was given access. Uses `platformPrisma` (no L6 tenant guard)
+   * because tenant context cannot be derived from a session; the looked-up
+   * meeting itself encodes the target organization.
+   *
+   * Security guards (security.md):
+   * - Rate-limit per IP via rateLimiters.public (30/min) — FIRST, before any work.
+   * - Turnstile bot protection — verified server-side, single-use token.
+   * - Generic NOT_FOUND for unknown / cancelled / ended / locked meetings —
+   *   prevents enumeration of valid join tokens. (Locked behaves the same as
+   *   missing from a guest's perspective; authenticated callers use a separate
+   *   FORBIDDEN-returning procedure.)
+   * - Strict Zod schema (.strict()) rejects unknown fields, including any
+   *   attempt to inject organization_id from the client.
+   * - Response never contains organization_id — only the room name, LiveKit
+   *   JWT, and meeting id needed to render the room. (Rule 0)
+   *
+   * Lobby flag handling is deferred — when lobby_enabled becomes meaningful,
+   * a future Phase 7 ticket adds an admit-by-host step before this mint.
+   */
+  exchangeGuestToken: publicProcedure
+    .input(
+      z
+        .object({
+          token: z.string().min(1).max(128),
+          displayName: z.string().trim().min(1).max(60),
+          turnstileToken: z.string().min(1).max(2048),
+        })
+        .strict(),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ip =
+        ctx.req.headers.get("x-forwarded-for") ??
+        ctx.req.headers.get("cf-connecting-ip") ??
+        "unknown";
+
+      // 1. Rate limit first — FIRST, before any external/DB call.
+      rateLimiters.public.check(`guestJoin:${ip}`);
+
+      // 2. Turnstile bot protection.
+      const turnstileResult = await verifyTurnstileToken(
+        input.turnstileToken,
+        ip === "unknown" ? undefined : ip,
+      );
+      if (!turnstileResult.success) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Captcha verification failed. Please try again.",
+        });
+      }
+
+      // 3. Look up meeting by its unique join token. No tenant context —
+      //    the token itself is the credential; the row carries the org_id.
+      const meeting = await platformPrisma.meeting.findUnique({
+        where: { meeting_link_token: input.token },
+        select: {
+          id: true,
+          organization_id: true,
+          status: true,
+          locked: true,
+          livekit_room_name: true,
+        },
+      });
+
+      // 4. Generic NOT_FOUND for unknown / cancelled / ended / locked —
+      //    same message for all to prevent token enumeration. Logging the
+      //    specific reason server-side would be appropriate; the client only
+      //    learns "Invalid or expired link."
+      if (
+        !meeting ||
+        meeting.status === "cancelled" ||
+        meeting.status === "ended" ||
+        meeting.locked
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: INVALID_LINK_MESSAGE,
+        });
+      }
+
+      // 5. Mint LiveKit JWT FIRST. If LiveKit is misconfigured, we surface
+      //    that before writing a guest Participant row that no one can use.
+      let livekitJwt: string;
+      let wsUrl: string;
+      try {
+        const result = mintLiveKitToken({
+          identity: `guest-${meeting.id}-${Date.now()}`,
+          displayName: input.displayName,
+          roomName: meeting.livekit_room_name,
+          canPublish: true,
+        });
+        livekitJwt = result.token;
+        wsUrl = result.wsUrl;
+      } catch {
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message: "Video service is temporarily unavailable. Please try again.",
+        });
+      }
+
+      // 6. Record the guest as a Participant. Organization id is taken from
+      //    the meeting row (never from client input) — defense-in-depth.
+      await platformPrisma.participant.create({
+        data: {
+          organization_id: meeting.organization_id,
+          meeting_id: meeting.id,
+          guest_display_name: input.displayName,
+          user_id: null,
+        },
+      });
+
+      // 7. Return only what the client needs to connect. NEVER organization_id.
+      return {
+        meetingId: meeting.id,
+        livekitJwt,
+        wsUrl,
+        roomName: meeting.livekit_room_name,
+      };
     }),
 });
