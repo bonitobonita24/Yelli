@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 
+import { endOfCallPolicy } from "@/components/meeting/end-of-call-policy";
 import { InCallChat } from "@/components/meeting/in-call-chat";
 import { InCallFileDropzone } from "@/components/meeting/in-call-file-dropzone";
 import { InCallRecordingIndicator } from "@/components/meeting/in-call-recording-indicator";
@@ -212,6 +213,11 @@ export function MeetingRoom({
   const startedAtRef = useRef<number>(Date.now());
   const [, forceTick] = useState(0);
 
+  // (meeting-room-guest-disconnect-redirect): host vs guest end-of-call
+  // routing/copy is decided by the pure `endOfCallPolicy` helper so it
+  // can be unit-tested in the node vitest environment.
+  const policy = endOfCallPolicy({ isGuest: guestCredentials !== undefined });
+
   // Re-render every second so the header duration ticks while connected.
   useEffect(() => {
     if (status !== "active") return;
@@ -224,10 +230,12 @@ export function MeetingRoom({
   }, [status]);
 
   useEffect(() => {
-    if (status === "ended") {
-      router.replace("/app/meetings");
+    if (status !== "ended") return;
+    const target = policy.redirectAfterEnded;
+    if (target !== null) {
+      router.replace(target);
     }
-  }, [status, router]);
+  }, [status, router, policy.redirectAfterEnded]);
 
   if (status === "connecting") {
     return (
@@ -272,11 +280,11 @@ export function MeetingRoom({
           <button
             type="button"
             onClick={() => {
-              router.replace("/app/meetings");
+              router.replace(policy.failedCtaHref);
             }}
             className="mt-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Back to meetings
+            {policy.failedCtaLabel}
           </button>
         </div>
       </div>
@@ -286,9 +294,7 @@ export function MeetingRoom({
   if (status === "ended") {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">
-          Meeting ended. Redirecting…
-        </p>
+        <p className="text-sm text-muted-foreground">{policy.endedMessage}</p>
       </div>
     );
   }

@@ -22,6 +22,39 @@
 
 # ---
 
+## 2026-05-21 — Guest meeting disconnect redirect gating (meeting-room-guest-disconnect-redirect)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 3 files / +148 / -8).
+- Why: Follow-up to `(guest-meeting-layout-bypass)` `b1b6391`. The browser smoke at the end of that ticket revealed a 4th gate: even though sessionless guests now reach the meeting page AND LiveKit signal-connects, `MeetingRoom`'s `useEffect` at `meeting-room.tsx:226-230` auto-navigates to `/app/meetings` when `status === "ended"` (which fires from `useMeetingRoom`'s `RoomEvent.Disconnected` handler). `/app/meetings` is auth-only — sessionless guests get 302'd to `/login?callbackUrl=%2Fapp%2Fmeetings`. Same redirect target was also used by the failed-state CTA button at L272-280 with the same problem. Net effect: guests fell out of the meeting page within seconds of joining.
+- Files added:
+  - apps/web/src/components/meeting/end-of-call-policy.ts (+44 lines) — NEW pure helper `endOfCallPolicy({ isGuest }): { redirectAfterEnded: string | null; endedMessage: string; failedCtaHref: string; failedCtaLabel: string }`. Host branch (`isGuest: false`): returns `/app/meetings` for both redirectAfterEnded + failedCtaHref, ended message "Meeting ended. Redirecting…" — matches prior live host UX byte-for-byte. Guest branch (`isGuest: true`): returns `null` for redirectAfterEnded (stay on page), `/` for failedCtaHref (public root, no auth), ended message "Meeting ended. Thanks for joining." (no "Redirecting…" copy since there's no redirect).
+  - apps/web/src/components/meeting/end-of-call-policy.test.ts (+88 lines) — 8 RED→GREEN tests. Host coverage: `/app/meetings` redirect after ended; existing "Redirecting…" copy preserved; `/app/meetings` + "Back to meetings" failed CTA. Guest coverage: `redirectAfterEnded === null`; no "Redirecting" substring; `/` failed CTA; defense-in-depth assertion (no `/app/meetings` href anywhere for guests). Plus pure-function determinism check (same input → same output). All 8 confirmed RED before implementation (5 failed | 3 passed-trivially against stub); all 8 GREEN after. Tested in node environment per vitest config (no jsdom/RTL needed — matches existing `guest-bypass.test.ts` + `guest-credentials.test.ts` pattern).
+- Files modified:
+  - apps/web/src/components/meeting/meeting-room.tsx (+14 / -8) — added `endOfCallPolicy` import, computed `policy = endOfCallPolicy({ isGuest: guestCredentials !== undefined })` after the hook call, gated three sites: (1) the `status === "ended"` `useEffect` now checks `policy.redirectAfterEnded !== null` before calling `router.replace(target)`; (2) the failed-state "Back to meetings" button now uses `policy.failedCtaHref` and `policy.failedCtaLabel`; (3) the ended-status render now uses `policy.endedMessage`. Effect dep array updated to include `policy.redirectAfterEnded` (string|null — stable by value).
+- Files deleted: none
+- Schema/migrations: none
+- Security guards (security.md compliance):
+  - Generic guest ended-message — identical copy regardless of disconnect cause (host ended, network drop, token expiry, LiveKit error) per §AUTH DEFAULTS / §INPUT VALIDATION. No information leak about meeting existence or status via this surface.
+  - No protected tRPC procedures called on disconnect (per STATE.md NEXT spec). The helper is fully pure — no network calls, no I/O.
+  - `isGuest` derived from `guestCredentials !== undefined` (prop-driven, server-shaped via `exchangeGuestToken` response) — not from URL query params or client-trusted state.
+- Investigation outcome (Phase 1 systematic-debugging skill — root cause first per STATE.md NEXT block): The LiveKit `connecting → disconnected` transition ~3s after signal connects (logged via "connected to Livekit Server" then state machine collapse) is the natural ICE candidate gathering window. Hosts using the same `useMeetingRoom` hook work fine per Phase 7 #14 — so this is NOT a general WebRTC bug, it's specific to the guest path. Hypotheses ranked: (a) real coturn/ICE/TURN failure on the guest path despite the `75ab34f` container fix — most likely given the ~3s timing; (b) LiveKit server kicking duplicate participants if StrictMode double-mounts both rooms with the same JWT identity; (c) `useMeetingRoom` effect re-running due to unstable `guestCredentials` object reference (the loader at `guest-meeting-room-loader.tsx:91-94` creates a fresh object literal every render). The disconnect itself is OUT OF SCOPE for this ticket — filed as new ticket `(guest-meeting-livekit-peer-disconnect)`. This ticket fixes the user-visible consequence: the redirect-to-/login bounce. With this fix, guests stay on `/app/meeting/{id}?guest=1` regardless of why the underlying disconnect fires.
+- Validation:
+  - pnpm vitest run: 24 files / 237 tests passed (was 229, +8 new for end-of-call-policy)
+  - pnpm typecheck: clean
+  - pnpm lint: 0 errors (2 pre-existing warnings outside diff unchanged — app/layout.tsx no-css-tags + calls.test.ts non-null assertion)
+  - pnpm build: 22 routes; **middleware bundle 141 kB UNCHANGED** (Edge surface guard preserved per [[instrumentation-edge-stub-required]] — meeting-room.tsx is not transitively imported by middleware/instrumentation, but the mandatory build also rules out any indirect graph regression).
+- Two-stage review (Rule 25):
+  - Stage 1 spec PASS — STATE.md NEXT scope met: gated navigation on `guestCredentials` absence (axis = `isGuest = !!guestCredentials`, not `isHost` — `isHost` for authed non-host participants is false, but they still have a session and `/app/meetings` access). Investigation done first per "INVESTIGATION FIRST" guidance; root cause delegated to new ticket. Host path byte-for-byte unchanged. Guest path: stays on page, generic copy.
+  - Stage 2 quality PASS — TDD RED→GREEN evidenced (8 tests committed alongside the helper; first vitest run showed 5 failed | 3 passed-trivially on stub, second showed 8 passed after real implementation). Zero `any` types added. Scope = exactly 3 files matching the pre-declared plan, no scope creep. Conventional commit ahead. Pure-function extraction matches established codebase pattern (`guest-bypass.ts`, `guest-credentials.ts`). Loader memoization fix deliberately DEFERRED to a separate ticket because there's no TDD path for it in the node-only vitest env (would require RTL + jsdom which are not configured) — strict adherence to TDD iron law over convenience.
+- Out of scope (logged as new follow-up tickets in STATE.md OTHER QUEUE):
+  - `(guest-meeting-livekit-peer-disconnect)` — Tier 1. Actual root cause of why peer/ICE fails ~3s after signal connects for guests. Likely coturn/TURN config still incomplete despite `75ab34f` container restart fix. Next session should add browser-side `RoomEvent.Disconnected` listener capturing the `DisconnectReason` enum value to nail the cause before fixing.
+  - `(guest-meeting-loader-memo-stability)` — Tier 1. `useMemo` the `{ livekitJwt, wsUrl }` object literal at `apps/web/src/components/meeting/guest-meeting-room-loader.tsx:91-94` so `useMeetingRoom`'s effect dep array doesn't see a fresh reference each render. Defense-in-depth — does not change the user-visible outcome (the present ticket already prevents the /login bounce) but eliminates one class of unnecessary effect re-runs.
+- New typed lessons: 0 — no novel surface. The host vs guest split was a straightforward Rule-25 TDD job with established patterns (pure helper + colocated `.test.ts` per `guest-bypass.ts` precedent). The 3-second post-signal disconnect is a real puzzle but it's a separate ticket's puzzle. No architectural decisions made.
+- Errors encountered: none.
+- Errors resolved: none.
+
+---
+
 ## 2026-05-20 — Guest meeting join via tRPC publicProcedure (join-token-trpc)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 3 files / +345 net insertions including tests).
