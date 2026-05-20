@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { trpc } from "@/lib/trpc/react";
+import { guestCredentialsStorageKey } from "@/server/guest-credentials";
 
 import { FormCard } from "../../_components/form-card";
 
@@ -24,12 +25,6 @@ const joinSchema = z.object({
 });
 
 type JoinInput = z.infer<typeof joinSchema>;
-
-// SessionStorage key the meeting page reads to pick up the guest's LiveKit
-// JWT after redirect. Per-meeting so multiple tabs don't clobber each other.
-function guestSessionStorageKey(meetingId: string): string {
-  return `yelli:guest-meeting:${meetingId}`;
-}
 
 export default function JoinPage({
   params,
@@ -56,7 +51,7 @@ export default function JoinPage({
       // ephemeral guest credential. The JWT itself has a 6h server-side cap.
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(
-          guestSessionStorageKey(meetingId),
+          guestCredentialsStorageKey(meetingId),
           JSON.stringify({
             livekitJwt,
             wsUrl,

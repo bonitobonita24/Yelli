@@ -8,9 +8,28 @@ import { trpc } from "@/lib/trpc/react";
 
 import type { CallStatus } from "./types";
 
+/**
+ * Pre-minted LiveKit credentials for a guest joining without a session.
+ * (guest-meeting-page-render): the /join/[token] flow calls the public
+ * `meetings.exchangeGuestToken` procedure which returns these, and the
+ * meeting page passes them in via this hook instead of going through
+ * `getJoinToken` (which is a protectedProcedure and would reject a
+ * sessionless request).
+ */
+export interface GuestRoomCredentials {
+  livekitJwt: string;
+  wsUrl: string;
+}
+
 interface UseMeetingRoomOptions {
   meetingId: string;
   enabled?: boolean;
+  /**
+   * When present, skip the `trpc.meetings.getJoinToken` mutation and
+   * connect with the supplied credentials. Guests have no session so
+   * the protected mutation would 401. isHost is forced false.
+   */
+  guestCredentials?: GuestRoomCredentials | undefined;
 }
 
 interface UseMeetingRoomResult {
@@ -33,6 +52,7 @@ interface UseMeetingRoomResult {
 export function useMeetingRoom({
   meetingId,
   enabled = true,
+  guestCredentials,
 }: UseMeetingRoomOptions): UseMeetingRoomResult {
   const [status, setStatus] = useState<CallStatus>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -56,12 +76,27 @@ export function useMeetingRoom({
 
     async function connect() {
       try {
-        const data = await utils.client.meetings.getJoinToken.mutate({
-          meetingId,
-        });
-
-        if (cancelled) return;
-        setIsHost(data.isHost);
+        // (guest-meeting-page-render): when pre-minted credentials are
+        // supplied, skip the protectedProcedure. Guests have no session;
+        // their JWT was minted via `meetings.exchangeGuestToken` (public).
+        let wsUrl: string;
+        let token: string;
+        if (guestCredentials) {
+          wsUrl = guestCredentials.wsUrl;
+          token = guestCredentials.livekitJwt;
+          // Guests are never hosts — the host flag is server-derived
+          // for authed users via getJoinToken; for guests the answer is
+          // always false (and we don't run getJoinToken).
+          setIsHost(false);
+        } else {
+          const data = await utils.client.meetings.getJoinToken.mutate({
+            meetingId,
+          });
+          if (cancelled) return;
+          setIsHost(data.isHost);
+          wsUrl = data.wsUrl;
+          token = data.token;
+        }
 
         const room = new Room({
           adaptiveStream: true,
@@ -86,7 +121,7 @@ export function useMeetingRoom({
           setErrorMessage("Could not access camera or microphone.");
         });
 
-        await room.connect(data.wsUrl, data.token);
+        await room.connect(wsUrl, token);
 
         if (!cancelled) {
           setRoomInstance(room);
@@ -113,7 +148,7 @@ export function useMeetingRoom({
       }
       setRoomInstance(null);
     };
-  }, [meetingId, enabled, utils.client.meetings.getJoinToken]);
+  }, [meetingId, enabled, guestCredentials, utils.client.meetings.getJoinToken]);
 
   // Phase 7 #14 — emit call:joined/call:left socket events on Room lifecycle.
   // Same wiring as useLiveKitRoom; both flows feed the same in-call roster.

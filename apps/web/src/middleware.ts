@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
 import { authConfig } from "@/server/auth.config";
+import { shouldBypassAuthForGuest } from "@/server/guest-bypass";
 import {
   buildTenantRedirectUrl,
   resolveTenantRedirect,
@@ -77,9 +78,22 @@ export default auth(async (req) => {
     : path;
   const wasPathStripped = effectivePath !== path;
 
-  const isProtected = PROTECTED_PREFIXES.some(
-    (p) => effectivePath === p || effectivePath.startsWith(`${p}/`),
-  );
+  // (guest-meeting-page-render): /app/meeting/{id}?guest=1 bypasses the
+  // PROTECTED_PREFIXES gate so guests arriving from /join/{token} can
+  // reach the meeting page without a session. Page-level validation
+  // (sessionStorage credential read) is the primary defense; this
+  // bypass only changes routing. See @/server/guest-bypass for the
+  // exact-shape match rules.
+  const isGuestBypass = shouldBypassAuthForGuest({
+    path: effectivePath,
+    searchParams: nextUrl.searchParams,
+  });
+
+  const isProtected =
+    !isGuestBypass &&
+    PROTECTED_PREFIXES.some(
+      (p) => effectivePath === p || effectivePath.startsWith(`${p}/`),
+    );
 
   const session = req.auth;
 

@@ -29,6 +29,18 @@ interface MeetingRoomProps {
   meetingId: string;
   title: string;
   recordingEnabled?: boolean;
+  /**
+   * (guest-meeting-page-render): when present, the room connects with
+   * pre-minted credentials from `meetings.exchangeGuestToken` instead
+   * of calling the protected `getJoinToken` mutation. Used by the
+   * guest meeting loader for sessionless joins.
+   */
+  guestCredentials?:
+    | {
+        livekitJwt: string;
+        wsUrl: string;
+      }
+    | undefined;
 }
 
 function MeetingInner({
@@ -190,10 +202,12 @@ export function MeetingRoom({
   meetingId,
   title,
   recordingEnabled = false,
+  guestCredentials,
 }: MeetingRoomProps) {
   const router = useRouter();
   const { room, status, errorMessage, isHost, hangup } = useMeetingRoom({
     meetingId,
+    guestCredentials,
   });
   const startedAtRef = useRef<number>(Date.now());
   const [, forceTick] = useState(0);

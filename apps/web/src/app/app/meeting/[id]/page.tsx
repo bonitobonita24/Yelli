@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { notFound, redirect } from "next/navigation";
 
+import { GuestMeetingRoomLoader } from "@/components/meeting/guest-meeting-room-loader";
 import { MeetingRoom } from "@/components/meeting/meeting-room-loader";
 import { createServerCaller } from "@/lib/trpc/server";
 import { auth } from "@/server/auth";
@@ -9,6 +10,7 @@ import type { Metadata } from "next";
 
 interface MeetingPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({
@@ -27,16 +29,34 @@ export async function generateMetadata({
   }
 }
 
-export default async function MeetingPage({ params }: MeetingPageProps) {
+export default async function MeetingPage({
+  params,
+  searchParams,
+}: MeetingPageProps) {
   const { id } = await params;
+  const search = await searchParams;
+
+  if (id.length > 64) {
+    notFound();
+  }
+
+  // (guest-meeting-page-render): the middleware bypass (see
+  // @/server/guest-bypass) lets `/app/meeting/{id}?guest=1` through
+  // without a session. Skip auth() + the protected tRPC call and
+  // render the guest loader, which validates sessionStorage
+  // credentials client-side. The LiveKit JWT (minted by
+  // meetings.exchangeGuestToken) is the actual credential.
+  if (search.guest === "1") {
+    return (
+      <div className="fixed inset-0 bg-background">
+        <GuestMeetingRoomLoader meetingId={id} />
+      </div>
+    );
+  }
 
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/login");
-  }
-
-  if (id.length > 64) {
-    notFound();
   }
 
   let meeting: { id: string; title: string; recording_enabled: boolean };
