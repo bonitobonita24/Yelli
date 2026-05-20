@@ -15,6 +15,7 @@ next-env.d.ts
 # Test artifacts
 coverage/
 playwright-report/
+.playwright-mcp/
 test-results/
 .nyc_output/
 
