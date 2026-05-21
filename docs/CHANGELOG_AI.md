@@ -22,6 +22,41 @@
 
 # ---
 
+## 2026-05-21 — Add /api/health Route Handler for Docker healthcheck (dev-app-healthcheck-route)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 2 new files / 39 insertions / 4 RED→GREEN tests + STATE.md + this CHANGELOG entry).
+- Why: Close the missing-route half of the `Up (unhealthy)` blocker recorded in lessons.md line 1290 (rule-16-cleanup-2026-05-19). All 3 compose files (`deploy/compose/{dev,stage,prod}/docker-compose.app.yml`) wget `http://localhost:3000/api/health` for the container healthcheck but the route didn't exist — containers reported `Up (unhealthy)` with a 198-failing-streak. Combined with `(dev-app-redis-url)` squash `3677af2` from 2026-05-20 (which fixed the REDIS_URL env validation crash in instrumentation.ts), both contributing factors to the `Up (unhealthy)` state are now addressed → next dev compose restart should flip yelli_dev_app from `Up (unhealthy)` to `Up (healthy)`.
+- Files added:
+  - `apps/web/src/app/api/health/route.ts` (12 lines) — sync `GET(): NextResponse` returning `{status: "ok", service: "yelli-web"}`. Public unauthenticated per security.md §AGENT PROHIBITIONS item 11 (health check is the explicit auth-exempt Route Handler exception — Docker/k8s probes can't carry credentials). Header comment documents auth-exemption rationale + flags future `/api/ready` for dependency checks. `export const runtime = "nodejs"` matches existing `/api/livekit/token` precedent.
+  - `apps/web/src/app/api/health/route.test.ts` (27 lines) — 4 RED→GREEN cases: returns 200, returns `status: "ok"`, identifies `service: "yelli-web"`, `Content-Type: application/json`. Co-located beside `route.ts` following Vitest `include: ["src/**/*.test.{ts,tsx}"]`; coverage thresholds unaffected (coverage include is `src/server/**` only — Route Handlers under `src/app/api/**` are functionally tested but not in the coverage gate).
+- Files modified: none (governance docs updated separately — STATE.md PHASE/LAST_DONE/GIT_BRANCH/NEXT blocks rewritten in same session).
+- Files deleted: none
+- Schema/migrations: none
+- Security guards (security.md compliance):
+  - /api/health is explicitly listed in §AGENT PROHIBITIONS item 11 as one of three auth-exempt Route Handler exceptions (alongside webhooks and auth callbacks). No auth check is correct — Docker/k8s probes have no credentials.
+  - Payload is constant literal `{status: "ok", service: "yelli-web"}` — no DB queries, no env values, no PII, no enumeration vector. Safe to expose publicly.
+  - No rate limiting added (would defeat the purpose — healthchecks run every 30s by design across multiple probers).
+  - No information leak: response identical regardless of system state. (For future readiness probe with DB/Valkey checks, file `/api/ready` separately with generic `ok`/`degraded` — never leak which dependency is failing.)
+- Validation:
+  - pnpm test 250/250 ✓ (+4 from 246).
+  - pnpm typecheck ✓ 0 errors 8 packages.
+  - pnpm lint ✓ 0 errors (2 pre-existing warnings on `layout.tsx` CSS tag + `calls.test.ts` non-null assertion — unchanged, not in diff).
+  - pnpm build ✓ 22 routes including new `ƒ /api/health` 139 B / 103 kB first-load + middleware 141 kB UNCHANGED (per [[instrumentation-edge-stub-required]] — new files are in `src/app/api/` not the instrumentation.ts import chain, but build verifies no transitive bundle impact).
+  - pnpm audit --audit-level=critical ✓ exit 0 (1 HIGH = documented nodemailer per [[nodemailer-cve-mitigation]] + Phase 7 #10 [[pnpm10-audit-level-ignored]] CLI flag still in effect).
+- Two-stage review (Rule 25):
+  - Stage 1 spec PASS — /api/health responds 200, minimal liveness payload (no DB/dependency checks per lessons.md line 1290 explicit guidance), public endpoint (Docker has no creds), Node.js runtime matches existing route handlers, auth-exemption rationale documented in file comment, header comment flags future /api/ready split for dependency checks.
+  - Stage 2 quality PASS — zero `any` types; `as { status: string }` etc. on parsed JSON body is explicit shape narrowing not assertion-of-unknown; TDD RED→GREEN evidenced (`Cannot find module './route'` on first vitest run → 250/250 after impl); 2-file blast radius matches lessons.md scope inventory exactly; conventional commit `feat(api): add /api/health liveness probe`; comment explains WHY (auth-exemption + liveness vs readiness boundary) not WHAT.
+- Skipped skill auto-suggestions (vercel-functions, next-cache-components, next-forge, nextjs, observability instrumentation) per Rule 28:
+  - Yelli is self-hosted on Komodo+Traefik+Docker (not Vercel; not Next.js 16 which would route through `proxy.ts` per `[[proxy-ts-false-positive]]`).
+  - The established Route Handler precedent (`apps/web/src/app/api/livekit/token/route.ts`) is the canonical pattern for this codebase — already locked.
+  - Vercel plugin observability suggestion was specifically wrong for a liveness probe: adding logging to a 30s-interval Docker healthcheck floods logs with zero signal (8,640 log lines/day across dev/stage/prod) AND adds latency to the hottest endpoint in the system. Production observability for health endpoints belongs upstream (Traefik access logs, Prometheus scrape metrics, uptime monitors) — not inside the handler.
+  - Pattern-match triggers fired on `app/**` directory match only, not on Next.js framework feature usage.
+- 0 new typed lessons logged — `[[instrumentation-edge-stub-required]]`, `[[pnpm10-audit-level-ignored]]`, and `[[nodemailer-cve-mitigation]]` covered all validation patterns. The "skip observability on liveness probe" decision is general engineering knowledge (logs/latency tradeoff for the hottest 30s endpoint), not project-specific — defensible without a typed lesson entry.
+- NEW QUEUE ITEMS: none — this ticket closes Phase 7 #17 backlog item `(dev-app-healthcheck-route)` cleanly; no follow-ups discovered.
+- Closes `(dev-app-healthcheck-route)` from Phase 7 #17 backlog queue. Squash SHA on main: `99a0b7b`. Implementation branch `feat/dev-app-healthcheck-route` (intermediate tip `af3f814`) deleted post-squash.
+
+---
+
 ## 2026-05-21 — Fix guest meeting PC connection failure via LiveKit dev compose node-IP + UDP port mapping (guest-meeting-coturn-pc-connection)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 2 files / +13 / -1 in compose + 1 new typed lesson + STATE.md + this CHANGELOG entry).
