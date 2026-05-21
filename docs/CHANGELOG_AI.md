@@ -22,6 +22,19 @@
 
 # ---
 
+## 2026-05-21 — Wire LiveKit stage+prod compose to advertise reachable host UDP port (guest-meeting-livekit-turn-stage-prod)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 2 files / 31 insertions / 7 deletions / 0 new files). Squash-merged to main as `503cafd` from `feat/guest-meeting-livekit-turn-stage-prod` branch (intermediate commit `48cf527`, branch deleted post-squash).
+- Why: Close the deferred follow-up filed in STATE.md line 13 of `e5dbb4d` at the end of `(guest-meeting-coturn-pc-connection)` `4eb4158`. Stage and prod `docker-compose.media.yml` had the same class of latent bug as dev pre-fix — broken `--rtc-port-range-start/end` flag pair (LiveKit 1.11.0 crash-loops with `flag provided but not defined`) AND no `--node-ip` (LiveKit autodetects Docker bridge IP 172.x.x.x which is unreachable from any client network, causing CLIENT_INITIATED room.connect() abort per [[livekit-client-initiated-dual-meaning]] + [[livekit-dev-docker-node-ip-port-mismatch]]). This ticket mirrors the proven dev fix pattern to stage and prod to prevent first-deploy crash-loop and ICE-unreachable failures when those environments are stood up.
+- Files added: none
+- Files modified:
+  - `deploy/compose/stage/docker-compose.media.yml` (+19/-4) — replaced `--rtc-port-range-start=7882` + `--rtc-port-range-end=7892` with singular `--udp-port=7882`; added `--node-ip=${LIVEKIT_NODE_IP}` (deployer sets public IPv4 of `livekit-staging.powerbyte.app` in `.env.staging`); updated UDP port mapping `7882-7892:7882-7892/udp` → `7882:7882/udp`; comments cross-link to dev `4eb4158` and explain the flag-rename trap + Docker-WebRTC node-ip pitfall.
+  - `deploy/compose/prod/docker-compose.media.yml` (+12/-3) — identical fix pattern; deployer sets `LIVEKIT_NODE_IP` in `.env.prod` to the public IPv4 of `livekit.yelli.powerbyte.app`.
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: none
+- Errors resolved: prevented (latent — no stage/prod rig in this branch, so the broken flags never crash-looped a running container in this session; the fix prevents the failure on first stage/prod deploy).
+
 ## 2026-05-21 — Refine describeDisconnectReason CLIENT_INITIATED description with SECOND signal-connecting heuristic (disconnect-reason-description-refine)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 cosmetic scope; 2 files / 9 insertions / 1 deletion / 0 new files).
