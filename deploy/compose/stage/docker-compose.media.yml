@@ -25,16 +25,27 @@ services:
     env_file: ../../../.env.staging
     command:
       - --bind=0.0.0.0
+      # (guest-meeting-livekit-turn-stage-prod): advertise the server's public
+      # IPv4 in ICE candidates so real-NAT clients can reach LiveKit. Without
+      # --node-ip, LiveKit autodetects the Docker bridge interface (172.x.x.x)
+      # which is unreachable from any client network. Deployer MUST set
+      # LIVEKIT_NODE_IP in .env.staging to the staging server's public IPv4
+      # (the address resolved by `livekit-staging.powerbyte.app`). Mirrors the
+      # dev fix from `(guest-meeting-coturn-pc-connection)` `4eb4158`.
+      - --node-ip=${LIVEKIT_NODE_IP}
       - --keys
       - "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       - --redis-host=${COMPOSE_PROJECT_NAME}_valkey:6379
       - --redis-password=${REDIS_PASSWORD}
       - --rtc-tcp-port=7881
-      - --rtc-port-range-start=7882
-      - --rtc-port-range-end=7892
+      # LiveKit 1.11.0 CLI does NOT recognize --rtc-port-range-start/end — they
+      # crash-loop the server with `flag provided but not defined`. The correct
+      # flag is the singular --udp-port (proven by the dev fix). LiveKit
+      # multiplexes all RTC sessions through this one UDP port.
+      - --udp-port=7882
     ports:
-      # 7882-7892 UDP for RTC media (11-port range)
-      - "7882-7892:7882-7892/udp"
+      # 7882 UDP for RTC media (singular — multiplexed by LiveKit SFU)
+      - "7882:7882/udp"
       # 7881 TCP fallback for blocked-UDP clients
       - "7881:7881"
     networks: [app_network, proxy]
