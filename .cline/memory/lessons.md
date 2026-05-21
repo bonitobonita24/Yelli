@@ -8,6 +8,19 @@
 
 # ---
 
+## 2026-05-21 — 🔴 [[livekit-client-initiated-dual-meaning]] CLIENT_INITIATED is ambiguous — fires for cleanup AND for connect-failure abort
+- Type:       🔴 gotcha
+- Phase:      Phase 7 — (guest-meeting-livekit-peer-disconnect) smoke + (guest-meeting-loader-memo-stability) attempted fix
+- Files:      apps/web/src/lib/livekit/disconnect-reason.ts, apps/web/src/lib/livekit/use-meeting-room.ts, apps/web/src/components/meeting/guest-meeting-room-loader.tsx
+- Concepts:   livekit, disconnect-reason, ice, turn, coturn, react-strictmode, useeffect-deps, smoke-test-interpretation, false-confirmation
+- Narrative:  The instrumentation ticket (guest-meeting-livekit-peer-disconnect) shipped `describeDisconnectReason` mapping CLIENT_INITIATED purely to hypothesis (c) "client-cleanup — our useEffect cleanup called room.disconnect()". A subsequent sessionless Playwright smoke captured `reason=CLIENT_INITIATED hypothesis=client-cleanup` and I declared hypothesis (c) empirically confirmed. **This was wrong.** The follow-up ticket (guest-meeting-loader-memo-stability) attempted to fix (c) by wrapping the credentials object in `useMemo` — the smoke after that fix showed the SAME `CLIENT_INITIATED` plus an additional `UNKNOWN_REASON`, AND the page rendered the "Could not join — could not establish pc connection" failed-state UI. **The page state proved the room was never fully connected** — this is hypothesis (a) transport/ICE failure, not (c).
+- Recognition heuristic: when a CLIENT_INITIATED event fires, ALWAYS check the LiveKit log line that LiveKit itself emits just before: `Abort connection attempt due to user initiated disconnect {room: …, roomID: …, participant: …, participantID: …}`. **If `roomID` is `undefined` and `participantID` is empty, the room never fully connected** — CLIENT_INITIATED here is LiveKit's INTERNAL abort path when `room.connect()` fails (e.g. ICE/TURN can't establish a peer connection). It is NOT our cleanup running on a successful connection. Conversely, if `roomID` and `participantID` are populated, the disconnect is genuinely from our cleanup or `hangup()` after a successful join.
+- Why this matters: hypothesis-mapping helpers are useful but they CANNOT disambiguate when the SDK reuses one enum value for two structurally different scenarios. The `describeDisconnectReason` description must surface the ambiguity explicitly so future smokes know to inspect the preceding LiveKit log line + the on-screen status before declaring a verdict.
+- Wider lesson: smoke verification of an instrumentation tool's CONSOLE OUTPUT is NOT smoke verification of the user-visible BEHAVIOR. Always snapshot the page state too. The page UI is the ground truth for what the user experiences; the console.warn is just one input to the diagnosis.
+- Related entries: [[livekit-env-name-mismatch]] (smoke catches what unit tests can't); [[rule-16-cleanup-2026-05-19]] (Playwright MCP single-context limitations).
+
+# ---
+
 ## 2026-05-20 — ⚖️ [[url-unsafe-chars-in-interpolated-passwords]] base64 `/+=` + inline compose URL = boot crash
 
 - Type:      ⚖️ trade-off (also acts as a 🟤 decision for future Phase 3 generation)

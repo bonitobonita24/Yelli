@@ -17,13 +17,21 @@ import { describe, expect, it } from "vitest";
 import { describeDisconnectReason } from "./disconnect-reason";
 
 describe("describeDisconnectReason — hypothesis mapping", () => {
-  it("CLIENT_INITIATED maps to hypothesis (c) — own-code cleanup", () => {
+  it("CLIENT_INITIATED maps to client-cleanup with explicit dual-meaning disambiguation", () => {
     const diagnosis = describeDisconnectReason(
       DisconnectReason.CLIENT_INITIATED,
     );
     expect(diagnosis.label).toBe("CLIENT_INITIATED");
     expect(diagnosis.hypothesis).toBe("client-cleanup");
-    expect(diagnosis.description).toMatch(/effect re-run|cleanup|hangup/i);
+    // Description must surface the ambiguity: CLIENT_INITIATED fires for BOTH
+    // explicit cleanup AND LiveKit's internal abort on connect failure.
+    // Discovered via (guest-meeting-loader-memo-stability) smoke 2026-05-21:
+    // empty roomID/participantID in the preceding LiveKit log proves the room
+    // was never fully connected → transport/ICE failure surfacing as CLIENT_INITIATED.
+    expect(diagnosis.description).toMatch(/AMBIGUOUS/);
+    expect(diagnosis.description).toMatch(/connect\(\) fails|ICE|transport/i);
+    expect(diagnosis.description).toMatch(/cleanup|hangup|unstable refs/i);
+    expect(diagnosis.description).toMatch(/roomID|participantID/i);
   });
 
   it("DUPLICATE_IDENTITY maps to hypothesis (b) — StrictMode double-mount", () => {
