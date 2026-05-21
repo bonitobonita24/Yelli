@@ -22,6 +22,19 @@
 
 # ---
 
+## 2026-05-21 — Refine describeDisconnectReason CLIENT_INITIATED description with SECOND signal-connecting heuristic (disconnect-reason-description-refine)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 cosmetic scope; 2 files / 9 insertions / 1 deletion / 0 new files).
+- Why: Close the cosmetic queue item filed at the end of `(guest-meeting-coturn-pc-connection)` (STATE.md line 13 of `e5dbb4d`). Today's sessionless guest smoke disproved the over-broad part of yesterday's `(disconnect-reason-dual-meaning)` heuristic ("empty roomID/participantID = transport failure") — the same signature also fires for React StrictMode cleanup mid-connect (variant a). The actual fastest disambiguator is the SECOND `Signal connecting to …` log line preceding the disconnect: present = LiveKit retried internally before aborting = failed-connect variant (b); single line = real cleanup variant (a). This ticket surfaces that heuristic in the helper's `description` text so every future `[livekit] RoomEvent.Disconnected — reason=CLIENT_INITIATED` console.warn carries the faster rule alongside the existing roomID/participantID cross-check.
+- Files added: none
+- Files modified:
+  - `apps/web/src/lib/livekit/disconnect-reason.ts` (+1/-1) — CLIENT_INITIATED `description` field rewritten to lead with the SECOND-signal-connecting heuristic, then preserve the existing `roomID/participantID` empty/populated cross-check as a backup. No enum mapping change, no `hypothesis` change (still "client-cleanup"), no `label` change. All 17 other enum values unchanged.
+  - `apps/web/src/lib/livekit/disconnect-reason.test.ts` (+8 lines) — added one new assertion to the existing CLIENT_INITIATED test expecting `/SECOND.*[Ss]ignal.*[Cc]onnecting/`. Regex tolerates phrasing variants without over-fitting. All 4 prior CLIENT_INITIATED assertions retained (AMBIGUOUS marker, connect()/ICE/transport keyword, cleanup/hangup/unstable refs keyword, roomID/participantID keyword) so the dual-meaning surfacing is regression-locked.
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: TDD RED step on the new assertion ("expected '…' to match /SECOND.*[Ss]ignal.*[Cc]onnecting/") at 18:27:03 — by design, before the helper description edit.
+- Errors resolved: GREEN at 18:27:29 after editing `disconnect-reason.ts` CLIENT_INITIATED description. Full suite 250/250 ✓, typecheck ✓ 0 errors 8 packages, lint ✓ 0 errors (2 pre-existing warnings unchanged), build ✓ middleware 141 kB unchanged, audit ✓ exit 0.
+
 ## 2026-05-21 — Add /api/health Route Handler for Docker healthcheck (dev-app-healthcheck-route)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 2 new files / 39 insertions / 4 RED→GREEN tests + STATE.md + this CHANGELOG entry).
