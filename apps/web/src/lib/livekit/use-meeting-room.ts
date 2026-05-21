@@ -1,8 +1,9 @@
 "use client";
 
-import { Room, RoomEvent } from "livekit-client";
+import { Room, RoomEvent, type DisconnectReason } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { describeDisconnectReason } from "@/lib/livekit/disconnect-reason";
 import { useEmitCallParticipation } from "@/lib/livekit/use-emit-call-participation";
 import { trpc } from "@/lib/trpc/react";
 
@@ -111,7 +112,19 @@ export function useMeetingRoom({
           void room.localParticipant.enableCameraAndMicrophone();
         });
 
-        room.on(RoomEvent.Disconnected, () => {
+        room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+          // (guest-meeting-livekit-peer-disconnect): log the DisconnectReason
+          // before flipping status to "ended" so a browser smoke against the
+          // sessionless guest path can identify which of the three ranked
+          // hypotheses is causing the ~3s post-signal-connect disconnect.
+          // The diagnosis is intentionally console.warn (not console.log) so
+          // it surfaces in default DevTools filters without needing verbose
+          // logging on.
+          const diagnosis = describeDisconnectReason(reason);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[livekit] RoomEvent.Disconnected — reason=${diagnosis.label} hypothesis=${diagnosis.hypothesis} :: ${diagnosis.description}`,
+          );
           if (cancelled) return;
           setStatus("ended");
         });
