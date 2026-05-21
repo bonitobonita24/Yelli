@@ -32,6 +32,14 @@ describe("describeDisconnectReason — hypothesis mapping", () => {
     expect(diagnosis.description).toMatch(/connect\(\) fails|ICE|transport/i);
     expect(diagnosis.description).toMatch(/cleanup|hangup|unstable refs/i);
     expect(diagnosis.description).toMatch(/roomID|participantID/i);
+    // (disconnect-reason-description-refine) 2026-05-21: surface the SECOND
+    // signal-connecting heuristic from yesterday's (disconnect-reason-dual-meaning)
+    // investigation. When CLIENT_INITIATED is the failed-connect() variant, the
+    // LiveKit client retries internally before aborting — TWO "Signal connecting"
+    // log lines appear in the console preceding the disconnect. A single
+    // "Signal connecting" line means real cleanup. Faster to spot than empty
+    // roomID/participantID and works even when the abort log is truncated.
+    expect(diagnosis.description).toMatch(/SECOND.*[Ss]ignal.*[Cc]onnecting/);
   });
 
   it("DUPLICATE_IDENTITY maps to hypothesis (b) — StrictMode double-mount", () => {

@@ -58,7 +58,7 @@ export function describeDisconnectReason(
         label: "CLIENT_INITIATED",
         hypothesis: "client-cleanup",
         description:
-          "Client-side teardown — AMBIGUOUS. Fires for BOTH (a) explicit room.disconnect() (our useEffect cleanup or hangup) AND (b) LiveKit's internal abort when connect() fails (e.g. ICE/TURN unreachable). Disambiguate by checking the preceding LiveKit log line 'Abort connection attempt due to user initiated disconnect': if roomID/participantID are EMPTY there, the room never fully connected → this is a transport/ICE failure surfacing through CLIENT_INITIATED. If they are populated, this is a real cleanup after a successful join — check effect deps for unstable refs.",
+          "Client-side teardown — AMBIGUOUS. Fires for BOTH (a) explicit room.disconnect() (our useEffect cleanup or hangup) AND (b) LiveKit's internal abort when connect() fails (e.g. ICE/TURN unreachable). Fastest disambiguation: look for a SECOND 'Signal connecting to …' log line in the console preceding the disconnect — its presence means LiveKit retried internally before aborting (variant b, failed connect). A single 'Signal connecting' line means a real cleanup after a successful join (variant a). Cross-check with the 'Abort connection attempt due to user initiated disconnect' line: EMPTY roomID/participantID confirms variant b (transport/ICE failure), populated values confirm variant a (check effect deps for unstable refs).",
       };
 
     case DisconnectReason.DUPLICATE_IDENTITY:
