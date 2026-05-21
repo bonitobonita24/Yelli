@@ -28,13 +28,25 @@ services:
     command:
       - --dev
       - --bind=0.0.0.0
+      # (guest-meeting-coturn-pc-connection): advertise loopback in ICE candidates
+      # so the host-side browser can reach LiveKit. Default --dev autodetects the
+      # Docker bridge IP (172.x.x.x) which is unreachable from the host network
+      # namespace, causing room.connect() to time out and abort as CLIENT_INITIATED
+      # (see [[livekit-client-initiated-dual-meaning]]).
+      - --node-ip=127.0.0.1
+      # Pin RTC UDP to the same port on both sides so the advertised ICE candidate
+      # port matches the host-published port (Rule 22 keeps the port unique-per-project).
+      # LiveKit 1.11.0 CLI uses --udp-port (singular); the legacy --rtc-port-range-*
+      # flags are not recognized and crash-loop the server with `flag provided but
+      # not defined`.
+      - --udp-port=${LIVEKIT_TURN_UDP_START}
       - --keys
       - "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       - --redis-host=${COMPOSE_PROJECT_NAME}_valkey:6379
       - --redis-password=${REDIS_PASSWORD}
     ports:
       - "${LIVEKIT_SIGNAL_PORT}:7880"
-      - "${LIVEKIT_TURN_UDP_START}:7882/udp"
+      - "${LIVEKIT_TURN_UDP_START}:${LIVEKIT_TURN_UDP_START}/udp"
     networks: [app_network]
     restart: unless-stopped
     depends_on:

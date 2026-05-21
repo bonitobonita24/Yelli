@@ -22,6 +22,61 @@
 
 # ---
 
+## 2026-05-21 — Fix guest meeting PC connection failure via LiveKit dev compose node-IP + UDP port mapping (guest-meeting-coturn-pc-connection)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 2 files / +13 / -1 in compose + 1 new typed lesson + STATE.md + this CHANGELOG entry).
+- Why: Discharge the ticket queued by `(disconnect-reason-dual-meaning)` — investigate why `room.connect()` was failing with "could not establish pc connection" on the sessionless guest path despite `(coturn-config-fix)` `75ab34f` having fixed coturn's startup crash. Static config audit + deeper Playwright smoke pinpointed the load-bearing defect: LiveKit dev compose was using bare `--dev` which autodetects nodeIP as the Docker bridge interface (172.x.x.x) — unreachable from the host browser's network namespace — and the UDP port mapping was non-1:1 (`${LIVEKIT_TURN_UDP_START}:7882/udp`) so even if the IP were reachable, LiveKit advertised 7882 while the host only exposed 43537. The combination guaranteed PC connection failure on guest path; host-side calls survived only because they re-use a host machine that has different network reachability quirks. Refines the (disconnect-reason-dual-meaning) heuristic: empty roomID/participantID in the abort log can mean StrictMode cleanup OR transport failure — both happen, simultaneously, in dev.
+- Files added: none
+- Files modified:
+  - deploy/compose/dev/docker-compose.media.yml (+13 / -1) — added three flags to LiveKit `command:` block: `--node-ip=127.0.0.1` (force ICE candidates to advertise loopback so host browser can reach them), `--udp-port=${LIVEKIT_TURN_UDP_START}` (pins LiveKit to bind+advertise the same port the host maps), and changed the UDP port mapping from `${LIVEKIT_TURN_UDP_START}:7882/udp` to `${LIVEKIT_TURN_UDP_START}:${LIVEKIT_TURN_UDP_START}/udp` (1:1 to keep the unique-per-project port pattern from Rule 22). Comment block in the command list cross-links to `[[livekit-client-initiated-dual-meaning]]` explaining the Docker-WebRTC trap. FIRST ATTEMPT during reproduction used the legacy `--rtc-port-range-start/end` flag pair (matches stage compose) — LiveKit 1.11.0 rejects them with `flag provided but not defined`, crash-loops the container (exit 0 because help text prints then `restart: unless-stopped` re-launches). Correct flag is the singular `--udp-port`. Stage and prod compose files still use the broken range-flag pair AND lack `--node-ip` — same class of bug, deferred to `(guest-meeting-livekit-turn-stage-prod)` follow-up ticket (NEW QUEUE).
+  - .cline/memory/lessons.md (+25 lines, new 🔴 entry `[[livekit-dev-docker-node-ip-port-mismatch]]`) — documents (a) the Docker-WebRTC nodeIP autodetection trap, (b) the `--rtc-port-range-*` vs `--udp-port` flag rename in livekit-server, (c) refined StrictMode-vs-transport disambiguation heuristic (look for a SECOND signal-connecting message), (d) explicit verification gap re: real-camera media flow (Playwright headless has no devices), (e) cross-links superseding the over-broad heuristic from `[[livekit-client-initiated-dual-meaning]]`.
+- Files deleted: none
+- Schema/migrations: none
+- Security guards (security.md compliance):
+  - `--node-ip=127.0.0.1` scopes LiveKit ICE candidate advertisement to loopback in DEV only. Stage/prod use Traefik + public domain per V27 and are NOT touched by this change.
+  - Zero source-code changes — pure compose-file config. No new dependencies. No new env vars. No new ports exposed beyond the pre-existing `${LIVEKIT_TURN_UDP_START}` which was already published in the same compose file.
+  - No tokens, credentials, JWT, or PII appear in the diff or the lessons entry. CREDENTIALS.md untouched.
+- Validation:
+  - Static: `docker compose --env-file .env.dev -f deploy/compose/dev/docker-compose.{db,cache,storage,media}.yml up -d --no-deps --force-recreate livekit` brought the container up clean on second attempt (first attempt used the wrong `--rtc-port-range-*` flag and crash-looped — caught immediately by `docker logs ... | head`, fixed before any commit). Final startup log confirms `"nodeIP": "127.0.0.1"`, `"rtc.portUDP": {"Start":43537,"End":0}`, port mapping `0.0.0.0:43537->43537/udp`.
+  - Sessionless Playwright smoke (native `pnpm dev` on port 43512 after `set -a; source .env.dev; set +a`): empty cookies/sessionStorage confirmed; navigated `/join/a495c303-3d1a-47f7-b99c-a055319f6b74`; filled name "Smoke-CoturnPC"; submitted (Turnstile test-key auto-passed); redirected to `/app/meeting/cmpdzm5ce0005wni4us29b9m6?guest=1`; waited 12s. Console timeline captured: **TWO connect attempts** — attempt 1 aborts pre-signal with empty IDs (React StrictMode cleanup racing the connect, dev-only artifact); attempt 2 runs `signal connecting → signal connected → connected to Livekit Server` with `roomID=RM_dJzZnLpVv7WP, participantID=PA_F7ARrjwhcPTS` populated, `connection state changed: connecting → connected`. LiveKit server logs confirm `joinDuration=63.3ms` and ping/pong flowing for the participant. Page snapshot after 12s: meeting room renders with heading "Meeting", `1 participant · 01:55` counter ticking, Smoke-CoturnPC participant tile visible, full mic/camera/screen-share/leave toolbar — no "Could not join" failed-state CTA.
+  - Camera/mic publish: `Requested device not found` fires on `enableCameraAndMicrophone()` — expected in Playwright headless Chrome (no real devices); does NOT disconnect the room. Real-media UDP flow over the 1:1-mapped port is NOT empirically verified by this smoke (intentional verification gap; requires real-browser multi-user rig, queued separately).
+  - pnpm lint / typecheck / test / build: NOT RE-RUN this ticket — zero source-code changes; only `.yml` + `.md` files touched. The prior commit `4d1cdae` (disconnect-reason-dual-meaning, same day) already validated the test suite at 246/246 ✓.
+- Two-stage review (Rule 25):
+  - Stage 1 spec PASS — investigation done first, root cause empirically identified via deeper smoke, minimal-blast-radius dev-only fix applied, smoke confirms working state. STATE.md NEXT pointer satisfied.
+  - Stage 2 quality PASS — single-file source-of-truth diff (3 added lines + 1 modified to the dev compose), comprehensive inline comment explaining the Docker-WebRTC trap with cross-link to lessons.md, no `any` types, no scope creep into stage/prod (deferred per pre-declared plan), conventional commit ahead.
+- New typed lesson logged: 🔴 `[[livekit-dev-docker-node-ip-port-mismatch]]` (see `.cline/memory/lessons.md`).
+- Skipped skill auto-suggestions (verification, nextjs, next-cache-components) per Rule 28 — pure Docker compose config edit with no Next.js framework or Vercel-platform guidance applicable. The pattern-match triggers fired on regex matches in the bash commands (`pnpm dev`, `next dev`) not on actual Next.js code changes.
+- NEW QUEUE ITEMS:
+  - `(guest-meeting-livekit-turn-stage-prod)` — Tier 1. Stage and prod media compose files have the same class of bug (no `--node-ip`, `--rtc-port-range-*` legacy flag pair) AND lack `RTC.TURN_SERVERS` wiring to use the running coturn for cross-NAT clients. Fix mirrors this ticket plus adds TURN_SERVERS config. Deferred until real-traffic / multi-NAT smoke rig is available.
+  - `(disconnect-reason-description-refine)` — Tier 1 cosmetic. The `describeDisconnectReason` helper text for CLIENT_INITIATED (shipped at `4d1cdae`) tells smokers that empty roomID/participantID = transport failure. Today's smoke proved that's half-right but missed React StrictMode mid-connect cleanup as an equally common dev cause. Single text constant in `apps/web/src/lib/livekit/disconnect-reason.ts`. Defer until next meeting-related ticket touches this file.
+- End state: guest meeting signal path works end-to-end on dev; full meeting room UI renders; participant counter ticks; smoke verifies the LiveKit Connected event fires after the StrictMode-induced first-attempt abort. Closes `(guest-meeting-coturn-pc-connection)` from the queue.
+
+# ---
+
+## 2026-05-21 — Refine describeDisconnectReason heuristic for CLIENT_INITIATED dual meaning (disconnect-reason-dual-meaning)
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; corrective fix-up ticket; 3 files / governance + helper description + test assertions).
+- Why: The earlier-today `(guest-meeting-livekit-peer-disconnect)` instrumentation shipped at `c585e52` mapped `DisconnectReason.CLIENT_INITIATED` purely to hypothesis (c) "client-cleanup". A follow-up sessionless Playwright smoke captured `CLIENT_INITIATED` and was MIS-INTERPRETED as confirming hypothesis (c) — when the page UI actually rendered the "Could not join — could not establish pc connection" failed-state CTA AND the preceding LiveKit log line `Abort connection attempt due to user initiated disconnect` had empty `roomID`/`participantID`, both proving the room had NEVER fully connected. The CLIENT_INITIATED enum was being emitted by LiveKit's INTERNAL abort path (transport / ICE / TURN failure), not by our useEffect cleanup. This ticket corrects the helper's description text to surface the AMBIGUITY explicitly so future smokes are self-correcting, and queues the underlying transport-layer fix as `(guest-meeting-coturn-pc-connection)`.
+- Files added: none
+- Files modified:
+  - apps/web/src/lib/livekit/disconnect-reason.ts — CLIENT_INITIATED case `description` now explicitly surfaces the dual meaning: "Fires for BOTH (a) explicit room.disconnect() (our useEffect cleanup or hangup) AND (b) LiveKit's internal abort when connect() fails (e.g. ICE/TURN unreachable). Disambiguate by checking the preceding LiveKit log line: empty roomID/participantID = never-connected = transport/ICE failure surfacing through CLIENT_INITIATED. Populated = real cleanup."
+  - apps/web/src/lib/livekit/disconnect-reason.test.ts — assertion for CLIENT_INITIATED description updated to verify the new disambiguation language (matches AMBIGUOUS keyword + connect()/ICE/transport language + cleanup/hangup language + roomID/participantID checks). 9/9 helper tests pass post-edit.
+  - .cline/memory/lessons.md — NEW 🔴 entry `[[livekit-client-initiated-dual-meaning]]` documenting the gotcha + recognition heuristic + wider lesson (smoke verification of console output is NOT smoke verification of user-visible behavior — always snapshot the page state too).
+- Files deleted: none
+- Schema/migrations: none
+- Security guards: none impacted — description-text-only change to a pure diagnostic helper. No behavior change, no API surface change, no `any` types added.
+- Validation:
+  - pnpm vitest run disconnect-reason.test.ts: 9/9 ✓ post-edit.
+  - Full suite validated to 246/246 ✓ on `4d1cdae` (this commit's HEAD).
+  - pnpm lint / typecheck / build: clean on `4d1cdae`.
+- Two-stage review (Rule 25): Stage 1 spec PASS — corrective scope met (description text now correctly surfaces ambiguity). Stage 2 quality PASS — TDD-evidence retained, no scope creep, conventional commit ahead.
+- New typed lesson logged: 🔴 `[[livekit-client-initiated-dual-meaning]]` (see `.cline/memory/lessons.md`).
+- NEW QUEUE ITEM (filed during this corrective): `(guest-meeting-coturn-pc-connection)` — investigate the underlying transport-layer failure that made the smoke fail. Discharged immediately in the subsequent ticket of the same name (see CHANGELOG entry above this one).
+- Squash-merged to main: `4d1cdae` (CHANGELOG entry backfilled in a subsequent session — this entry corrects a governance gap where the ticket shipped without writing its CHANGELOG_AI record at squash time).
+- End state: future smokes against any LiveKit Disconnected event have the disambiguation guidance baked into the helper output. The wider lesson is in `.cline/memory/lessons.md` 🔴 priority read.
+
+# ---
+
 ## 2026-05-21 — Capture LiveKit DisconnectReason for guest peer-disconnect investigation (guest-meeting-livekit-peer-disconnect)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline controller — no Sonnet dispatch; Tier 1 scope; 3 files / +334 / -2).
