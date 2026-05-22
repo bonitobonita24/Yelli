@@ -1,6 +1,6 @@
 {
-  "scannedAt": "2026-05-13",
-  "previousScans": ["2026-05-11"],
+  "scannedAt": "2026-05-22",
+  "previousScans": ["2026-05-11", "2026-05-13"],
   "techStack": [
     "Next.js 15 App Router",
     "tRPC v11",
@@ -28,7 +28,7 @@
     "frameworkVersion": "V31",
     "memoryGovernanceInstalled": true,
     "memoryGovernancePath": ".claude/rules/memory-governance.md",
-    "currentPhase": "Phase 4 Part 2 complete, ready for Part 3",
+    "currentPhase": "Phase 7 — items #11/#12/#13/#16 shipped; #14/#15 blocked on (trpc-client-procedure-type-missing) on branch fix/trpc-client-procedure-type-missing",
     "midProjectAdoption": false,
     "mcpJsonWired": true,
     "mcpServers": ["socraticode", "context7", "shadcn"]
@@ -55,7 +55,7 @@
     { "name": "superpowers", "status": "installed", "reason": "BUNDLE: TDD + systematic-debugging + root-cause-tracing + brainstorming + git-worktrees + finishing-branch + parallel-agents + code-review + defense-in-depth" },
     { "name": "planning-with-files", "status": "installed", "reason": "Slot 3 — persistent task_plan.md/findings.md matches STATE.md pattern" },
     { "name": "frontend-design", "status": "installed (via document-skills bundle)", "reason": "Slot 4 — Anthropic's production UI code generation" },
-    { "name": "fullstack-dev-skills", "status": "installed (= claude-skills-65 equivalent)", "reason": "Slot 6 — framework skills for React/Next.js/tRPC/Prisma/TypeScript/Postgres" },
+    { "name": "fullstack-dev-skills", "status": "installed (= claude-skills-65 equivalent)", "reason": "Slot 6 — framework skills for React/Next.js/tRPC/Prisma/TypeScript/Postgres", "activatedSubSkills": ["websocket-engineer", "monitoring-expert"] },
     { "name": "vercel-plugin", "status": "installed", "reason": "Vercel deployment guidance, AI SDK, Next.js cache components, shadcn integration" },
     { "name": "code-review", "status": "installed", "reason": "PR review workflow companion to code-review-graph" }
   ],
@@ -83,7 +83,31 @@
   "skippedOptional": [
     { "name": "n8n-expression-syntax", "reason": "OPTIONAL bundle skill — Yelli has no n8n automation declared in inputs.yml" },
     { "name": "n8n-mcp-tools-expert", "reason": "OPTIONAL — same as above" },
-    { "name": "n8n-workflow-patterns", "reason": "OPTIONAL — same as above" }
+    { "name": "n8n-workflow-patterns", "reason": "OPTIONAL — same as above" },
+    { "name": "fullstack-dev-skills:nextjs-developer", "reason": "Overlap MEDIUM with vercel-agent-skills + vercel-plugin:nextjs — those cover Next.js 15 App Router rules + cache components already" },
+    { "name": "fullstack-dev-skills:postgres-pro", "reason": "Overlap MEDIUM with installed postgres skill — postgres covers read-only queries needed for Prisma migration verification" },
+    { "name": "fullstack-dev-skills:react-expert", "reason": "Overlap with frontend-design + vercel-agent-skills (React 67 rules)" },
+    { "name": "fullstack-dev-skills:typescript-pro", "reason": "Covered by fullstack-dev-skills parent bundle + vercel-agent-skills" },
+    { "name": "fullstack-dev-skills:secure-code-guardian", "reason": "Overlap MEDIUM with owasp-security + superpowers/defense-in-depth" },
+    { "name": "fullstack-dev-skills:debugging-wizard", "reason": "Overlap HIGH with superpowers/systematic-debugging — superpowers wins per H1 priority" }
+  ],
+  "phase7Additions_2026_05_22": [
+    {
+      "name": "fullstack-dev-skills:websocket-engineer",
+      "category": "Infrastructure",
+      "tier": "T1",
+      "activatedAt": "2026-05-22",
+      "deliveryMechanism": "plugin sub-skill (no file copy — already in fullstack-dev-skills bundle)",
+      "reason": "Yelli's primary realtime layer is Socket.io (presence, call ringing, dept binding, in-call yellow-dot). Three recent bugs in this layer: [[strictmode-socket-disconnect-permanent]], (fresh-client-presence-snapshot-race), (csp-allow-dev-cross-port-socket). Activating this skill expertise for future Socket.io / realtime work to catch reconnect/StrictMode patterns before they ship."
+    },
+    {
+      "name": "fullstack-dev-skills:monitoring-expert",
+      "category": "Infrastructure",
+      "tier": "T2",
+      "activatedAt": "2026-05-22",
+      "deliveryMechanism": "plugin sub-skill (no file copy — already in fullstack-dev-skills bundle)",
+      "reason": "LiveKit + coturn + Socket.io = three infrastructure layers needing telemetry before production. inputs.yml has staging/prod envs but no observability skill activated. Pre-production gate before Phase 8 buildout reaches production hardening."
+    }
   ],
   "globalCleanupAdvised": false
 }
