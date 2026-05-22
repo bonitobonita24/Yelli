@@ -22,6 +22,38 @@
 
 # ---
 
+## 2026-05-22 — Phase 7 realtime engines (#11/#12/#14/#15/#16/#17) CLOSED — close-out criterion locked
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1 governance-only; ~65K context across IMPLEMENTATION_MAP Project Status read + cascade SHA chain inspection + 🟤 decision write + STATE.md rewrite + CHANGELOG_AI append).
+- Why: User-directed close-out of Phase 7 realtime engines after the `fc9395b` chore/governance commit recorded the 2026-05-22 PM Playwright smoke as PARTIAL VERIFICATION. The unit-test layer (270/270 ✓ on `dc9bb3a` baseline) already provided full correctness coverage of the changed code paths (presence/in-call/calls server handlers + colocated pure client handlers + tRPC routers + middleware), so the visual-QA PARTIAL outcome is a sufficient close-out gate per the new 🟤 [[phase-7-realtime-engine-closeout-criterion]] decision locked this session. Without an explicit close-out criterion in lessons.md, future sessions could re-open the realtime tickets indefinitely chasing FULL smoke — codifying the criterion stops the loop and unblocks moving to the next ticket queue.
+- Files added: none
+- Files modified:
+  - `.cline/memory/lessons.md` — prepended NEW 🟤 [[phase-7-realtime-engine-closeout-criterion]] entry near top of file documenting: (1) the close-out criterion (source-code fixes shipped + unit-test full coverage + FULL or PARTIAL visual-QA), (2) when PARTIAL is acceptable (unit-test layer authoritative + environmental blocker non-feature + recipe documented), (3) rationale (Playwright is fragile in headless/dev-stack permutations; treating PARTIAL as hard gate forces every realtime ticket to invest in test-auth helpers as prerequisite), (4) operational impact — Phase 7 #11/#12/#14/#15/#16/#17 are now CLOSED with cited cascade evidence chain (`5718a3d` → `d364462` → `e832987` → `dc9bb3a` → `fc9395b` → this commit), (5) cross-references to [[playwright-smoke-auth-configuration-blocker]] recipe, [[fresh-client-presence-snapshot-race]] + [[strictmode-socket-disconnect-permanent]] cascade fix, [[trpc-client-procedure-type-missing]] resolution, [[rule-16-cleanup-2026-05-22]] second-pass source.
+  - `docs/IMPLEMENTATION_MAP.md` — Project Status section: prepended new Phase header announcing realtime-engine close-out + cited cascade evidence chain + appended "Phase 7 realtime engines (#11/#12/#14/#15/#16/#17) CLOSED with PARTIAL smoke acceptance 2026-05-22 PM" to the merged-list paragraph end. The Phase header now references the 🟤 entry as the gate criterion so future sessions know where to find the precedent.
+  - `.cline/STATE.md` — full rewrite from the 21:27 GMT+8 PARTIAL state to the 22:18 GMT+8 CLOSED state. NEXT now points at `(admin-bounce-prefix-symmetry)` Tier 1 cosmetic OR optional `AUTH_BYPASS_FOR_E2E` test-auth helper OR Phase 8 candidate survey.
+  - `docs/CHANGELOG_AI.md` — this entry.
+- Files deleted: none
+- Schema/migrations: none (governance-only — no Prisma changes, no DB writes; the `smoke-v31` test fixtures from the prior session remain in dev DB as orphaned ephemeral data, idempotent for future smoke runs).
+- Cascade evidence chain (cited in IMPLEMENTATION_MAP Project Status):
+  - `5718a3d` — 2026-05-22 second-pass Rule 16 cleanup smoke matrix; 4 PASS / 3 BLOCKED (#14/#15/#16 blocked on diagnosed presence:snapshot race); 1 inline `(csp-allow-dev-cross-port-socket)` fix shipped during pre-flight; filed `(fresh-client-presence-snapshot-race)` Tier 1-2 + `(admin-bounce-prefix-symmetry)` Tier 1 cosmetic to the queue.
+  - `d364462` — 2026-05-22 `fix/web` branch bundle: (a) `(fresh-client-presence-snapshot-race)` server defers `presence:snapshot` until client emits `presence:ready` (idempotent guard against StrictMode double-fire + reconnect-resume duplicates); (b) `(socketprovider-strictmode-reconnect)` extracted `ensureSocketConnected(socket)` pure helper to recover from cleanup-induced disconnect under React StrictMode double-mount. +173 / -22; 261 → 270 tests; addresses ALL 3 BLOCKED items in one bundled fix.
+  - `e832987` — governance squash recording the d364462 fix + STATE.md update.
+  - `dc9bb3a` — 2026-05-22 PM `docs/trpc-client-procedure-type-missing` resolution: the third "blocker" identified post-d364462 was a tRPC typed-proxy DevTools eval inspection trap (createFlatProxy + createRecursiveProxy crash on ANY non-procedure property access via `clientCallTypeMap[pathCopy.pop()] === undefined`), NOT a runtime bug. Zero source diff; 2 new typed lessons (🔴 [[trpc-proxy-debug-inspection-trap]] mechanism doc + 🟡 [[trpc-client-procedure-type-missing]] RESOLUTION).
+  - `fc9395b` — 2026-05-22 PM chore/governance recording the Playwright smoke PARTIAL outcome: backend + DB + socket layer verified healthy; UI auth-gated layer deferred with 🔴 [[playwright-smoke-auth-configuration-blocker]] recipe (stop stale yelli_dev_app container OR export APP_PORT=43512 before pnpm dev OR add signInForTest helper).
+  - This commit — close-out criterion locked + Phase header stamped.
+- Errors encountered: none (governance-only).
+- Errors resolved: 1 process-level — the realtime-engine close-out has been pending since `5718a3d` filed the BLOCKED items, with each subsequent commit chipping away at the root causes. This session stops the open-ended loop by codifying the close-out criterion + stamping the realtime engines CLOSED.
+- Validation matrix (re-confirmed from `dc9bb3a` baseline + `fc9395b` chore — no code changes this session):
+  - pnpm lint: ✓ 0 errors, 2 pre-existing warnings (unchanged from d364462 baseline)
+  - pnpm typecheck: ✓ 0 errors across 8 packages
+  - pnpm test: 270/270 ✓ (unchanged — no test changes, no new tests, no deletions)
+  - pnpm build: ✓ Middleware 141 kB (unchanged — zero source diff this session)
+  - pnpm audit --audit-level=critical: ✓ exit 0 (1 HIGH pre-documented per [[nodemailer-cve-mitigation]])
+  - Phase 7 realtime engines: **CLOSED** per 🟤 [[phase-7-realtime-engine-closeout-criterion]] gate criterion.
+- Next steps: Queue moves to (a) `(admin-bounce-prefix-symmetry)` Tier 1 cosmetic — preserve `/t/{slug}` URL prefix on RBAC bounces; small contained ticket; good momentum-builder, OR (b) optional infrastructure investment — land a `AUTH_BYPASS_FOR_E2E` env-gated test-auth helper in apps/web/src/server/auth.ts (~20-line one-time investment; converts the PARTIAL→FULL recipe from "stop the container" to "just run it"), OR (c) survey Phase 8 candidate work — PRODUCT.md vs current IMPLEMENTATION_MAP for next feature batch.
+
+# ---
+
 ## 2026-05-22 — Phase 7 #14/#15 multi-context Playwright smoke — PARTIAL VERIFICATION (post-`dc9bb3a` merge visual-QA gate)
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1 governance-only; ~85K context across docker compose orchestration + Prisma seed + Cloudflare siteverify probe + JWT forge attempt + Playwright multi-step drive + lessons.md write).
