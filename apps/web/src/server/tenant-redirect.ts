@@ -121,3 +121,31 @@ export function stripTenantPathPrefix(path: string, slug: string): string {
   const rest = match[1] ?? "";
   return rest === "" ? "/" : `/${rest}`;
 }
+
+/**
+ * Prepend a `/t/{slug}` URL prefix to a target redirect path so that RSC
+ * bounces (e.g. host role visits /admin → layout `redirect("/app")`) preserve
+ * the tenant context in the URL bar instead of stripping it.
+ *
+ * Subdomain pattern (prod): prefix is "" (tenant context lives in hostname),
+ * so the target passes through unchanged.
+ *
+ *   buildTenantBouncePath("/app", "")               → "/app"   (subdomain / apex)
+ *   buildTenantBouncePath("/app", "/t/system")      → "/t/system/app"
+ *   buildTenantBouncePath("/login?callbackUrl=/x", "/t/acme")
+ *                                                   → "/t/acme/login?callbackUrl=/x"
+ *
+ * Pure function. Middleware writes the prefix into a request header
+ * (`x-tenant-path-prefix`); RSC layouts/pages read it via `next/headers` and
+ * pass it through this helper before calling `redirect(...)`.
+ *
+ * (admin-bounce-prefix-symmetry — Phase 7 #17 follow-up filed in
+ * [[rule-16-cleanup-2026-05-22]] queue.)
+ */
+export function buildTenantBouncePath(target: string, prefix: string): string {
+  if (!prefix) return target;
+  const trimmedPrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+  if (target === "") return trimmedPrefix;
+  const targetWithLeading = target.startsWith("/") ? target : `/${target}`;
+  return `${trimmedPrefix}${targetWithLeading}`;
+}

@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { IntercomCall } from "@/components/call/intercom-call-loader";
 import { auth } from "@/server/auth";
+import { buildTenantBouncePath } from "@/server/tenant-redirect";
 
 interface CallPageProps {
   params: Promise<{ id: string }>;
@@ -11,13 +13,18 @@ export default async function CallPage({ params }: CallPageProps) {
   const { id } = await params;
 
   const session = await auth();
+  const requestHeaders = await headers();
+  const tenantPathPrefix =
+    requestHeaders.get("x-tenant-path-prefix") ?? "";
+
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(buildTenantBouncePath("/login", tenantPathPrefix));
   }
 
-  // Basic sanity check — callId must be a non-empty string up to 128 chars
+  // (admin-bounce-prefix-symmetry): invalid callId bounces back to the speed
+  // dial. Preserve the /t/{slug} URL prefix on the path-pattern dev route.
   if (!id || id.length > 128) {
-    redirect("/app");
+    redirect(buildTenantBouncePath("/app", tenantPathPrefix));
   }
 
   const displayName =

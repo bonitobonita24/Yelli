@@ -146,6 +146,17 @@ export default auth(async (req) => {
     requestHeaders.set("x-tenant-slug", tenantSlug);
   }
 
+  // (admin-bounce-prefix-symmetry): RSC redirects from layouts/pages need to
+  // preserve the /t/{slug} URL prefix when the request arrived via the path-
+  // pattern dev route (so a host-role bounce from /t/system/admin → /app lands
+  // at /t/system/app, not bare /app). Subdomain pattern (prod) keeps tenant
+  // context in hostname, so this header stays empty.
+  // RSC consumers: pass through buildTenantBouncePath(target, prefix) from
+  // @/server/tenant-redirect before calling redirect(...).
+  if (wasPathStripped && tenantSlug) {
+    requestHeaders.set("x-tenant-path-prefix", `/t/${tenantSlug}`);
+  }
+
   if (session?.user) {
     requestHeaders.set("x-user-id", session.user.id);
     requestHeaders.set("x-organization-id", session.user.organizationId);

@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { auth } from "@/server/auth";
+import { buildTenantBouncePath } from "@/server/tenant-redirect";
 
 /**
  * /admin/* layout — RSC auth + role gate.
@@ -13,6 +15,13 @@ import { auth } from "@/server/auth";
  *
  * Super admins see an additional Super Admin shortcut in the sidebar (linking
  * to /superadmin/* which uses its own platformPrisma router stack).
+ *
+ * (admin-bounce-prefix-symmetry): bounces read `x-tenant-path-prefix` from
+ * the middleware-attached headers and route the target via
+ * `buildTenantBouncePath` so the `/t/{slug}` URL prefix is preserved when the
+ * request arrived via that pattern (dev). Subdomain pattern (prod) carries
+ * tenant context in hostname, so the prefix header is absent and the helper
+ * returns the target unchanged.
  */
 export default async function AdminLayout({
   children,
@@ -20,15 +29,20 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }): Promise<JSX.Element> {
   const session = await auth();
+  const requestHeaders = await headers();
+  const tenantPathPrefix =
+    requestHeaders.get("x-tenant-path-prefix") ?? "";
 
   if (!session?.user) {
-    redirect("/login?callbackUrl=/admin");
+    redirect(
+      buildTenantBouncePath("/login?callbackUrl=/admin", tenantPathPrefix),
+    );
   }
 
   const { role, isSuperAdmin, displayName } = session.user;
 
   if (role !== "tenant_admin" && !isSuperAdmin) {
-    redirect("/app");
+    redirect(buildTenantBouncePath("/app", tenantPathPrefix));
   }
 
   return (

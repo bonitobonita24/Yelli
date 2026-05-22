@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/server/auth";
+import { buildTenantBouncePath } from "@/server/tenant-redirect";
 
 /**
  * /superadmin/* layout — RSC platform-privilege guard.
@@ -15,6 +17,9 @@ import { auth } from "@/server/auth";
  *
  * The sidebar is intentionally simpler than /admin/* — super-admin is a small
  * surface with only Organizations + Platform Settings.
+ *
+ * (admin-bounce-prefix-symmetry): bounces route via buildTenantBouncePath so
+ * the `/t/{slug}` URL prefix is preserved on the path-pattern dev route.
  */
 export default async function SuperAdminLayout({
   children,
@@ -22,12 +27,17 @@ export default async function SuperAdminLayout({
   children: React.ReactNode;
 }): Promise<JSX.Element> {
   const session = await auth();
+  const requestHeaders = await headers();
+  const tenantPathPrefix =
+    requestHeaders.get("x-tenant-path-prefix") ?? "";
 
   if (!session?.user) {
-    redirect("/login?callbackUrl=/superadmin");
+    redirect(
+      buildTenantBouncePath("/login?callbackUrl=/superadmin", tenantPathPrefix),
+    );
   }
   if (!session.user.isSuperAdmin) {
-    redirect("/app");
+    redirect(buildTenantBouncePath("/app", tenantPathPrefix));
   }
 
   return (

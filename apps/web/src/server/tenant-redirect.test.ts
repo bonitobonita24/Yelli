@@ -17,6 +17,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTenantBouncePath,
   buildTenantRedirectUrl,
   resolveTenantRedirect,
   stripTenantPathPrefix,
@@ -262,5 +263,59 @@ describe("stripTenantPathPrefix", () => {
     // helper itself doesn't blow up if a regex-special char ever leaks in.
     expect(stripTenantPathPrefix("/t/a.b/app", "a.b")).toBe("/app");
     expect(stripTenantPathPrefix("/t/acme/app", "a.b")).toBe("/t/acme/app");
+  });
+});
+
+describe("buildTenantBouncePath", () => {
+  // (admin-bounce-prefix-symmetry) — RSC redirect targets must preserve the
+  // /t/{slug} URL prefix when the request arrived via the path-pattern dev
+  // route. Without this, host-role bounce from /t/system/admin → /app drops
+  // the tenant context and the URL bar swaps to bare /app. Subdomain pattern
+  // (prod) carries tenant context in hostname, so prefix is empty there.
+
+  it("returns the target path unchanged when prefix is empty (subdomain pattern / apex / no tenant)", () => {
+    expect(buildTenantBouncePath("/app", "")).toBe("/app");
+  });
+
+  it("prepends /t/{slug} prefix to the target path (host bounce — the named bug)", () => {
+    // /t/system/admin → host role fails layout RBAC → bounce should land at
+    // /t/system/app, not bare /app (the original (admin-bounce-prefix-symmetry)
+    // finding from [[rule-16-cleanup-2026-05-22]] smoke matrix).
+    expect(buildTenantBouncePath("/app", "/t/system")).toBe("/t/system/app");
+  });
+
+  it("prepends prefix to /admin target (symmetric — superadmin → admin shortcut)", () => {
+    expect(buildTenantBouncePath("/admin", "/t/acme")).toBe("/t/acme/admin");
+  });
+
+  it("prepends prefix to nested target paths", () => {
+    expect(buildTenantBouncePath("/app/meetings/new", "/t/acme")).toBe(
+      "/t/acme/app/meetings/new",
+    );
+  });
+
+  it("handles target with query string (passed through verbatim)", () => {
+    // The helper is path-only; query strings are preserved by the caller via
+    // string concatenation. Locked here so the helper does not silently strip.
+    expect(
+      buildTenantBouncePath("/login?callbackUrl=/admin", "/t/acme"),
+    ).toBe("/t/acme/login?callbackUrl=/admin");
+  });
+
+  it("returns prefix unchanged when target is empty (defensive — should not happen in practice)", () => {
+    expect(buildTenantBouncePath("", "/t/acme")).toBe("/t/acme");
+  });
+
+  it("does not double-up when target lacks leading slash (defensive)", () => {
+    // Server components pass canonical leading-slash paths (e.g. "/app"). If a
+    // caller accidentally passes "app" without leading slash, the helper still
+    // produces a well-formed URL rather than "/t/acmeapp".
+    expect(buildTenantBouncePath("app", "/t/acme")).toBe("/t/acme/app");
+  });
+
+  it("does not double-up when prefix has trailing slash (defensive)", () => {
+    // Middleware sets the prefix as "/t/{slug}" without trailing slash, but
+    // be defensive against future drift.
+    expect(buildTenantBouncePath("/app", "/t/acme/")).toBe("/t/acme/app");
   });
 });

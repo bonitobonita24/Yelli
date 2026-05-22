@@ -22,6 +22,42 @@
 
 # ---
 
+## 2026-05-22 — (admin-bounce-prefix-symmetry) — preserve /t/{slug} URL prefix on RSC RBAC bounces
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1; ~45K context across middleware + tenant-redirect + 3 RSC layout/page reads + helper impl + test write + validation matrix).
+- Why: Closes the `(admin-bounce-prefix-symmetry)` Tier 1 cosmetic ticket filed in [[rule-16-cleanup-2026-05-22]] queue. Original finding: when a host-role user visits `/t/system/admin`, middleware rewrites to `/admin` (URL bar still shows `/t/system/admin`) → `admin/layout.tsx` RBAC fails → `redirect("/app")` → browser navigates to bare `/app` and the URL bar drops the `/t/system/` prefix. The bounce is functionally correct but cosmetically loses tenant context. Same issue affects `superadmin/layout.tsx` non-platform bounces and `app/call/[id]/page.tsx` invalid-callId bounces — fix is symmetric across all three sites per the ticket's "symmetry" framing.
+- Files added: none
+- Files modified (6, 132 insertions / 7 deletions):
+  - `apps/web/src/server/tenant-redirect.ts` (+28 / -0) — NEW pure helper `buildTenantBouncePath(target: string, prefix: string): string`. Prepends `/t/{slug}` to a target redirect path when prefix is non-empty; returns target unchanged when prefix is empty (subdomain pattern / apex). Defensive: trims trailing slash from prefix; prepends leading slash to target if missing; returns prefix alone on empty target.
+  - `apps/web/src/server/tenant-redirect.test.ts` (+55 / -0) — 8 RED→GREEN cases covering: empty prefix (passes through), happy path (the named bug), nested target paths, query-string preservation, empty target, missing-leading-slash defense, trailing-slash-on-prefix defense, /admin target symmetry. RED confirmed before impl (`TypeError: buildTenantBouncePath is not a function` on 8/8); GREEN confirmed after impl (34/34 in tenant-redirect.test.ts).
+  - `apps/web/src/middleware.ts` (+11 / -0) — Sets new `x-tenant-path-prefix` request header to `/t/{tenantSlug}` ONLY when `wasPathStripped && tenantSlug` (i.e. the request arrived via the path-pattern dev route). Subdomain pattern (prod) skips this — tenant context lives in hostname. Header propagates through `NextResponse.rewrite({ request: { headers: requestHeaders } })` to RSC consumers via `next/headers`.
+  - `apps/web/src/app/admin/layout.tsx` (+15 / -3) — Reads `x-tenant-path-prefix` via `await headers()`; both bounces (`redirect("/login?callbackUrl=/admin")` and `redirect("/app")`) now route through `buildTenantBouncePath(target, prefix)`. Added JSDoc note explaining the symmetry pattern.
+  - `apps/web/src/app/superadmin/layout.tsx` (+11 / -3) — Same pattern: bounces route through helper.
+  - `apps/web/src/app/app/call/[id]/page.tsx` (+10 / -3) — Same pattern: invalid-callId + missing-session bounces route through helper.
+- Files deleted: none
+- Schema/migrations: none
+- Architecture: middleware → headers → RSC pattern matches the existing precedent set by [[guest-meeting-layout-bypass]] (`GUEST_BYPASS_HEADER`) and the org-context headers (`x-tenant-slug`, `x-user-id`, `x-organization-id`, `x-organization-slug`). No new architecture introduced; just reuses the established header-bridge pattern between Edge middleware and the Node RSC layer.
+- Validation matrix (all checks against this branch — `feat/admin-bounce-prefix-symmetry`):
+  - pnpm typecheck: ✓ 0 errors across 8 packages
+  - pnpm lint: ✓ 0 errors (2 pre-existing warnings unchanged — `apps/web/src/app/layout.tsx` no-css-tags + `calls.test.ts` non-null-assertion)
+  - pnpm test: 278/278 ✓ (was 270 on dc9bb3a baseline → +8 new tests, no deletions, no skips)
+  - pnpm build: ✓ all 22 routes + **Middleware 141 kB UNCHANGED** (MANDATORY per [[instrumentation-edge-stub-required]] — middleware was touched; Edge bundle size stability confirms no Node-only or large-import leakage)
+  - pnpm audit --audit-level=critical: ✓ exit 0 (1 HIGH pre-documented per [[nodemailer-cve-mitigation]])
+- Two-stage review (Rule 25):
+  - **Stage 1 spec PASS**: (a) /t/{slug}/admin host bounce now lands at /t/{slug}/app (the named bug — locked by test case 2); (b) superadmin non-platform bounce symmetric (locked by test case 3); (c) invalid-callId bounce symmetric; (d) subdomain pattern (prod) unchanged — prefix header absent → helper returns target as-is (locked by test case 1); (e) callbackUrl on auth bounces preserved through the helper (locked by test case 5).
+  - **Stage 2 quality PASS**: zero `any`; TDD RED→GREEN evidenced in vitest output before/after impl; blast radius = 6 files matching plan exactly with no scope creep; conventional commit format; helper is single-responsibility with no wrapper-without-value; no repeated logic — 3 consumer sites all call the same helper.
+- Errors encountered: none.
+- Errors resolved: 1 — the cosmetic prefix loss filed in [[rule-16-cleanup-2026-05-22]] queue is now fixed across all 3 symmetric RSC bounce sites in one bundled ticket.
+- Skipped vercel-plugin auto-suggestions (per Rule 28, established skip-list precedent in prior CHANGELOG entries):
+  - **next-forge** (false positive on `apps/web/**` suffix — Yelli is bespoke Spec-Driven, not next-forge starter template).
+  - **auth** (Clerk/Descope/Auth0 patterns chained from next-forge; Yelli uses Auth.js v5 + custom Credentials + bcrypt + platformPrisma — none of the suggested providers apply).
+  - **routing-middleware** (matched basename `middleware.ts`; the proxy.ts rename is a Next.js 16 feature, Yelli runs 15.5.18 — separate `next-upgrade` ticket per established precedent).
+  - **nextjs proxy.ts migration** (chained from routing-middleware; same precedent — defer to next-upgrade).
+  - **next-cache-components** (matched suffix `app/**`; not a caching ticket — RSC auth gate / RBAC bounce is orthogonal).
+- Next steps: With (admin-bounce-prefix-symmetry) closed, the only Tier 1 item in the queue at session start is satisfied. Recommended next slots: (a) optional `AUTH_BYPASS_FOR_E2E` test-auth helper (~20-line one-time investment unblocking all future Playwright smokes — converts the PARTIAL→FULL recipe from "stop the container" to "just run it"), (b) survey Phase 8 candidate work from PRODUCT.md vs IMPLEMENTATION_MAP, (c) re-run the #14/#15 Playwright smoke after applying the [[playwright-smoke-auth-configuration-blocker]] recipe (stop yelli_dev_app container OR add the test-auth helper).
+
+# ---
+
 ## 2026-05-22 — Phase 7 realtime engines (#11/#12/#14/#15/#16/#17) CLOSED — close-out criterion locked
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1 governance-only; ~65K context across IMPLEMENTATION_MAP Project Status read + cascade SHA chain inspection + 🟤 decision write + STATE.md rewrite + CHANGELOG_AI append).
