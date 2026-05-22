@@ -35,6 +35,13 @@ export interface ClientToServerEvents {
   // joined or left a call. Server identity comes from socket.data.session.
   "call:joined": () => void;
   "call:left": () => void;
+  // (fresh-client-presence-snapshot-race) — client signals from
+  // attachUserPresenceHandlers AFTER its presence:snapshot + presence:user
+  // listeners are attached. Server defers presence:snapshot emission until
+  // it receives this event. Without the handshake fresh clients (whose
+  // listener attaches in a useEffect — i.e. after React commit, often after
+  // the socket connects) drop the synchronously-emitted snapshot.
+  "presence:ready": () => void;
 }
 
 export interface InterServerEvents {

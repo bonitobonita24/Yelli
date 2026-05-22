@@ -46,6 +46,7 @@ import {
 
 import { clientEnv } from "@/env";
 import { createSocketClient, type TypedSocket } from "@/lib/socket/client";
+import { ensureSocketConnected } from "@/lib/socket/ensure-connected";
 import { attachSessionInvalidationHandler } from "@/lib/socket/session-invalidation";
 
 const SocketContext = createContext<TypedSocket | null>(null);
@@ -67,6 +68,15 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (socket === null) return;
+
+    // StrictMode dev double-fire (mount → cleanup → remount) runs the
+    // cleanup's `socket.disconnect()` BETWEEN the two mounts. Socket.IO does
+    // not auto-reconnect from an explicit `.disconnect()` (its
+    // reconnectionAttempts budget is transport-drop only), so without this
+    // guard the second mount would attach listeners to a permanently-dead
+    // socket — silently breaking presence + incoming-call delivery for the
+    // session. See apps/web/src/lib/socket/ensure-connected.ts.
+    ensureSocketConnected(socket);
 
     const dispose = attachSessionInvalidationHandler(socket, () => {
       router.push("/login");

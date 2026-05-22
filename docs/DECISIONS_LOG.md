@@ -230,3 +230,48 @@ point bump nodemailer in `apps/web/package.json` and drop `.npmrc audit-level` b
 re-evaluate per the phases.md decision tree; (3) Auth.js v5 itself replaces its nodemailer
 dependency with a different mail transport — same as (1).
 Locked: yes — 2026-05-17.
+
+## Phase 7 — fresh-client-presence-snapshot-race fix approach
+
+Decision: Use the **client-emitted `presence:ready` handshake** to gate
+`presence:snapshot` emission (option a from the AskUserQuestion lock on 2026-05-22).
+Server `attachPresenceHandlers` registers a `presence:ready` listener and defers the
+socket-direct snapshot emit until that event fires. Client `attachUserPresenceHandlers`
+emits `presence:ready` AFTER both `presence:snapshot` and `presence:user` listeners are
+registered. Idempotent on the server via `snapshotEmitted` flag (defends against React
+StrictMode double-fire or reconnect-resume edge cases).
+
+Rationale: Three candidates were evaluated for the race where fresh clients (first page
+load) dropped the synchronously-emitted `presence:snapshot` because the React `useEffect`
+listener attach landed AFTER `socket.connected`. (a) `presence:ready` handshake —
+deterministic, protocol-level, minimal LOC, both sides explicit about handshake
+completion; the only protocol change is one new ClientToServerEvents entry. (b) Server
+timeout-and-retry (`setTimeout` 0/100/500ms) — fragile under load, wastes bandwidth on
+every connect, does not actually eliminate the race; rejected. (c) tRPC-bootstrapped
+snapshot via `presence.snapshot.useQuery()` — creates two sources of truth (REST snapshot
++ socket deltas) requiring dedup/last-write-wins logic, adds a round-trip per consumer
+mount, and shifts the race to "tRPC bootstrap vs first socket delta"; rejected as larger
+blast radius than option (a) for no determinism gain.
+
+Implementation locked: option (a). Five files / +185 / -22 / 1 module:
+- `apps/web/src/server/socket/presence.ts` — gate snapshot emit on `PRESENCE_READY_EVENT`
+- `apps/web/src/server/socket/presence.test.ts` — 3 new race tests; 2 updated
+- `apps/web/src/lib/presence/user-presence-handler.ts` — emit `presence:ready` after listener attach
+- `apps/web/src/lib/presence/user-presence-handler.test.ts` — 3 new handshake tests
+- `apps/web/src/lib/socket/types.ts` — add `presence:ready` to `ClientToServerEvents`
+
+Wider rule: any future server→client bootstrap delivered via socket (initial roster,
+snapshot, state) MUST be gated on a client→server `ready` event. Listener attach happens
+in the consumer's React useEffect, which is post-commit and may post-date
+`socket.connected`. The handler architecture pattern is documented in
+[[pure-helper-extraction-pattern]] in `.cline/memory/lessons.md`. Sibling engines using
+the same pattern (e.g. `call:active-snapshot` in `in-call.ts`) should be audited for the
+same race in a follow-up ticket if multi-user smoke shows the symptom.
+
+Revisit triggers: (1) Socket.IO ships a built-in handshake-complete event that obviates
+the application-layer handshake — switch to it and drop the `presence:ready` event from
+ClientToServerEvents; (2) move to a different transport (WebTransport / SSE) where
+listener-attach-then-bootstrap is the native primitive — drop the handshake; (3) discover
+that `call:active-snapshot` has the same race — apply the same pattern there for
+consistency rather than inventing a second.
+Locked: yes — 2026-05-22.

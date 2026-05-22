@@ -47,6 +47,11 @@ export interface MinimalSocketEventTarget {
     event: "presence:user",
     handler: (payload: PresenceUserPayload) => void,
   ): unknown;
+  // (fresh-client-presence-snapshot-race) — client-to-server handshake
+  // emitted AFTER both listeners are registered, signalling the server it is
+  // safe to emit presence:snapshot. See use-user-presence.ts for the React
+  // composition and apps/web/src/server/socket/presence.ts for the gate.
+  emit(event: "presence:ready"): unknown;
 }
 
 export interface UserPresenceCallbacks {
@@ -71,6 +76,12 @@ export function attachUserPresenceHandlers(
 
   socket.on("presence:snapshot", onSnapshot);
   socket.on("presence:user", onUser);
+
+  // (fresh-client-presence-snapshot-race) — signal the server that listeners
+  // are attached. Emitted AFTER both `on()` calls so a fast server cannot
+  // beat the listener registration. Server defers presence:snapshot
+  // emission until this event arrives. See server/socket/presence.ts.
+  socket.emit("presence:ready");
 
   return () => {
     socket.off("presence:snapshot", onSnapshot);

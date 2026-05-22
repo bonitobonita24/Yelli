@@ -32,9 +32,13 @@ import {
 function makeFakeSocket(): {
   socket: MinimalSocketEventTarget;
   listeners: Map<string, Set<(...args: unknown[]) => void>>;
-  emit: (event: string, ...args: unknown[]) => void;
+  /** Simulate server → client event delivery (drives registered listeners). */
+  fireFromServer: (event: string, ...args: unknown[]) => void;
+  /** Capture of client → server emits (e.g. the presence:ready handshake). */
+  emittedToServer: Array<{ event: string; args: unknown[] }>;
 } {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const emittedToServer: Array<{ event: string; args: unknown[] }> = [];
   const loose = {
     on: (event: string, handler: (...args: unknown[]) => void) => {
       const set = listeners.get(event) ?? new Set<(...args: unknown[]) => void>();
@@ -44,8 +48,11 @@ function makeFakeSocket(): {
     off: (event: string, handler: (...args: unknown[]) => void) => {
       listeners.get(event)?.delete(handler);
     },
+    emit: (event: string, ...args: unknown[]) => {
+      emittedToServer.push({ event, args });
+    },
   };
-  const emit = (event: string, ...args: unknown[]) => {
+  const fireFromServer = (event: string, ...args: unknown[]) => {
     listeners.get(event)?.forEach((h) => {
       h(...args);
     });
@@ -53,7 +60,8 @@ function makeFakeSocket(): {
   return {
     socket: loose as unknown as MinimalSocketEventTarget,
     listeners,
-    emit,
+    fireFromServer,
+    emittedToServer,
   };
 }
 
@@ -69,7 +77,7 @@ describe("attachUserPresenceHandlers", () => {
   });
 
   it("invokes onRoster with userIds when the server emits presence:snapshot", () => {
-    const { socket, emit } = makeFakeSocket();
+    const { socket, fireFromServer: emit } = makeFakeSocket();
     const onRoster = vi.fn();
     attachUserPresenceHandlers(socket, {
       onRoster,
@@ -81,7 +89,7 @@ describe("attachUserPresenceHandlers", () => {
   });
 
   it("invokes onUpdate with (userId, online) when the server emits presence:user", () => {
-    const { socket, emit } = makeFakeSocket();
+    const { socket, fireFromServer: emit } = makeFakeSocket();
     const onUpdate = vi.fn();
     attachUserPresenceHandlers(socket, {
       onRoster: () => undefined,
@@ -96,7 +104,7 @@ describe("attachUserPresenceHandlers", () => {
   });
 
   it("returns a disposer that removes both listeners", () => {
-    const { socket, listeners, emit } = makeFakeSocket();
+    const { socket, listeners, fireFromServer } = makeFakeSocket();
     const onRoster = vi.fn();
     const onUpdate = vi.fn();
     const dispose = attachUserPresenceHandlers(socket, { onRoster, onUpdate });
@@ -105,14 +113,14 @@ describe("attachUserPresenceHandlers", () => {
     expect(listeners.get("presence:snapshot")?.size).toBe(0);
     expect(listeners.get("presence:user")?.size).toBe(0);
 
-    emit("presence:snapshot", { userIds: ["user-a"] });
-    emit("presence:user", { userId: "user-x", online: true });
+    fireFromServer("presence:snapshot", { userIds: ["user-a"] });
+    fireFromServer("presence:user", { userId: "user-x", online: true });
     expect(onRoster).not.toHaveBeenCalled();
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it("does not fire callbacks for unrelated events (e.g. session:invalidated, call:incoming)", () => {
-    const { socket, emit } = makeFakeSocket();
+    const { socket, fireFromServer: emit } = makeFakeSocket();
     const onRoster = vi.fn();
     const onUpdate = vi.fn();
     attachUserPresenceHandlers(socket, { onRoster, onUpdate });
@@ -124,5 +132,68 @@ describe("attachUserPresenceHandlers", () => {
 
     expect(onRoster).not.toHaveBeenCalled();
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  // --- (fresh-client-presence-snapshot-race) ---------------------------------
+
+  it("emits presence:ready to the server AFTER attaching listeners (handshake)", () => {
+    // Race fix: server now defers presence:snapshot emission until it receives
+    // presence:ready from this socket. Without this signal the server would
+    // never emit and fresh clients would stay with onlineSet=Set(0).
+    const { socket, emittedToServer } = makeFakeSocket();
+    attachUserPresenceHandlers(socket, {
+      onRoster: () => undefined,
+      onUpdate: () => undefined,
+    });
+    const ready = emittedToServer.filter((e) => e.event === "presence:ready");
+    expect(ready).toHaveLength(1);
+    expect(ready[0]?.args).toEqual([]);
+  });
+
+  it("emits presence:ready ONCE per attach call (a second attach is a separate handshake)", () => {
+    const { socket, emittedToServer } = makeFakeSocket();
+    attachUserPresenceHandlers(socket, {
+      onRoster: () => undefined,
+      onUpdate: () => undefined,
+    });
+    expect(
+      emittedToServer.filter((e) => e.event === "presence:ready"),
+    ).toHaveLength(1);
+
+    attachUserPresenceHandlers(socket, {
+      onRoster: () => undefined,
+      onUpdate: () => undefined,
+    });
+    expect(
+      emittedToServer.filter((e) => e.event === "presence:ready"),
+    ).toHaveLength(2);
+  });
+
+  it("emits presence:ready AFTER both listeners have been registered (ordering)", () => {
+    // The handshake's whole point is "listener is attached, send me the
+    // snapshot now". If presence:ready is emitted before listeners attach,
+    // a fast server could emit before the listener exists — same race.
+    const events: string[] = [];
+    const socket = {
+      on: (event: string, _handler: unknown) => {
+        events.push(`on:${event}`);
+      },
+      off: () => undefined,
+      emit: (event: string) => {
+        events.push(`emit:${event}`);
+      },
+    } as unknown as MinimalSocketEventTarget;
+    attachUserPresenceHandlers(socket, {
+      onRoster: () => undefined,
+      onUpdate: () => undefined,
+    });
+    const readyIdx = events.indexOf("emit:presence:ready");
+    const snapshotIdx = events.indexOf("on:presence:snapshot");
+    const userIdx = events.indexOf("on:presence:user");
+    expect(readyIdx).toBeGreaterThan(-1);
+    expect(snapshotIdx).toBeGreaterThan(-1);
+    expect(userIdx).toBeGreaterThan(-1);
+    expect(readyIdx).toBeGreaterThan(snapshotIdx);
+    expect(readyIdx).toBeGreaterThan(userIdx);
   });
 });

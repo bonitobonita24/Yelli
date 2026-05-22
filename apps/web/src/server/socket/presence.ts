@@ -37,6 +37,7 @@ import type { Server as IOServer, Socket } from "socket.io";
 
 const PRESENCE_USER_EVENT = "presence:user";
 const PRESENCE_SNAPSHOT_EVENT = "presence:snapshot";
+const PRESENCE_READY_EVENT = "presence:ready";
 
 export interface PresenceRoster {
   /** Add a socket to the roster. `wasFirst` ↔ 0→1 transition for that user. */
@@ -130,8 +131,23 @@ export function attachPresenceHandlers(args: {
     });
   }
 
-  socket.emit(PRESENCE_SNAPSHOT_EVENT, {
-    userIds: roster.getOnlineUsers(organizationId),
+  // (fresh-client-presence-snapshot-race) — defer snapshot until the client
+  // signals its listener is attached. Pre-fix the snapshot was emitted
+  // synchronously here, racing the client's useEffect listener attach. For
+  // fresh clients (first page load) the listener typically attaches AFTER
+  // React commit, AFTER the socket connects — so the snapshot was dropped
+  // and onlineSet stayed empty. The client (attachUserPresenceHandlers)
+  // emits presence:ready after socket.on("presence:snapshot", ...) is
+  // registered, guaranteeing delivery. Idempotent guard so a misbehaving
+  // client (double-fire under StrictMode, reconnect-resume edge cases) can't
+  // cause two snapshots per connection.
+  let snapshotEmitted = false;
+  socket.on(PRESENCE_READY_EVENT, () => {
+    if (snapshotEmitted) return;
+    snapshotEmitted = true;
+    socket.emit(PRESENCE_SNAPSHOT_EVENT, {
+      userIds: roster.getOnlineUsers(organizationId),
+    });
   });
 
   socket.on("disconnect", () => {

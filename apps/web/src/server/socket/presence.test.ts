@@ -178,6 +178,20 @@ function fireDisconnect(socket: FakeSocket): void {
   if (handler) handler();
 }
 
+function fireReady(socket: FakeSocket): void {
+  const handler = socket.__handlers.get("presence:ready");
+  if (handler) handler();
+}
+
+function findSnapshotCall(
+  socket: FakeSocket,
+): { userIds: string[] } | undefined {
+  const call = vi
+    .mocked(socket.emit)
+    .mock.calls.find((c) => c[0] === "presence:snapshot");
+  return call?.[1] as { userIds: string[] } | undefined;
+}
+
 describe("attachPresenceHandlers", () => {
   it("joins the org's presence:user channel for an authenticated socket", () => {
     const roster = createPresenceRoster();
@@ -209,19 +223,65 @@ describe("attachPresenceHandlers", () => {
     expect(to).not.toHaveBeenCalledWith("org-1:presence:user");
   });
 
-  it("emits presence:snapshot {userIds} to this socket on connect — including self", () => {
+  it("emits presence:snapshot {userIds} to this socket AFTER presence:ready — including self", () => {
+    // (fresh-client-presence-snapshot-race) — snapshot is now gated on the
+    // client signalling readiness so the listener is attached before the
+    // server emits. Without this handshake fresh clients dropped the snapshot
+    // and stayed with onlineSet=Set(0) even though the server had them online.
     const roster = createPresenceRoster();
     roster.addSocket("org-1", "user-b", "other-sock");
 
     const socket = makeSocket(SESSION_A);
     const { io } = makeIo();
     attachPresenceHandlers({ io, socket, roster });
-    expect(socket.emit).toHaveBeenCalledWith(
-      "presence:snapshot",
-      expect.objectContaining({
-        userIds: expect.arrayContaining(["user-a", "user-b"]) as string[],
-      }),
+
+    // Snapshot MUST NOT fire on connect alone — that's the race.
+    expect(findSnapshotCall(socket)).toBeUndefined();
+
+    fireReady(socket);
+
+    const payload = findSnapshotCall(socket);
+    expect(payload?.userIds).toEqual(
+      expect.arrayContaining(["user-a", "user-b"]),
     );
+  });
+
+  it("does NOT emit presence:snapshot on connect alone — waits for presence:ready (race fix)", () => {
+    // RED-locked test for (fresh-client-presence-snapshot-race). Pre-fix the
+    // snapshot was emitted synchronously inside attach; clients whose
+    // listener attached in a useEffect (i.e. AFTER React commit) lost it.
+    const roster = createPresenceRoster();
+    const socket = makeSocket(SESSION_A);
+    const { io } = makeIo();
+    attachPresenceHandlers({ io, socket, roster });
+
+    expect(findSnapshotCall(socket)).toBeUndefined();
+  });
+
+  it("registers a presence:ready handler on the socket", () => {
+    const roster = createPresenceRoster();
+    const socket = makeSocket(SESSION_A);
+    const { io } = makeIo();
+    attachPresenceHandlers({ io, socket, roster });
+    expect(socket.__handlers.has("presence:ready")).toBe(true);
+  });
+
+  it("snapshot emission is idempotent on duplicate presence:ready (defensive)", () => {
+    // Misbehaving client (double useEffect fire in StrictMode, reconnect-
+    // resume edge case) must not cause two snapshot emissions for one socket.
+    const roster = createPresenceRoster();
+    const socket = makeSocket(SESSION_A);
+    const { io } = makeIo();
+    attachPresenceHandlers({ io, socket, roster });
+
+    fireReady(socket);
+    fireReady(socket);
+    fireReady(socket);
+
+    const snapshotCalls = vi
+      .mocked(socket.emit)
+      .mock.calls.filter((c) => c[0] === "presence:snapshot");
+    expect(snapshotCalls).toHaveLength(1);
   });
 
   it("on disconnect (last socket): emits presence:user {online:false} to the org channel", () => {
@@ -287,17 +347,15 @@ describe("attachPresenceHandlers", () => {
     const socketA = makeSocket(SESSION_A, "sock-a");
     const { io: ioA } = makeIo();
     attachPresenceHandlers({ io: ioA, socket: socketA, roster });
+    fireReady(socketA);
 
     const socketB = makeSocket(SESSION_B, "sock-b");
     const { io: ioB } = makeIo();
     attachPresenceHandlers({ io: ioB, socket: socketB, roster });
+    fireReady(socketB);
 
     // B's snapshot must contain both users (A connected first, B sees A)
-    const bSnapshotCall = vi
-      .mocked(socketB.emit)
-      .mock.calls.find((c) => c[0] === "presence:snapshot");
-    expect(bSnapshotCall).toBeDefined();
-    const bPayload = bSnapshotCall?.[1] as { userIds: string[] } | undefined;
+    const bPayload = findSnapshotCall(socketB);
     expect(bPayload?.userIds).toEqual(
       expect.arrayContaining(["user-a", "user-b"]),
     );
