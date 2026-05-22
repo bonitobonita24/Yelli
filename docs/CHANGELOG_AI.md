@@ -22,6 +22,33 @@
 
 # ---
 
+## 2026-05-22 — (trpc-client-procedure-type-missing) RESOLVED — not-a-bug; debug-inspection artifact + cascade-already-fixed
+
+- Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1 investigation, no Sonnet dispatch; ~90K context across dev server reproduction + @trpc/client + @trpc/server bundle source review + Playwright fresh-user E2E + lessons.md write).
+- Why: The 🔴 [[trpc-client-procedure-type-missing]] entry filed during the prior session's d364462 smoke was a misdiagnosis. Investigation on `fix/trpc-client-procedure-type-missing` (branched from e832987) confirms the underlying symptom — bob's `myBoundDepartmentIds.useQuery()` stuck pending — was downstream of [[fresh-client-presence-snapshot-race]] and already fixed by d364462's presence:ready handshake (per that 🟡 entry's own cascade narrative). The `TypeError: client[procedureType] is not a function` observed post-fix was the tRPC typed-proxy responding to a non-procedure property access during DevTools fiber/queryClient inspection — NOT a runtime error in the application code path. Resolves #14 + #15 BLOCKED status from the prior STATE.md.
+- Files added: none
+- Files modified:
+  - `.cline/memory/lessons.md` — prepended NEW 🔴 [[trpc-proxy-debug-inspection-trap]] entry (mechanism: createFlatProxy + createRecursiveProxy treat ANY property access as a tRPC call type via `clientCallTypeMap[pathCopy.pop()]`; non-procedure keys map to `undefined` → dispatch crashes) + NEW 🟡 RESOLUTION entry for [[trpc-client-procedure-type-missing]] (documents reproduction-attempt evidence + answers the 3 open questions from the prior 🔴 + cites the cascade-fix in [[fresh-client-presence-snapshot-race]]). Original 🔴 entry at line ~1380 left intact as historical record per file convention.
+  - `docs/CHANGELOG_AI.md` — this entry
+  - `docs/IMPLEMENTATION_MAP.md` — promote #14 + #15 from BLOCKED to UNBLOCKED (cascade fix already shipped on d364462; lessons.md update closes the misdiagnosis loop)
+  - `.cline/STATE.md` — rewrite for post-resolution state
+  - `.cline/memory/agent-log.md` — +1 entry for this investigation
+- Files deleted: none
+- Schema/migrations: none
+- Reproduction evidence (2026-05-22 ~8:00 PM GMT+8): fresh user `trpcbug@test.local` registered via /register → bound to new `Test Dept` via /admin/departments → loaded /app → React Query state inspected via fiber-walk-with-strict-instance-guard (avoiding the [[trpc-proxy-debug-inspection-trap]]): `status: "success"`, `data: ["cmpgvke8600061222g09phaa3"]`, `fetchFailureCount: 0`, `error: null`, `observersCount: 1`, query resolved in 502ms per loggerLink. Multiple reloads + StrictMode dev double-mount: state stable in success every time. Self-call via speed-dial tile → calls.initiate mutation 70ms → LiveKit room joined → no console errors related to tRPC. Bug does NOT reproduce on this branch.
+- Errors encountered: My own fiber-walk eval first detonated the proxy trap (`fiber.memoizedProps.client?.getQueryCache` matched the tRPC proxy via duck-typing — proxy returned a recursive sub-proxy for `.getQueryCache`, which then crashed on invocation with the EXACT same stack trace cited in the prior 🔴 entry). This is what proves the original "evidence" was an inspection artifact: I reproduced the TypeError but not the stuck-pending query.
+- Errors resolved: Original 🔴 entry's 3 open questions are now answered in the new 🟡 entry: (1) SpeedDial vs IncomingCallDialog symmetry — both work the same on current branch, no asymmetry; (2) mount position is fine — TRPCReactProvider in root layout propagates context to layout-sibling clients; (3) no React-StrictMode-x-tRPC interaction issue exists.
+- Validation:
+  - pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged from baseline)
+  - pnpm typecheck ✓ 0 errors across all 8 packages
+  - pnpm test ✓ 270 tests pass / 28 files (unchanged from d364462 baseline — no new tests, no test deletions)
+  - pnpm build ✓ Middleware 141 kB unchanged (zero source diff)
+  - pnpm audit --audit-level=critical ✓ exit 0 (1 HIGH pre-documented per [[nodemailer-cve-mitigation]])
+- Two-stage review (Rule 25): N/A for documentation-only resolution. The 🟡 fix entry replaces the spec-compliance check; the [[trpc-proxy-debug-inspection-trap]] 🔴 entry is the code-quality / future-safety contribution.
+- Related: [[fresh-client-presence-snapshot-race]] (actual cascade fix shipped on d364462 that resolved the stuck-pending symptom); [[strictmode-socket-disconnect-permanent]] (sibling Socket.IO fix on d364462); [[trpc-proxy-debug-inspection-trap]] (the trap that produced the original false-positive error).
+
+# ---
+
 ## 2026-05-22 — (rule-16-cleanup) second pass — 4 PASS / 3 BLOCKED on new bug / 1 inline fix shipped
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline single-session orchestration — no Sonnet dispatch; ~115K context across the full pass: dev recovery + DB reset/seed/fixtures + inline CSP fix ship + multi-context smoke + governance writes). Governance-only commit for this entry; the only source-code change of this pass was `(csp-allow-dev-cross-port-socket)` `ad8e090` shipped inline during pre-flight and already recorded above.
