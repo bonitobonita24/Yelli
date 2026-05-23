@@ -38,6 +38,16 @@ services:
       SMTP_PORT: "1025"
     ports:
       - "${APP_PORT}:3000"
+      # Socket.IO listener — bootstrapped by instrumentation.ts on the same
+      # Next.js process but a separate port. Browser connects to it via
+      # NEXT_PUBLIC_SOCKET_URL (cross-port HTTP polling + WebSocket). Must
+      # match SOCKET_PORT in .env.dev so host:43515 → container:43515.
+      # Was missing from the original dev compose template because the
+      # typical dev loop ran `pnpm dev` on host (both ports auto-exposed).
+      # Missing exposure was latent until (auth-bypass-for-e2e) made the
+      # containerized auth path the smoke target. See lessons.md
+      # [[dev-compose-socket-port-exposure]].
+      - "${SOCKET_PORT}:${SOCKET_PORT}"
     networks: [app_network]
     restart: unless-stopped
     depends_on:

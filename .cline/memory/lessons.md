@@ -8,6 +8,13 @@
 
 # ---
 
+## 2026-05-23 — 🔴 [[dev-compose-socket-port-exposure]] Dev compose only exposed APP_PORT, not SOCKET_PORT — browser couldn't reach Socket.IO at all
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (auth-bypass-for-e2e) smoke retry continued 2026-05-23 PM
+- Files:     deploy/compose/dev/docker-compose.app.yml (added "${SOCKET_PORT}:${SOCKET_PORT}" mapping), apps/web/src/server/socket/auth.ts (isProduction switched NODE_ENV→APP_ENV per [[webpack-define-plugin-trap]])
+- Concepts:  docker-compose, port-mapping, socket.io, instrumentation, dev-stack-infra, define-plugin
+- Narrative: instrumentation.ts bootstraps a separate Socket.IO listener on SOCKET_PORT (43515) alongside the main Next.js HTTP server (43512 → container 3000). The dev compose only mapped APP_PORT:3000; port 43515 inside the container was never exposed. Browser console: `WebSocket connection to ws://localhost:43515/socket.io/... failed: ERR_CONNECTION_REFUSED`. AFTER fixing port exposure, the WebSocket connected but received `44{"message":"UNAUTHORIZED"}` and closed — second bug found: `apps/web/src/server/socket/auth.ts` line 124 used `env.NODE_ENV === "production"` to pick the cookie name (dev = `authjs.session-token`, prod = `__Secure-authjs.session-token`). Same DefinePlugin trap as [[webpack-define-plugin-trap]] — env.NODE_ENV inlined as "production" at build, so socket auth searched for `__Secure-*` cookie which Auth.js never sets in dev. Fixed by switching to env.APP_ENV. Both bugs latent since dev compose was first created (memory 1054, 2026-05-14) because typical dev loop ran host `pnpm dev` (memory 2962, 2026-05-20). Surfaced only after (auth-bypass-for-e2e) made the containerized dev path the smoke target. Operational rules: (a) any service listening on multiple ports inside the container MUST map ALL of them; healthcheck on the main port is NOT a substitute for auxiliary listener verification. (b) ALL runtime gates on "is this prod?" must use env.APP_ENV not env.NODE_ENV — see [[webpack-define-plugin-trap]] for the full inlining story. Action item: grep `env.NODE_ENV` across server-side code and convert remaining instances — currently `apps/web/src/server/lib/turnstile.ts:46` still uses env.NODE_ENV (separate ticket filed).
+
 ## 2026-05-23 — 🔴 [[pgbouncer-scram-auth]] PgBouncer AUTH_TYPE must match Postgres `password_encryption` — md5 vs scram-sha-256 produces "wrong password type" on every upstream forward
 - Type:      🔴 gotcha
 - Phase:     Phase 7 (auth-bypass-for-e2e) smoke retry hotfix 2026-05-23 PM

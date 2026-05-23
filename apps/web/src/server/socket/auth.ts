@@ -119,9 +119,14 @@ export async function socketAuthMiddleware(
   socket: Socket,
   next: (err?: Error) => void,
 ): Promise<void> {
+  // APP_ENV not NODE_ENV — webpack DefinePlugin inlines process.env.NODE_ENV
+  // at build time as "production" (next build always builds in prod mode),
+  // so env.NODE_ENV is unreliable at runtime in containerized builds. APP_ENV
+  // is project-controlled and survives bundling as a runtime read. See
+  // lessons.md [[webpack-define-plugin-trap]] + [[auth-bypass-prod-guard]].
   const session = await verifySocketAuth({
     cookieHeader: socket.handshake.headers.cookie ?? null,
-    isProduction: env.NODE_ENV === "production",
+    isProduction: env.APP_ENV === "production",
   });
 
   if (!session) {

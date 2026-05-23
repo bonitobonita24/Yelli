@@ -22,6 +22,48 @@
 
 # ---
 
+## 2026-05-23 — (fix/dev-compose-expose-socket-port) — dev SOCKET_PORT exposure + socket/auth.ts NODE_ENV→APP_ENV; Phase 7 #14/#15 smoke advanced to PARTIAL with diagnosed LiveKit-host-reachability blocker
+
+- Agent: CLAUDE_CODE
+- Why: Continuation of (auth-bypass-for-e2e) smoke retry. After the Prisma engine + PgBouncer fixes (9793ef4), bypass signIn worked end-to-end through the container. Multi-context Playwright smoke then revealed two more dev-stack infrastructure bugs: (a) SOCKET_PORT was never exposed in the dev compose ports list (only APP_PORT:3000), so browser couldn't reach the Socket.IO listener at all — every page logged `WebSocket connection to ws://localhost:43515/socket.io/... failed: ERR_CONNECTION_REFUSED`. (b) After fixing the port exposure, the WebSocket connected but received `44{"message":"UNAUTHORIZED"}` and closed — second instance of the [[webpack-define-plugin-trap]]: socket/auth.ts line 124 used `env.NODE_ENV === "production"` to pick the cookie name (dev=authjs.session-token vs prod=__Secure-authjs.session-token); inlined as "production" at build so socket auth searched for __Secure-* cookie that Auth.js never sets in dev. Both bugs latent since the dev compose's first commit (2026-05-14) because typical dev loop ran host pnpm dev which exposed both ports natively AND used real runtime NODE_ENV.
+- Files modified:
+  - deploy/compose/dev/docker-compose.app.yml (+10): added `"${SOCKET_PORT}:${SOCKET_PORT}"` mapping + comment block cross-referencing [[dev-compose-socket-port-exposure]].
+  - apps/web/src/server/socket/auth.ts (+6/-1): `isProduction: env.NODE_ENV === "production"` → `isProduction: env.APP_ENV === "production"` with comment block citing [[webpack-define-plugin-trap]] + [[auth-bypass-prod-guard]].
+
+VERIFICATION (post-rebuild via start.sh):
+- Container exposes 0.0.0.0:43515→43515/tcp + 0.0.0.0:43512→3000/tcp ✓
+- WebSocket handshake captured via Playwright page.on('websocket') frame inspection:
+    OPEN ws://localhost:43515/socket.io/?EIO=4&transport=websocket
+    RECV: 0{"sid":"otTnIYK8vJ5_53FWAAAa","upgrades":[],"pingInterval":25000,...}
+    SENT: 40
+    RECV: 44{"message":"UNAUTHORIZED"}  ← was failing here before socket auth fix
+    CLOSE
+  Post-fix: connection holds, presence:snapshot propagates.
+- Multi-context Speed Dial state — both alice and bob see identical view:
+    alice tiles: Reception(online), Sales(online), FrontDesk(offline), Support(offline)
+    bob tiles:   Reception(online), Sales(online), FrontDesk(offline), Support(offline)
+  Matches expected per fixtures (alice→Reception, bob→Sales bound; FrontDesk + Support bound to david who isn't in this rig). Phase 7 #11 user-presence + #12 dept-binding green-dot **PASS via container** for the first time.
+- #15 IncomingCallDialog (BLOCKED): alice clicked Call Sales → call initiated successfully → alice's URL changed to /app/call/8fb11627-aeed-433b-9dad-1ad92caab1f7. But bob's `[role="dialog"]` count = 0 — bob never received the call:incoming UI even though socket auth + presence are working. Root cause not yet investigated — could be IncomingCallDialog not mounted on /app route, or call:incoming socket payload not reaching bob's listener.
+- #14 yellow-dot indicator (BLOCKED): alice transitioned to call page but the page rendered "Call failed: could not establish signal connection: Failed to fetch" — LiveKit signal connection failed. Almost certainly LIVEKIT_URL in the container is set to internal docker hostname (`ws://${COMPOSE_PROJECT_NAME}_livekit:7880`) which the browser cannot reach; needs host-mapped port (likely `ws://localhost:43532`) for the BROWSER, while server-side code uses the docker-internal hostname. Separate ticket needed for the NEXT_PUBLIC_LIVEKIT_URL plumbing.
+
+SMOKE OUTCOME — PARTIAL per [[phase-7-realtime-engine-closeout-criterion]]:
+- ✅ PASS: #11 user-presence (container path, was BLOCKED in 2026-05-22 PM smoke)
+- ✅ PASS: #12 dept-binding green-dot (container path, was BLOCKED in 2026-05-22 PM smoke)
+- ✅ PASS: call initiation (alice's POST creates call ID, navigates to /app/call/[id])
+- ❌ BLOCKED: #14 yellow-dot — LiveKit signal failure intercepted (host-reachability of LIVEKIT_URL)
+- ❌ BLOCKED: #15 IncomingCallDialog — bob's listener doesn't render the dialog
+
+Net progress vs prior session: 3 of 5 smoke targets now PASS via container (vs 0 PASS via container previously — prior PARTIAL needed host pnpm dev). Closes the (auth-bypass-for-e2e) ticket family: every part of the bypass infrastructure works as designed. Remaining BLOCKED items are downstream feature plumbing (LiveKit URL exposure + call:incoming subscription discovery), not bypass issues.
+
+NEW QUEUE ITEMS (file as follow-ups):
+- (livekit-url-host-reachability) Tier 1: NEXT_PUBLIC_LIVEKIT_URL must point at host-mapped port (43532), not internal docker hostname, for browser access.
+- (incoming-call-dialog-not-rendered) Tier 1-2: investigate why bob's IncomingCallDialog doesn't appear after alice's call:initiated socket event.
+- (turnstile-app-env-guard) Tier 1: apps/web/src/server/lib/turnstile.ts:46 still uses env.NODE_ENV — same DefinePlugin trap as the bypass + socket auth. Switch to env.APP_ENV.
+
+LESSONS ADDED: 1 — 🔴 [[dev-compose-socket-port-exposure]] (NEW) documenting both bugs (port mapping + socket/auth.ts NODE_ENV gate) since they were discovered + fixed in the same session and share the same root cause (host pnpm dev workflow masking infrastructure bugs in the container path). The DefinePlugin half cross-references [[webpack-define-plugin-trap]] (no second copy — the existing entry covers the framework-level rule).
+
+SKIPPED vercel-plugin auto-suggestions: env-vars / nextjs / next-cache-components / turbopack / next-upgrade / verification (all false positives — basename matches on .env.dev / next.config.ts / various source paths) per Rule 28.
+
 ## 2026-05-23 — (fix/prisma-engine-standalone-bundle) — Prisma engine COPY in Dockerfile + PgBouncer AUTH_TYPE scram-sha-256
 
 - Agent: CLAUDE_CODE
