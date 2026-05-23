@@ -84,6 +84,9 @@ importers:
       '@yelli/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@yelli/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@yelli/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -8,6 +8,7 @@ export {
   reportGenerationQueue,
   usageCalculationQueue,
   billingCycleQueue,
+  xenditWebhookQueue,
   registerCronJobs,
 } from './queues';
 
@@ -17,6 +18,7 @@ export type {
   ReportGenerationJob,
   UsageCalculationJob,
   BillingCycleJob,
+  XenditWebhookJob,
 } from './queues';
 
 // ─── Workers ──────────────────────────────────────────────────────────────────
