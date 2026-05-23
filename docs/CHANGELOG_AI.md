@@ -22,6 +22,34 @@
 
 # ---
 
+## 2026-05-23 — (fix/turnstile-app-env-guard) — extracted shouldEnforceTurnstileHostnameMatch helper + APP_ENV gate — closes last instance of webpack DefinePlugin trap on server-side prod gates
+
+- Agent: CLAUDE_CODE
+- Why: Filed as SLOT 1 of the 2026-05-23 PM handoff queue. Same DefinePlugin trap as `ef17d8f` (auth-bypass-app-env-guard) and the socket/auth.ts portion of `7787469`, surfaced in a third file (`apps/web/src/server/lib/turnstile.ts:46`) during the (dev-compose-socket-port-exposure) investigation but deferred to its own ticket per [[webpack-define-plugin-trap]] action item. Pre-fix: `env.NODE_ENV === "production"` gated the hostname-mismatch enforcement; webpack inlines `process.env.NODE_ENV` as the literal `"production"` at `next build` so the gate constant-folded to true in any containerized dev build → siteverify would reject test-key tokens (which resolve to `hostname: "localhost"`) on every dev login attempt. Not blocking the current smoke (bypass entirely skips Turnstile) but blocks the real credentials login flow in containerized dev.
+- Files added:
+  - apps/web/src/server/lib/turnstile.test.ts (NEW +49, 3 RED→GREEN cases): tests for the new `shouldEnforceTurnstileHostnameMatch(envSnapshot)` pure helper — verifies false in development/staging (test keys must be accepted) and true in production (live keys must match hostname).
+- Files modified:
+  - apps/web/src/server/lib/turnstile.ts (+24/-1): exported new pure helper `shouldEnforceTurnstileHostnameMatch({ APP_ENV })` with docstring cross-referencing [[webpack-define-plugin-trap]]. Rewired the hostname-mismatch gate to call the helper with `{ APP_ENV: env.APP_ENV }` instead of inline `env.NODE_ENV === "production"`. Inline comment annotated with "Gate keyed on APP_ENV not NODE_ENV to avoid the DefinePlugin inlining trap" so future readers know why the indirection exists.
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: none (mechanical hotfix per locked pattern)
+- Errors resolved: closes the action item from [[dev-compose-socket-port-exposure]] — "currently `apps/web/src/server/lib/turnstile.ts:46` still uses env.NODE_ENV (separate ticket filed)". `grep -rn "env\.NODE_ENV" apps/web/src` post-fix returns 0 matches in runtime gate sites (env.ts schema definition + getServerEnv() pass-through remain — both correct; the trap only fires on runtime comparison sites).
+
+VERIFICATION:
+- 291 → 294 ✓ (+3 new turnstile tests). pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged per STATE.md baseline) / pnpm typecheck ✓ 0 errors / pnpm build ✓ Middleware 141 kB UNCHANGED (Edge surface stable per [[instrumentation-edge-stub-required]]).
+- Bundle grep on `.next/standalone/apps/web/.next/server/chunks/9865.js` (the turnstile chunk, identified via `grep -l siteverify`):
+    `APP_ENV:d._.APP_ENV}` — runtime property access PRESERVED (helper signature destructures the snapshot back to the env object)
+    `APP_ENV?{success:!1` — runtime conditional PRESERVED (the gate evaluates at request time, not build time)
+    Zero `NODE_ENV` references in the turnstile path → DefinePlugin no longer inlines this gate.
+
+TWO-STAGE REVIEW (Rule 25):
+- Stage 1 (spec compliance) PASS: helper returns `true` only in production (live key hostname must match); returns `false` in development/staging (test keys resolve to localhost and must be accepted). Matches the original semantic intent of the line-46 gate.
+- Stage 2 (code quality) PASS: TDD RED→GREEN evidenced (3/3 RED on missing export → 3/3 GREEN on helper extraction); helper is single-responsibility pure function matching the `isE2EBypassEnabled` shape; zero `any`; blast radius = 2 files (1 source modified + 1 test new) matching plan; no scope creep into refactoring the broader siteverify flow.
+
+LESSONS ADDED: 1 NEW 🟡 [[turnstile-app-env-guard]] at lessons.md head — closes the action item from [[dev-compose-socket-port-exposure]] and serves as the third worked example of the framework-level rule in [[webpack-define-plugin-trap]]. NOT a new gotcha (the trap is locked at framework level); the fix entry catalogs the third remediation site for future grep-based audits.
+
+---
+
 ## 2026-05-23 — (fix/livekit-url-host-reachability) — pickClientLivekitWsUrl helper + NEXT_PUBLIC_LIVEKIT_URL — alice's SFU signal connects via host port
 
 - Agent: CLAUDE_CODE
