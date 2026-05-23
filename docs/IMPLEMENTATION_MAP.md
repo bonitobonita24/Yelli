@@ -347,23 +347,142 @@ Framework: Spec-Driven Platform V31
 
 ## Not Yet Built
 
-Phase 4 is complete. Items below are out-of-Phase-4 scope or deferred follow-ups.
+> Rewritten 2026-05-23 (Phase 8 Batch 1 Item 1) — supersedes the Phase-4-era Phase-5/6/7
+> stub. Phases 5 + 6 + 7 are all complete. Phase 7 shipped 17 tickets (`#1`–`#17`) plus
+> 2 hotfix SLOTs (turnstile-app-env-guard, incoming-call-dialog-singleton). This section
+> now reflects the **module-by-module depth gap between PRODUCT.md declarations and
+> shipped functionality** as of `6f9ac04` (main) + `phase8-item1-preflight` (this branch).
 
-- **Phase 5 — Validation** (the next phase to run after CREDENTIALS.md placeholders are filled):
-  9 commands — pnpm install + 3 governance tools + lint + typecheck + test + build + audit
-- **Phase 6 — Docker services + Visual QA** (Rule 16): manual trigger after Phase 5 PASS
-- **Phase 7 — Feature update loop** (the everyday workflow once Phase 6 settles)
+### Depth-status legend
+- **✅ built** — PRODUCT.md feature list shipped end-to-end with tests
+- **🟡 scaffolded-logic-stub** — page + tRPC router exist but business logic is mock/partial
+- **⬜ not-built** — declared in PRODUCT.md but no implementation in `apps/web/src`
+- **⏸ deferred** — documented gap, intentionally deferred to a later Phase 8 batch
 
-Deferred follow-ups (documented inline in component JSDoc and tracked in CHANGELOG):
+### Module gap matrix (13 PRODUCT.md modules)
 
-- Socket.IO real-time chat delivery (replace 3s polling in in-call-chat.tsx) — subscribe to `meeting:{id}:chat`
-- In-call file upload pipeline (pre-signed S3 PUT via storage.uploadObject + replace `pending://...` placeholder)
-- Whiteboard multiplayer broadcast over Socket.IO `meeting:{id}:whiteboard` stroke events
-- LiveKit Egress recording state feed (recording:started/stopped webhooks → InCallRecordingIndicator)
-- Kibo UI dropzone swap-in for in-call file dropzone (`npx shadcn add @kibo-ui/dropzone`)
+| Module                                           | Route                  | Depth | Phase 8 Batch              |
+|--------------------------------------------------|------------------------|-------|----------------------------|
+| Speed Dial Board (Intercom)                      | `/app`                 | ✅    | n/a (closed)               |
+| Video Calling                                    | `/app/call/[id]`       | ✅    | n/a (closed)               |
+| In-Call Chat                                     | `/app/chat/[id]`       | 🟡    | B (quick-wins)             |
+| File Sharing (in-call overlay)                   | `/app` overlay         | 🟡    | B (quick-wins)             |
+| Whiteboard (in-call overlay)                     | `/app` overlay         | 🟡    | B (quick-wins)             |
+| Recording library + playback                     | `/app/recordings`      | 🟡    | B (quick-wins)             |
+| Meeting Management (create / lobby / host ctrl)  | `/app/meetings/*`      | ✅    | n/a (closed)               |
+| Department Management                            | `/admin/departments`   | ✅    | n/a (closed)               |
+| User Management                                  | `/admin/users`         | ✅    | n/a (closed)               |
+| Tenant Admin Dashboard analytics                 | `/admin`               | 🟡    | C (admin polish)           |
+| **Billing and Subscription (SaaS) — Xendit**     | `/admin/billing`       | 🟡    | A item 3 (current batch)   |
+| **Super Admin Panel (SaaS)**                     | `/superadmin/*`        | 🟡    | C (admin polish)           |
+| Reports and Export (CSV/PDF)                     | `/admin/reports`       | 🟡    | B (quick-wins)             |
+
+### Module-by-module gap detail (🟡 + ⬜ entries)
+
+#### In-Call Chat — 🟡 scaffolded-logic-stub (deferred per Phase 4 inline JSDoc)
+- ✅ `/app/chat/[id]` page renders, `chat.ts` tRPC router exists, messages persist to DB
+- ⬜ Real-time delivery — currently 3s `useQuery` polling in `in-call-chat.tsx`. Needs
+  `meeting:{id}:chat` Socket.IO channel + `attachChatHandlers` server module per the
+  established attachX pattern + tRPC `chat.send` mutation should `emitToOrg` after persist.
+- Cost: ~6 files. Tier 2. Pattern fully scaffolded by Phase 7 realtime infra — direct copy.
+
+#### File Sharing (in-call overlay) — 🟡 scaffolded-logic-stub
+- ✅ `<InCallFileShare>` component exists with dropzone UI
+- ⬜ Upload pipeline — currently inserts `pending://...` placeholder, no actual S3 PUT.
+  Needs `storage.uploadObject({ tenantId, callId, file })` pre-signed PUT URL flow via
+  `packages/storage` MinIO/S3 wrapper (per `.claude/rules/security.md` FILE UPLOAD SAFETY:
+  MIME whitelist, magic-byte check, 10MB limit, tenant-scoped path prefix, randomized
+  filename, SVG/HTML blocked).
+- ⬜ Kibo UI dropzone swap-in: `npx shadcn add @kibo-ui/dropzone` (per Phase 4 deferred note).
+- Cost: ~5 files. Tier 2.
+
+#### Whiteboard (in-call overlay) — 🟡 scaffolded-logic-stub
+- ✅ Single-user whiteboard renders, strokes captured client-side
+- ⬜ Multi-user broadcast — needs `meeting:{id}:whiteboard` Socket.IO channel,
+  stroke event protocol (`stroke:begin` / `stroke:point` / `stroke:end` / `clear`),
+  cursor-position presence, snapshot persistence to `WhiteboardSnapshot` entity.
+- Cost: ~8 files. Tier 2-3.
+
+#### Recording library — 🟡 scaffolded-logic-stub
+- ✅ `/app/recordings` page lists rows, `recordings.ts` tRPC router exists
+- ⬜ LiveKit Egress wiring — needs `/api/webhooks/livekit` route handler for
+  `recording:started` / `recording:stopped` / `recording:failed` events, signature
+  verification, `Recording.status` state machine, `InCallRecordingIndicator` reactive
+  feed via `meeting:{id}:recording` Socket.IO channel. PRODUCT.md splits this:
+  Self-Hosted → local MinIO file; SaaS paid plans only → platform S3/R2.
+- ⬜ Playback player — needs HLS-compatible `<video>` element with chapter markers.
+- Cost: ~8-10 files. Tier 3.
+
+#### Tenant Admin Dashboard analytics — 🟡 scaffolded-logic-stub
+- ✅ `/admin` page renders (171 lines), navigation works
+- ⬜ Usage analytics widgets — total calls / total minutes / active users / calls-by-dept
+  chart all read from mock data. Needs `admin.usageMetrics` tRPC procedure with date-range
+  filter aggregating `CallLog` + `Participant` tables (tenant-scoped via L1+L6).
+- ⬜ Call logs table — currently mock rows. Needs paginated `admin.listCallLogs`
+  procedure with filter (caller, recipient, type, date-range) per `.claude/rules/security.md`
+  pagination + ownership-check guardrails.
+- ⬜ Chat history viewer — needs `admin.listChatHistory` procedure scoped to org.
+- ⬜ Export wiring — calls into Reports & Export (see below).
+- Cost: ~6-8 files. Tier 2-3.
+
+#### Billing & Subscription (SaaS) — 🟡 scaffolded-logic-stub (Phase 8 Batch 1 Item 3)
+- ✅ `/admin/billing` page renders (241 lines), `billing.ts` tRPC router exists
+- ⬜ Xendit Invoice/Subscription creation tRPC mutations + checkout redirect flow
+- ⬜ `/api/webhooks/xendit` route handler with `x-callback-token` verification +
+  BullMQ idempotency queue per `.claude/rules/security.md` XENDIT PAYMENT WEBHOOK SECURITY
+- ⬜ Plan tier enforcement engine (Phase 8 Batch 1 Item 2 — gates this Item 3)
+- ⬜ Invoice history page with downloadable PDF receipts
+- ⬜ Failed-payment grace state machine (3-day grace → past_due → 7-day grace → auto-downgrade
+   to Starter, no data deletion, features gated)
+- ⬜ Usage alerts: in-app notification at 80% + 100% of plan limits + 5-minute call duration warning
+- Cost: ~15-20 files. Tier 3, split across 3 sub-batches per Phase 8 batch proposal.
+
+#### Super Admin Panel (SaaS) — 🟡 scaffolded-logic-stub
+- ✅ `/superadmin` (190 lines) + `/superadmin/platform-settings` (199 lines) pages render,
+   `superadmin.ts` tRPC router exists (using dedicated unguarded Prisma client per
+   `.claude/rules/security.md` SUPERADMIN section)
+- ⬜ Platform analytics — total tenants / total active calls right now / total revenue /
+   growth-trend charts. Needs `platform.metrics` tRPC procedure on the unguarded Prisma client.
+- ⬜ Tenant CRUD — list/detail/edit-plan/suspend/reactivate. Currently mock list.
+   Needs `platform.tenants.list / .get / .updatePlan / .suspend / .reactivate` procedures.
+   Every action logs to AuditLog with `PLATFORM:` prefix (security rule).
+- ⬜ Revenue reports — revenue-by-period / by-plan-tier / by-payment-method with CSV/PDF export
+- ⬜ Platform settings persistence — currently form renders but does not persist to
+   `PlatformSettings` singleton entity. Needs `platform.settings.get / .update` procedures.
+- ⬜ System health probes — LiveKit server status / database status / storage usage cards.
+   Needs `platform.health` tRPC procedure that runs lightweight probes.
+- Cost: ~12-15 files. Tier 3, single batch (Phase 8 Batch C).
+
+#### Reports & Export — 🟡 scaffolded-logic-stub
+- ✅ `/admin/reports` page renders (136 lines)
+- ⬜ CSV generation — needs server-side `csv.generate(rows, columns)` helper using
+   stream-based CSV builder; downloadable via signed-URL response or direct stream.
+- ⬜ PDF generation — needs server-side PDF builder (puppeteer-core or pdf-lib).
+   PRODUCT.md scope: usage summary / call detail records / revenue summary / department activity.
+- ⬜ Date range presets (today / this week / this month / last 30/60/90 days) — UI exists
+   but does not feed into the report fetch.
+- ⬜ Scheduled reports — **explicitly out of scope per PRODUCT.md** ("none in v1").
+- Cost: ~6-8 files. Tier 2.
+
+### Phase 8 batch organization (proposed, not yet locked)
+
+Batch labels match the proposal accepted on 2026-05-23 PM. Module routing to batch is shown
+in the matrix above. Lock decisions and split plans live in `.cline/STATE.md` + this section
+when each batch begins.
+
+- **Batch A (current — accepted 2026-05-23):**
+  1. Pre-flight hardening (Tier 1, this Item) — CVE refresh + 9-guardrail DECISIONS_LOG section + IMPLEMENTATION_MAP refresh
+  2. Plan tier enforcement engine (Tier 2, 2 sub-sessions) — `packages/shared/plan-limits.ts` + tRPC middleware + UI banner
+  3. Xendit payment + billing flow (Tier 3, 3 sub-sessions — 3a Invoice/Subscription, 3b webhooks+queue, 3c upgrade/downgrade UI + grace state machine)
+- **Batch B — Quick-wins (proposed):** real-time chat over Socket.IO + Reports CSV/PDF + LiveKit Egress recording feed (3 Tier 2 sessions)
+- **Batch C — Admin polish (proposed):** Super Admin platform analytics + tenant CRUD + revenue reports (3 Tier 2-3 sessions)
+
+### Deferred follow-ups (kept here for governance traceability — still applicable)
+
 - Mid-call moderator features (role promotion, kick, force-mute) — requires LiveKit Server SDK
-- Test harness (deferred per Parts 5b–5f precedent — dedicated test-suite Part once Phase 6 settles)
-- Part 6 (apps/mobile) — **SKIPPED** (Yelli is web-only Mobile First responsive per inputs.yml `mobile.enabled: false`)
+- Test harness consolidation (dedicated test-suite Part once a 3rd batch's worth of routers stabilize)
+- Part 6 (apps/mobile) — **PERMANENTLY SKIPPED** (Yelli is web-only Mobile-First responsive per
+  inputs.yml `mobile.enabled: false`; PRODUCT.md does not declare a native mobile app)
 
 ## Modules (13 — per inputs.yml)
 

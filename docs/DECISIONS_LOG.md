@@ -202,7 +202,18 @@ paths bypass org-slug enforcement but still cannot cross-subscribe to other tena
 channels — they must use `platform:*` channels for cross-tenant administrative events.
 Locked: yes — 2026-05-16.
 
-## Unfixed CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v (Phase 7 #9)
+## Unfixed CVE acceptance — nodemailer GHSA-rcmh-qjqh-p98v (Phase 7 #9) — SUPERSEDED 2026-05-23
+
+> **SUPERSEDED 2026-05-23 (Phase 8 Batch 1 Item 1):** This unfixed-CVE acceptance is no longer
+> needed. nodemailer was patched in-tree via `pnpm.overrides` (`"nodemailer@<=7.0.10": ">=7.0.11"`
+> at root `package.json`) after empirical verification that next-auth 5.0.0-beta.25 + @auth/core
+> 0.41.2 + @auth/prisma-adapter 2.11.2 all accept nodemailer 7.x at runtime (peer warnings only,
+> not load failures — `pnpm install` succeeds, `pnpm typecheck` clean, 32 test files / 299 tests
+> pass). The HIGH advisory no longer appears in `pnpm audit --audit-level=high` output.
+> `.npmrc audit-level=critical` and the JSDoc mitigation banner on `apps/web/src/server/lib/email.ts`
+> are retained as defense-in-depth — if a future Auth.js / @auth/core bump unwinds the override,
+> the mitigation reasoning is preserved. The original acceptance rationale below is kept for
+> historical context.
 
 Decision: Accept the unfixed HIGH advisory GHSA-rcmh-qjqh-p98v (nodemailer `addressparser`
 recursive-call DoS, affects <=7.0.10) by raising `.npmrc audit-level` from the previous CI-hardcoded
@@ -275,3 +286,109 @@ listener-attach-then-bootstrap is the native primitive — drop the handshake; (
 that `call:active-snapshot` has the same race — apply the same pattern there for
 consistency rather than inventing a second.
 Locked: yes — 2026-05-22.
+
+## Phase 7 Hardening Notes — 9 Guardrails From Realtime-Engine Build (Phase 8 Batch 1 Item 1)
+
+Decision: Codify nine recurring failure-mode guardrails surfaced across 30 🔴 gotcha entries
+in `.cline/memory/lessons.md` between 2026-05-13 → 2026-05-23 (Phase 7 #1 → SLOT 2 close-out).
+These are not new rules — they are domain-specific applications of existing CLAUDE.md rules
+that recurred frequently enough that future Phase 8 work must default to the hardened pattern,
+not re-discover it. Each guardrail is a single-sentence default-pattern with a one-line
+"if you violate this you will see" symptom anchor and the canonical lesson it traces to.
+
+#### G1 — Webpack runtime singletons MUST live on `globalThis[Symbol.for(...)]`
+Pattern: any module-local `let instance` accessed via cross-chunk static `import` paths will
+silently bifurcate into per-chunk copies under Next.js + webpack code-splitting (no warning,
+no error — emits dead-code silently). Always store the singleton at
+`globalThis[Symbol.for("yelli.<scope>.<name>")]`. Symptom anchor: "the emit ran but the receiver
+never got it." Lesson: [[webpack-module-duplication-singleton-trap]] (2026-05-23). Applies to:
+Socket.IO `io` instance, presence/in-call rosters, any future Redis/queue client used from
+both an `instrumentation.ts` entry and a tRPC route.
+
+#### G2 — Runtime environment gates MUST use APP_ENV, never `process.env.NODE_ENV`
+Pattern: Webpack's DefinePlugin inlines `process.env.NODE_ENV` as a compile-time constant
+during `next build` (production bundle gets `"production"` literally substituted). Any runtime
+branch like `if (env.NODE_ENV !== "production")` becomes a no-op in prod regardless of how the
+container is started. Always read `APP_ENV` (a regular runtime env var) for development/staging/
+production gating. Symptom anchor: prod-only guard code "works in dev, silently disabled in prod."
+Lesson: [[webpack-define-plugin-trap]] (2026-05-23). Applies to: Turnstile hostname-mismatch
+guard, e2e-bypass provider gate, any debug-only logic.
+
+#### G3 — Dev compose MUST expose every port the browser dials, not only APP_PORT
+Pattern: cross-port realtime infrastructure (Socket.IO on SOCKET_PORT, LiveKit on LIVEKIT_PORT,
+MinIO console on STORAGE_CONSOLE_PORT) needs explicit `ports:` mapping in `docker-compose.app.yml`
+even when the service shares the app container — `expose:` alone keeps it Docker-internal.
+Always verify with `docker compose ps | grep PORT` after every port-touching change. Symptom
+anchor: "service runs but browser DevTools shows `net::ERR_CONNECTION_REFUSED`." Lesson:
+[[dev-compose-socket-port-exposure]] (2026-05-23). Applies to: any new dev-time service
+addressable by the browser bundle.
+
+#### G4 — Socket.IO bootstrap MUST gate snapshots on a client→server `:ready` event
+Pattern: fresh-client first-page-load has a race where the React `useEffect` listener-attach
+lands AFTER `socket.connected`, so synchronously-emitted server snapshots (presence, roster,
+active-call) drop on the floor. Server side stores `snapshotEmitted` flag idempotent against
+StrictMode double-fire. Always pair `attachXHandlers` + `attachUserXHandlers` with a
+`{namespace}:ready` event in `ClientToServerEvents`. Symptom anchor: "presence indicator stays
+gray on first load, fixes after navigate-away-and-back." Lesson:
+[[fresh-client-presence-snapshot-race]] (2026-05-22) + DECISIONS_LOG existing entry.
+
+#### G5 — SocketProvider StrictMode cleanup MUST be guarded against permanent disconnect
+Pattern: React 18 StrictMode runs effect cleanup → re-effect in dev. A naive
+`useEffect(() => { connect(); return () => disconnect(); }, [])` will fire `disconnect()`
+without re-`connect()` if the parent unmounts/remounts atomically — leaving the socket dead
+and presence/dialog flows silently broken. Always use the connection-pooling SocketProvider
+(`apps/web/src/lib/socket/SocketProvider.tsx`) which detects StrictMode and skips premature
+cleanup. Symptom anchor: "presence and incoming-call dialog work in prod but break in dev."
+Lesson: [[strictmode-socket-disconnect-permanent]] (2026-05-22).
+
+#### G6 — LiveKit URL MUST return `NEXT_PUBLIC_LIVEKIT_URL` to the browser
+Pattern: server-side `LIVEKIT_URL` env var points at a docker-internal hostname
+(`http://livekit:7880`) for SFU↔server traffic. The token-mint tRPC procedure MUST return
+`env.NEXT_PUBLIC_LIVEKIT_URL` (host-reachable) to the client — never the server-side URL.
+Symptom anchor: "token mints successfully but `connect()` ICE fails / `ERR_NAME_NOT_RESOLVED`
+on the LiveKit hostname." Lesson: [[livekit-url-host-reachability]] (2026-05-23) +
+[[livekit-dev-docker-node-ip-port-mismatch]] (2026-05-21).
+
+#### G7 — Multi-environment env-var renames MUST sweep `.env.dev / .env.staging / .env.prod / .env.example` + compose files in the same commit
+Pattern: code grep + rename in `src/env.ts` is half the work. Every `.env.*` file AND every
+compose file referencing the old name MUST also be updated atomically. Otherwise the variable
+silently resolves as `undefined` in one environment and works in another. Symptom anchor: "dev
+works, staging crashes with `env.X is undefined`." Lesson: [[livekit-env-name-mismatch]]
+(2026-05-19).
+
+#### G8 — Prisma standalone Docker build MUST `COPY` the engine binary explicitly
+Pattern: `next build --output=standalone` traces JS but does not detect Prisma's native engine
+binary. Production Dockerfile MUST include `COPY --from=builder /app/node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/libquery_engine-*.so.node ./node_modules/.prisma/client/`
+(adjust for the active target triple). Symptom anchor: "container starts, first DB query throws
+`PrismaClientInitializationError: cannot find query engine`." Lesson:
+[[prisma-standalone-engine-bundling]] (2026-05-23).
+
+#### G9 — PgBouncer AUTH_TYPE MUST match Postgres `password_encryption`
+Pattern: Postgres 14+ defaults to `scram-sha-256`. PgBouncer's default `AUTH_TYPE=md5` will
+forward auth that Postgres rejects with `password authentication failed (wrong password type)`
+on every connection — not on PgBouncer's own listener. Always set
+`AUTH_TYPE=scram-sha-256` in the PgBouncer compose env when Postgres ≥14. Symptom anchor:
+"PgBouncer accepts the client connection but every upstream forward fails auth." Lesson:
+[[pgbouncer-scram-auth]] (2026-05-23).
+
+#### Domain cross-reference — full gotcha → guardrail mapping
+| Domain                  | Lesson IDs                                                                  | Guardrail |
+|-------------------------|------------------------------------------------------------------------------|-----------|
+| Webpack/bundling        | [[webpack-module-duplication-singleton-trap]] · [[webpack-define-plugin-trap]] · packages-shared-js-leftover · typescript-consistent-type-imports | G1 · G2  |
+| Realtime/Socket.IO      | [[fresh-client-presence-snapshot-race]] · [[strictmode-socket-disconnect-permanent]] · [[trpc-client-procedure-type-missing]] · [[dev-compose-socket-port-exposure]] | G3 · G4 · G5 |
+| LiveKit                 | [[livekit-url-host-reachability]] · [[livekit-dev-docker-node-ip-port-mismatch]] · [[livekit-client-initiated-dual-meaning]] · [[livekit-env-name-mismatch]] | G6 · G7  |
+| Database/Prisma         | [[pgbouncer-scram-auth]] · [[prisma-standalone-engine-bundling]] · prisma-migrate-needs-database-url · prisma-no-cuid2 | G8 · G9  |
+| Auth.js v5 / JWE        | [[auth-bypass-prod-guard]] · [[playwright-smoke-auth-configuration-blocker]] · authjs-jwt-module-augmentation | G2 (APP_ENV gate applies)  |
+| Dependency / CVE        | nodemailer-cve-superseded (this doc, prior section) · nodemailer-8x-peer-break · pnpm-audit-level-ignored | (no new G — covered by pnpm.overrides pattern) |
+| Routing / Guest meeting | [[t-slug-dev-routes-broken]] · [[guest-meeting-layout-bypass-missing]]      | (Phase-7-specific, not recurring) |
+| Dev environment         | bootstrap-wsl2-docker · nextjs-instrumentation-edge-stub                    | (one-time setup, not recurring) |
+| TypeScript strict       | exactoptional-usetheme · sonnet-30k-budget-tool-results                     | (handled by Rule 12 + memory-governance §1) |
+
+#### Use of these guardrails
+Phase 8 Batch 2+ work and all future Phase 7 Feature Updates SHOULD treat G1–G9 as default
+implementation patterns. They do not require a new check in CI — they are reviewer/agent-level
+guardrails, applied during planning (Tiered Decomposition §1) and execution (TDD per Rule 25).
+When a new realtime/bundling/env failure mode surfaces that does not match G1–G9, write a 🔴
+gotcha to lessons.md AND append a tenth guardrail here in a follow-up edit.
+
+Locked: yes — 2026-05-23.
