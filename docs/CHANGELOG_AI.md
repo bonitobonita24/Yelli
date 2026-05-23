@@ -22,6 +22,54 @@
 
 # ---
 
+## 2026-05-23 — (auth-bypass-for-e2e) — Playwright E2E auth bypass helper, env-gated, NODE_ENV !== "production" guarded
+
+- Agent: CLAUDE_CODE
+- Why: The [[playwright-smoke-auth-configuration-blocker]] from 2026-05-22 forced the only viable smoke-test recipe to be "stop the yelli_dev_app container so the host pnpm dev serves auth correctly." That recipe is fragile (requires manual ops) and was identified in the prior STATE.md as the highest-leverage next ticket — a one-time ~20-line investment that converts every future Playwright smoke from PARTIAL to FULL. This ticket builds that helper as an env-gated second Credentials provider that never registers when NODE_ENV === "production".
+- Files added:
+  - apps/web/src/server/auth-bypass.ts (130 lines NEW): exports `isE2EBypassEnabled(env)` pure predicate (dual-gate: AUTH_BYPASS_FOR_E2E=true AND NODE_ENV !== "production"), `authorizeE2EBypass(creds, db)` (skips bcrypt + Turnstile but preserves active-status + non-suspended-org + single-match defense-in-depth), and `buildE2EBypassProvider(db)` (factory returning a NextAuth Credentials provider with distinct id `"e2e-bypass"`).
+  - apps/web/src/server/auth-bypass.test.ts (140 lines NEW): 9 test cases — 4 for `isE2EBypassEnabled` covering all NODE_ENV combinations + the false-flag case, 5 for `authorizeE2EBypass` covering happy-path, missing/empty email, no-match, suspended-org, and ambiguous-email rejection. All test fakes satisfy the structural `BypassPrismaClient` interface.
+- Files modified:
+  - apps/web/src/env.ts (+9 lines): added `AUTH_BYPASS_FOR_E2E` to `serverSchema` (Zod string transformed to boolean — `v === "true"`, defaults false) and to `getServerEnv()`. Schema entry documents the dual-gate dependency in a comment.
+  - apps/web/src/server/auth.ts (+9 lines): imports `env`, `buildE2EBypassProvider`, and `isE2EBypassEnabled`. Defines `bypassProviders` array at module scope, conditionally including the bypass provider. Spreads `bypassProviders` first in the NextAuth providers array so Playwright targeting `signIn("e2e-bypass", ...)` resolves before the standard `Credentials` provider.
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered:
+  1. First typecheck failed because `BypassPrismaClient.user.findMany.where.status` was typed as `string` but Prisma's generated type requires `UserStatus` enum. Fixed by importing `type { UserStatus } from "@yelli/db"` (eslint-disable comment for Rule 13 — type-only import is exempt, same rationale as auth.ts).
+  2. Second typecheck failed because Prisma's `findMany` return type is generic over `include` and the structural `BypassPrismaClient` interface couldn't satisfy the real client's strict generic signature. Fixed by changing `buildE2EBypassProvider`'s parameter type from `BypassPrismaClient` to `unknown`, with an explanatory comment that the cast is safe (the real Prisma client returns a strict superset of `BypassPrismaClient` rows at runtime).
+  3. Lint reported 3 import-order errors — fixed by reordering imports in auth.ts (env before auth-bypass) and auth-bypass.ts (external imports before type imports, with blank-line separator).
+- Errors resolved:
+  1-3 above. Two pre-existing warnings remain unchanged (calls.test.ts non-null assertion + app/layout.tsx no-css-tags) — both predate this ticket and are out of blast radius.
+
+VALIDATION MATRIX:
+- pnpm lint (web): 0 errors, 2 pre-existing warnings unchanged
+- pnpm typecheck (8 packages): 0 errors
+- pnpm test (web): 287/287 ✓ (278 → 287, +9 new bypass tests). Full RED→GREEN evidence: initial run failed all 9 cases with "Cannot find package '@/server/auth-bypass'"; post-implementation run passes all 9.
+- pnpm build (web): success, Middleware bundle 141 kB UNCHANGED (Edge surface stable — bypass code stays in Node-only runtime, never crosses into Edge bundle, consistent with [[instrumentation-edge-stub-required]] discipline)
+- pnpm audit --audit-level=critical: 0 critical, 1 HIGH pre-documented per [[nodemailer-cve-mitigation]]
+
+TWO-STAGE REVIEW (Rule 25):
+- Stage 1 (spec compliance) PASS:
+  - Dual-gate guard (AUTH_BYPASS_FOR_E2E + NODE_ENV) — locked by tests 1-4 in `isE2EBypassEnabled` describe block
+  - Same return shape as real authorize — locked by `authorizeE2EBypass` test case 1 (exact `.toEqual` match)
+  - Defense-in-depth (active status + non-suspended + single-match) — locked by test cases 4, 5, 6
+  - Distinct provider id `"e2e-bypass"` so prod-login UI cannot accidentally target it (visible in `buildE2EBypassProvider` source)
+- Stage 2 (code quality) PASS:
+  - Zero `any` types (one `as unknown` cast at the call site, documented as safe with comment)
+  - TDD RED → GREEN evidenced (see Validation Matrix above)
+  - Blast radius = 4 files (2 NEW source + 2 modified) matching plan exactly
+  - Conventional commit format ready
+  - `isE2EBypassEnabled` is a pure predicate (single responsibility — boolean output, no side effects)
+  - `authorizeE2EBypass` is pure given the `db` argument (single responsibility — auth via email only)
+  - No repeated logic — bypass `authorize` deliberately mirrors real `authorize` return shape but doesn't share code (security-conscious separation: any future change to real authorize must NOT silently propagate to bypass)
+  - Comments document the why (security guard rationale on `isE2EBypassEnabled`, structural cast safety on `buildE2EBypassProvider`)
+
+SKIPPED vercel-plugin auto-suggestions (per Rule 28 + established skip-list precedent):
+- bootstrap / auth / next-forge (matched basename pattern auth.ts on Read): all false positives — bootstrap is a Vercel project-init concept unrelated to Auth.js; auth-plugin guidance is for Marketplace integrations not custom Credentials providers; next-forge is a starter template unrelated to Yelli's existing monorepo
+- next-cache-components (matched "ppr" phrase in user prompt — false positive, "ppr" did not actually appear; suggestion was likely a phrase-similarity false-trigger): not relevant — this ticket adds an auth provider, no caching concerns; Yelli runs Next.js 15.5.18 not 16, proxy.ts migration deferred to a `next-upgrade` ticket
+
+LESSONS ADDED: 1 — [[auth-bypass-prod-guard]] 🔴 gotcha (lessons.md head) documenting the dual-gate rationale and the never-collapse-to-single-condition rule.
+
 ## 2026-05-22 — (admin-bounce-prefix-symmetry) — preserve /t/{slug} URL prefix on RSC RBAC bounces
 
 - Agent: CLAUDE_CODE (Opus 4.7 inline single-session — Tier 1; ~45K context across middleware + tenant-redirect + 3 RSC layout/page reads + helper impl + test write + validation matrix).

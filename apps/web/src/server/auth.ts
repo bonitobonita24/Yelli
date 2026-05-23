@@ -23,6 +23,8 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
+import { env } from "@/env";
+import { buildE2EBypassProvider, isE2EBypassEnabled } from "@/server/auth-bypass";
 import { authConfig } from "@/server/auth.config";
 
 const credentialsSchema = z.object({
@@ -31,9 +33,17 @@ const credentialsSchema = z.object({
   organizationSlug: z.string().min(1).optional(),
 });
 
+// (auth-bypass-for-e2e) — Conditionally include the E2E bypass provider.
+// Dual-gated: AUTH_BYPASS_FOR_E2E=true AND NODE_ENV !== "production".
+// See auth-bypass.ts + lessons.md [[auth-bypass-prod-guard]].
+const bypassProviders = isE2EBypassEnabled(env)
+  ? [buildE2EBypassProvider(platformPrisma)]
+  : [];
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
+    ...bypassProviders,
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },

@@ -8,6 +8,13 @@
 
 # ---
 
+## 2026-05-23 — 🔴 [[auth-bypass-prod-guard]] AUTH_BYPASS_FOR_E2E must be dual-gated by NODE_ENV !== "production" — single env-var gate is one accidental flag-flip away from prod auth bypass
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (auth-bypass-for-e2e) shipped 2026-05-23
+- Files:     apps/web/src/server/auth-bypass.ts (isE2EBypassEnabled predicate), apps/web/src/server/auth.ts (call site), apps/web/src/env.ts (schema entry)
+- Concepts:  auth, e2e, playwright, security-guard, dual-gate, env-flag, prod-safety
+- Narrative: The (auth-bypass-for-e2e) helper exists ONLY because Playwright smoke testing kept hitting the [[playwright-smoke-auth-configuration-blocker]] (Turnstile dummy tokens + stale Docker app container running an empty providers array). The implementation lets E2E sign in by email alone — no password, no Turnstile, no bcrypt. **A single env-var gate (`AUTH_BYPASS_FOR_E2E=true`) is NOT enough.** If that var ever leaks into a prod `.env` — by deploy-script error, by a copy-pasted staging config, by a developer setting it locally and pushing — every account in the platform is suddenly logged-in-able with just an email. The implementation enforces TWO independent conditions in `isE2EBypassEnabled()`: (1) `AUTH_BYPASS_FOR_E2E === true` AND (2) `NODE_ENV !== "production"`. Both must hold. NODE_ENV is locked to `production` on Vercel/Komodo deploys, and Next.js sets it automatically on `next build` for production; this makes it harder to spoof than a project-specific env var. The predicate is extracted as a pure function and unit-tested across all four NODE_ENV combinations + the false-flag case (auth-bypass.test.ts lines 53-87) so any future refactor that drops the prod guard will fail the test suite immediately. **Never collapse this to a single condition. Never gate the provider on just one env value. Never trust a single source of "is this prod?" truth.** Also: the provider is given a distinct id (`"e2e-bypass"`) — not the same id as the real Credentials provider — so Playwright must explicitly target it via `signIn("e2e-bypass", ...)`. Real prod-login UI calls `signIn("credentials", ...)` and never finds the bypass provider even if it somehow registered. Defense in depth at the provider-routing layer too.
+
 ## 2026-05-22 — 🟤 [[phase-7-realtime-engine-closeout-criterion]] Decision: PARTIAL visual-QA smoke + full unit-test coverage is a sufficient close-out gate for Phase 7 realtime tickets
 - Type:      🟤 decision
 - Phase:     Phase 7 #11/#12/#14/#15/#16/#17 close-out (2026-05-22 PM after `fc9395b`)

@@ -39,6 +39,14 @@ const serverSchema = z.object({
   LIVEKIT_URL: z.string().url().optional(),
   XENDIT_SECRET_KEY: z.string().optional(),
   XENDIT_WEBHOOK_TOKEN: z.string().optional(),
+  // (auth-bypass-for-e2e) — Playwright/E2E auth bypass flag. MUST default false.
+  // Combined with NODE_ENV !== "production" guard inside auth-bypass.ts. Setting
+  // this true alone is not sufficient to enable the bypass (see lessons.md
+  // [[auth-bypass-prod-guard]]).
+  AUTH_BYPASS_FOR_E2E: z
+    .string()
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 const clientSchema = z.object({
@@ -74,6 +82,7 @@ function getServerEnv() {
     LIVEKIT_URL: process.env.LIVEKIT_URL,
     XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
     XENDIT_WEBHOOK_TOKEN: process.env.XENDIT_WEBHOOK_TOKEN,
+    AUTH_BYPASS_FOR_E2E: process.env.AUTH_BYPASS_FOR_E2E,
   };
 }
 
