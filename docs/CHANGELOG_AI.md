@@ -22,6 +22,17 @@
 
 # ---
 
+## 2026-05-23 — (fix/socket-io-singleton-globalthis) — hoisted ioInstance singleton to globalThis[Symbol.for("yelli.socket.io")] so it survives webpack module duplication across instrumentation-chunk vs route-chunk copies of server.ts — restores call:incoming and any future tRPC-originated emitToOrg
+- Agent: CLAUDE_CODE
+- Why: SLOT 2 empirical Playwright pass (multi-context alice + bob auth-bypass rig with per-frame WS instrumentation) confirmed H3 from STATE.md: bob's socket connected and joined org channels (presence + in-call frames flowed), bob's myBoundDepartmentIds tRPC returned the correct Sales dept id, alice's calls.initiate mutation returned successfully — yet bob received ZERO call:incoming WS frames in the 3.5s post-click window. Bundle forensics on apps/web/.next/server/chunks/ proved Next.js+webpack tree-shook two distinct copies of apps/web/src/server/socket/server.ts (one in chunk 7947 invoked by instrumentation.ts's dynamic `await import`, another in chunk 9865 used by calls.ts's static `import { getIO }`). The route-chunk copy's module-local `let ioInstance = null` was never assigned — only the instrumentation-chunk copy got the live io — so getIO() from any tRPC route returned null, the `if (io !== null)` guard at calls.ts:59 silently no-op'd the emit, and emitToOrg was dead code from any tRPC origin since Phase 7 #15 (2026-05-19). Fix: store the singleton on globalThis under Symbol.for("yelli.socket.io"); both compiled copies read/write the same slot since Symbol.for is realm-global. The audit reach is wider than call:incoming alone — any future tRPC endpoint that uses getIO + emitToOrg was equally broken under the same trap.
+- Files added: apps/web/src/server/socket/server.test.ts (5 cases, includes the duplication scenario simulated via vi.resetModules)
+- Files modified: apps/web/src/server/socket/server.ts (replaced `let ioInstance` with globalThis Symbol slot in getIO + createSocketServer; preserved idempotency contract across copies; expanded header comment to cite the trap), .cline/memory/lessons.md (new 🔴 [[webpack-module-duplication-singleton-trap]] entry), docs/IMPLEMENTATION_MAP.md (SLOT 2 closure), .cline/STATE.md (SLOT 2 complete + Phase 7 realtime-engine close-out criterion convertible PARTIAL→FULL)
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered: 3 RED test cases pre-fix (stores-on-symbol-slot, survives-module-duplication, idempotent-across-copies); 1 lint error post-test-write (import/order on the new test file — fixed by separating http and vitest into distinct groups per project convention)
+- Errors resolved: TDD GREEN at 5/5 cases after globalThis Symbol hoist; lint reorder fix; empirical Playwright re-verification — bob receives call:incoming at tRel=7064ms (41ms after click), bob.dialog.count=1, alice navigates to /app/call/971f919a..., callIncomingFrames=1
+- Verification: pnpm vitest run (299/299 pass for full @yelli/web suite, +5 NEW for server.test.ts), pnpm typecheck (clean), pnpm lint (0 errors, 2 pre-existing warnings unrelated to this change), multi-context Playwright smoke confirms end-to-end signal restoration
+
 ## 2026-05-23 — (fix/turnstile-app-env-guard) — extracted shouldEnforceTurnstileHostnameMatch helper + APP_ENV gate — closes last instance of webpack DefinePlugin trap on server-side prod gates
 
 - Agent: CLAUDE_CODE

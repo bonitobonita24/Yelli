@@ -11,6 +11,18 @@
  * HTTP server on APP_PORT. This keeps `next start` and `output: standalone`
  * Docker builds unchanged; CORS lets the Next.js origin connect to the
  * separate port.
+ *
+ * Singleton storage: the io reference lives on
+ * `globalThis[Symbol.for("yelli.socket.io")]`, NOT a module-local `let`.
+ * Reason: Next.js + webpack bundles this file into two compiled chunks —
+ * instrumentation.ts uses `await import(...)` (instrumentation chunk),
+ * tRPC routers use `import { getIO }` (route chunk). Tree-shaking gives
+ * the route chunk a stripped copy whose module-local `ioInstance` is never
+ * assigned, so `getIO()` from the route side would return null forever and
+ * every `emitToOrg(...)` silently no-ops. `Symbol.for(...)` returns the same
+ * symbol value across module copies, so both chunks read/write one slot.
+ * See lessons.md [[webpack-module-duplication-singleton-trap]] +
+ * [[webpack-define-plugin-trap]] for the broader trap family.
  */
 import { Server as IOServer } from "socket.io";
 
@@ -29,17 +41,24 @@ import {
 
 import type { Server as HttpServer } from "http";
 
-let ioInstance: IOServer | null = null;
+const IO_SYMBOL = Symbol.for("yelli.socket.io");
+
+type GlobalWithIO = typeof globalThis & {
+  [IO_SYMBOL]?: IOServer;
+};
 
 export function getIO(): IOServer | null {
-  return ioInstance;
+  return (globalThis as GlobalWithIO)[IO_SYMBOL] ?? null;
 }
 
 export function createSocketServer(httpServer: HttpServer): IOServer {
-  // Idempotent on Next.js dev HMR re-execution of instrumentation.ts.
-  // Mirrors the legacy initSocketServer's guarantee — without it, a second
-  // call silently reassigns ioInstance and orphans every existing connection.
-  if (ioInstance !== null) return ioInstance;
+  // Idempotent on Next.js dev HMR re-execution of instrumentation.ts AND
+  // across webpack-duplicated module copies (the route chunk's copy of this
+  // file may also reach this function under unexpected code paths — it must
+  // return the live io rather than build a second one bound to a different
+  // httpServer, which would orphan every existing connection).
+  const existing = getIO();
+  if (existing !== null) return existing;
 
   const io = new IOServer(httpServer, {
     cors: {
@@ -56,9 +75,10 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
     transports: ["websocket", "polling"],
   });
 
-  // Expose singleton so the tRPC side (calls.initiate) can broadcast via
-  // emitToOrg without going through the dead legacy lib/socket/server.ts.
-  ioInstance = io;
+  // Expose singleton on globalThis so the tRPC side (calls.initiate) can
+  // broadcast via emitToOrg even when its copy of this module was bundled
+  // into a different webpack chunk than the instrumentation copy.
+  (globalThis as GlobalWithIO)[IO_SYMBOL] = io;
 
   io.use((socket, next) => {
     socketAuthMiddleware(socket, next).catch((err: unknown) => {
