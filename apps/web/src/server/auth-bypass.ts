@@ -9,10 +9,16 @@
  *
  * Security guards (BOTH required — single point of failure if either is wrong):
  *   1. AUTH_BYPASS_FOR_E2E === true (env schema, defaults false)
- *   2. NODE_ENV !== "production" (env enum, validated at boot)
+ *   2. APP_ENV !== "production" (env enum, validated at boot)
  *
- * Tests live in auth-bypass.test.ts. See lessons.md
- * [[auth-bypass-prod-guard]] for the rationale on the dual-gate design.
+ * Why APP_ENV instead of NODE_ENV: webpack's DefinePlugin inlines
+ * `process.env.NODE_ENV` as `"production"` at `next build` time, so a NODE_ENV
+ * guard constant-folds to false in any containerized dev build — defeating
+ * the bypass entirely. APP_ENV is a project-controlled var that webpack does
+ * NOT inline (only NODE_ENV is in DefinePlugin's static-replacement target
+ * list). See lessons.md [[auth-bypass-prod-guard]] + [[webpack-define-plugin-trap]].
+ *
+ * Tests live in auth-bypass.test.ts.
  */
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
@@ -28,9 +34,9 @@ import type { UserStatus } from "@yelli/db";
  */
 export function isE2EBypassEnabled(env: {
   AUTH_BYPASS_FOR_E2E: boolean;
-  NODE_ENV: "development" | "staging" | "production";
+  APP_ENV: "development" | "staging" | "production";
 }): boolean {
-  return env.AUTH_BYPASS_FOR_E2E === true && env.NODE_ENV !== "production";
+  return env.AUTH_BYPASS_FOR_E2E === true && env.APP_ENV !== "production";
 }
 
 const bypassSchema = z.object({

@@ -21,6 +21,15 @@ const serverSchema = z.object({
   NODE_ENV: z
     .enum(["development", "staging", "production"])
     .default("development"),
+  // APP_ENV is the project-controlled "is this prod?" signal. Distinct from
+  // NODE_ENV because webpack's DefinePlugin inlines NODE_ENV at build time —
+  // any code that gates on env.NODE_ENV at runtime in a containerized build
+  // will see the build-time value (always "production"), not the runtime
+  // container env. APP_ENV survives bundling as a runtime process.env read.
+  // Used by auth-bypass.ts; see lessons.md [[webpack-define-plugin-trap]].
+  APP_ENV: z
+    .enum(["development", "staging", "production"])
+    .default("development"),
   STORAGE_ENDPOINT: z.string().url().optional(),
   STORAGE_ACCESS_KEY: z.string().optional(),
   STORAGE_SECRET_KEY: z.string().optional(),
@@ -67,6 +76,7 @@ function getServerEnv() {
     APP_PORT: process.env.APP_PORT,
     SOCKET_PORT: process.env.SOCKET_PORT,
     NODE_ENV: process.env.NODE_ENV,
+    APP_ENV: process.env["APP_ENV"],
     STORAGE_ENDPOINT: process.env.STORAGE_ENDPOINT,
     STORAGE_ACCESS_KEY: process.env.STORAGE_ACCESS_KEY,
     STORAGE_SECRET_KEY: process.env.STORAGE_SECRET_KEY,

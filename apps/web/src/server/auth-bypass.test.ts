@@ -4,12 +4,12 @@
  * Purpose: provide a deterministic, no-Turnstile, no-bcrypt auth path for
  * Playwright smoke tests. Replaces the manual "stop the dev container"
  * recipe from [[playwright-smoke-auth-configuration-blocker]] with an
- * env-gated provider that never registers when NODE_ENV === "production".
+ * env-gated provider that never registers when APP_ENV === "production".
  *
  * Security model:
  *   - Bypass is gated by TWO independent conditions (both required):
  *       1. AUTH_BYPASS_FOR_E2E === true (boolean from env schema)
- *       2. NODE_ENV !== "production"
+ *       2. APP_ENV !== "production"
  *   - If either guard is missing, isE2EBypassEnabled() returns false and the
  *     provider is never registered in NextAuth's providers array.
  *   - authorizeE2EBypass() still goes through platformPrisma to fetch the
@@ -66,26 +66,26 @@ const activeUser: FakeUserRow = {
 };
 
 describe("isE2EBypassEnabled", () => {
-  it("returns true when AUTH_BYPASS_FOR_E2E=true and NODE_ENV=development", () => {
+  it("returns true when AUTH_BYPASS_FOR_E2E=true and APP_ENV=development", () => {
     expect(
       isE2EBypassEnabled({
         AUTH_BYPASS_FOR_E2E: true,
-        NODE_ENV: "development",
+        APP_ENV: "development",
       }),
     ).toBe(true);
   });
 
-  it("returns true when AUTH_BYPASS_FOR_E2E=true and NODE_ENV=staging", () => {
+  it("returns true when AUTH_BYPASS_FOR_E2E=true and APP_ENV=staging", () => {
     expect(
-      isE2EBypassEnabled({ AUTH_BYPASS_FOR_E2E: true, NODE_ENV: "staging" }),
+      isE2EBypassEnabled({ AUTH_BYPASS_FOR_E2E: true, APP_ENV: "staging" }),
     ).toBe(true);
   });
 
-  it("returns false when AUTH_BYPASS_FOR_E2E=true but NODE_ENV=production", () => {
+  it("returns false when AUTH_BYPASS_FOR_E2E=true but APP_ENV=production", () => {
     expect(
       isE2EBypassEnabled({
         AUTH_BYPASS_FOR_E2E: true,
-        NODE_ENV: "production",
+        APP_ENV: "production",
       }),
     ).toBe(false);
   });
@@ -94,7 +94,7 @@ describe("isE2EBypassEnabled", () => {
     expect(
       isE2EBypassEnabled({
         AUTH_BYPASS_FOR_E2E: false,
-        NODE_ENV: "development",
+        APP_ENV: "development",
       }),
     ).toBe(false);
   });
