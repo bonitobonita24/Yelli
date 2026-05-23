@@ -12,3 +12,4 @@ export * from './subscription';
 export * from './invoice';
 export * from './platformSettings';
 export * from './auth';
+export * from './billing-checkout';
