@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { prisma, writeAuditLog } from "@yelli/db";
 import { z } from "zod";
 
+import { assertNumericPlanLimit } from "@/server/trpc/middleware/plan-limit";
 import {
   adminProcedure,
   protectedProcedure,
@@ -108,6 +109,34 @@ export const departmentsRouter = router({
     .input(createDepartmentInput)
     .mutation(async ({ ctx, input }) => {
       return prisma.$transaction(async (tx) => {
+        // Plan-tier enforcement (Phase 8 Item 2): count current departments
+        // for this org and reject if at cap. Counted inside the tx so racy
+        // parallel creates can't both squeak under the cap.
+        const departmentCount = await tx.department.count({
+          where: { organization_id: ctx.organizationId },
+        });
+        await assertNumericPlanLimit(
+          ctx.organizationId,
+          "departments",
+          departmentCount,
+        );
+
+        // If creating with auto_answer_enabled = true, also gate by the
+        // autoAnswerStations cap (free: 2, pro: 10, enterprise: ∞).
+        if (input.auto_answer_enabled === true) {
+          const stationCount = await tx.department.count({
+            where: {
+              organization_id: ctx.organizationId,
+              auto_answer_enabled: true,
+            },
+          });
+          await assertNumericPlanLimit(
+            ctx.organizationId,
+            "autoAnswerStations",
+            stationCount,
+          );
+        }
+
         const created = await tx.department.create({
           data: {
             organization_id: ctx.organizationId,
@@ -144,10 +173,30 @@ export const departmentsRouter = router({
       return prisma.$transaction(async (tx) => {
         const existing = await tx.department.findUnique({
           where: { id: input.id },
-          select: { id: true, name: true },
+          select: { id: true, name: true, auto_answer_enabled: true },
         });
         if (!existing) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Department not found." });
+        }
+
+        // Plan-tier enforcement (Phase 8 Item 2): gate the auto-answer flip
+        // (false → true) on the autoAnswerStations cap. A no-op flip (already
+        // on) and a flip-off do not consume a station slot, so they bypass.
+        if (
+          input.data.auto_answer_enabled === true &&
+          existing.auto_answer_enabled === false
+        ) {
+          const stationCount = await tx.department.count({
+            where: {
+              organization_id: ctx.organizationId,
+              auto_answer_enabled: true,
+            },
+          });
+          await assertNumericPlanLimit(
+            ctx.organizationId,
+            "autoAnswerStations",
+            stationCount,
+          );
         }
 
         const updated = await tx.department.update({

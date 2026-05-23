@@ -5,6 +5,7 @@ import "server-only";
 import { platformPrisma } from "@yelli/db";
 import { redirect } from "next/navigation";
 
+import { PlanLimitBanner } from "@/components/plan-limit/usage-banner";
 import { SpeedDialGrid } from "@/components/speed-dial/speed-dial-grid";
 import { auth } from "@/server/auth";
 
@@ -34,6 +35,12 @@ export default async function AppPage() {
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">
         Speed Dial
       </h1>
+      {/* Banners render only at ≥80% — silent below threshold. Banner is a
+          client component (uses tRPC hooks) so it streams in below the RSC
+          shell. Tenant admins see actionable copy; participants see read-only
+          informational state. */}
+      <PlanLimitBanner feature="autoAnswerStations" />
+      <PlanLimitBanner feature="departments" />
       <SpeedDialGrid
         departments={departments}
         userRole={session.user.role}

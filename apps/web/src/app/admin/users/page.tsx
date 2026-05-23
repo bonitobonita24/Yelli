@@ -31,6 +31,8 @@ import {
 import { toast } from "@yelli/ui/use-toast";
 import { useState } from "react";
 
+import { PlanLimitBanner } from "@/components/plan-limit/usage-banner";
+import { usePlanUsage } from "@/lib/plan-usage/use-plan-usage";
 import { trpc } from "@/lib/trpc/react";
 
 type Role = "tenant_admin" | "host" | "participant";
@@ -50,6 +52,7 @@ const EMPTY_INVITE: InviteFormValues = {
 export default function AdminUsersPage(): JSX.Element {
   const utils = trpc.useUtils();
   const list = trpc.admin.users.list.useQuery();
+  const planUsage = usePlanUsage();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [form, setForm] = useState<InviteFormValues>(EMPTY_INVITE);
@@ -61,6 +64,8 @@ export default function AdminUsersPage(): JSX.Element {
   const invite = trpc.admin.users.invite.useMutation({
     onSuccess: (result) => {
       utils.admin.users.list.invalidate();
+      // Refresh banner usage counts so the next Invite click sees the new tally.
+      utils.billing.usage.current.invalidate();
       setInviteOpen(false);
       setForm(EMPTY_INVITE);
       setCredentialResult({
@@ -126,8 +131,16 @@ export default function AdminUsersPage(): JSX.Element {
             Manage team members, roles, and access.
           </p>
         </div>
-        <Button onClick={() => setInviteOpen(true)}>Invite user</Button>
+        <Button
+          onClick={() => setInviteOpen(true)}
+          disabled={planUsage.isAtLimit("users")}
+        >
+          Invite user
+        </Button>
       </header>
+
+      <PlanLimitBanner feature="users" />
+      <PlanLimitBanner feature="admins" />
 
       <Card>
         <CardContent className="p-0">
@@ -280,7 +293,14 @@ export default function AdminUsersPage(): JSX.Element {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={invite.isPending}>
+              <Button
+                type="submit"
+                disabled={
+                  invite.isPending ||
+                  planUsage.isAtLimit("users") ||
+                  (form.role === "tenant_admin" && planUsage.isAtLimit("admins"))
+                }
+              >
                 Invite
               </Button>
             </DialogFooter>

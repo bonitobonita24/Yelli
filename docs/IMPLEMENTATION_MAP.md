@@ -430,7 +430,7 @@ Framework: Spec-Driven Platform V31
 - ⬜ Xendit Invoice/Subscription creation tRPC mutations + checkout redirect flow
 - ⬜ `/api/webhooks/xendit` route handler with `x-callback-token` verification +
   BullMQ idempotency queue per `.claude/rules/security.md` XENDIT PAYMENT WEBHOOK SECURITY
-- ⬜ Plan tier enforcement engine (Phase 8 Batch 1 Item 2 — gates this Item 3)
+- ✅ Plan tier enforcement engine (Phase 8 Batch 1 Item 2 — shipped 2026-05-23 on `feat/phase8-item2-plan-tier-enforcement`): `packages/shared/plan-limits.ts` SoT (PLAN_LIMITS record + NumericPlanFeature/BooleanPlanFeature unions + helpers); `apps/web/src/server/trpc/middleware/plan-limit.ts` (enforceNumericPlanLimit/requirePlanCapability factories + assertNumericPlanLimit/assertPlanCapability inline helpers for tx-consistent counts); router gating wired into departments.create (departments + autoAnswerStations caps), departments.update (autoAnswerStations on false→true flip), admin.users.invite (users + admins sub-cap); `billing.usage.current` query returning {plan_tier, limits, usage}; UI `<PlanLimitBanner>` + `usePlanUsage` hook integrated on Speed Dial / Departments / Users pages with disabled-CTA at cap + cache invalidation on mutation success; 40 new test cases (12 middleware + 14 integration + 14 banner state); 35 files / 339 tests / typecheck 0 / lint 0. Architect-Execute: 1 Sonnet 2a-i dispatch (thrashed at ~20K effective Sonnet budget — files authored correctly, validation drove inline by Opus); 2a-ii / 2b-i / 2b-ii executed inline as Opus per §2.5b (atomic mechanical with full pre-loaded context; coordination overhead of 3 split Sonnets > inline cost).
 - ⬜ Invoice history page with downloadable PDF receipts
 - ⬜ Failed-payment grace state machine (3-day grace → past_due → 7-day grace → auto-downgrade
    to Starter, no data deletion, features gated)
@@ -470,10 +470,10 @@ Batch labels match the proposal accepted on 2026-05-23 PM. Module routing to bat
 in the matrix above. Lock decisions and split plans live in `.cline/STATE.md` + this section
 when each batch begins.
 
-- **Batch A (current — accepted 2026-05-23):**
-  1. Pre-flight hardening (Tier 1, this Item) — CVE refresh + 9-guardrail DECISIONS_LOG section + IMPLEMENTATION_MAP refresh
-  2. Plan tier enforcement engine (Tier 2, 2 sub-sessions) — `packages/shared/plan-limits.ts` + tRPC middleware + UI banner
-  3. Xendit payment + billing flow (Tier 3, 3 sub-sessions — 3a Invoice/Subscription, 3b webhooks+queue, 3c upgrade/downgrade UI + grace state machine)
+- **Batch A (in progress — accepted 2026-05-23):**
+  1. ✅ Pre-flight hardening (Tier 1) — CVE refresh + 9-guardrail DECISIONS_LOG section + IMPLEMENTATION_MAP refresh — shipped as `307963f`.
+  2. ✅ Plan tier enforcement engine (Tier 2, planned 2 sub-sessions, executed as 4 atomic commits e985ca8 → 1232110 → 5bbeeb8 → a066621) — `packages/shared/plan-limits.ts` SoT + tRPC middleware + UI banner + page integration + 40 new tests. Branch `feat/phase8-item2-plan-tier-enforcement` ready to squash-merge.
+  3. ⬜ Xendit payment + billing flow (Tier 3, 3 sub-sessions — 3a Invoice/Subscription, 3b webhooks+queue, 3c upgrade/downgrade UI + grace state machine) — next.
 - **Batch B — Quick-wins (proposed):** real-time chat over Socket.IO + Reports CSV/PDF + LiveKit Egress recording feed (3 Tier 2 sessions)
 - **Batch C — Admin polish (proposed):** Super Admin platform analytics + tenant CRUD + revenue reports (3 Tier 2-3 sessions)
 

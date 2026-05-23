@@ -22,6 +22,40 @@
 
 # ---
 
+## 2026-05-23 — Phase 8 Batch 1 Item 2 — Plan-tier enforcement engine
+
+- Agent: CLAUDE_CODE (Architect: Opus 4.7; Executor: 1× Sonnet 4.6 dispatch for 2a-i, remaining 3 sub-sessions inline as Opus per §2.5b after Sonnet thrashed at ~20K effective budget on the first dispatch)
+- Why: User said "start Item 2". PRODUCT.md L97-104 declares Free/Pro/Enterprise caps but the codebase had no enforcement — every tenant could create unlimited departments, invite unlimited users, and toggle unlimited auto-answer stations regardless of `Organization.plan_tier`. Item 2 closes that gap on the four caps that ship in Item 2 scope (users, admins, departments, autoAnswerStations) — the other caps (participantsPerCall, callDurationMinutes, recordingHoursPerMonth, chatRetentionDays) are runtime concerns deferred to later items. Backend assertNumericPlanLimit is the authoritative gate; UI banner + disabled-CTA is proactive UX so admins see boundaries before a mutation rejects.
+- Files added:
+  - packages/shared/src/plan-limits.ts — PLAN_LIMITS record (PRODUCT.md L97-104 verbatim) + NumericPlanFeature/BooleanPlanFeature unions + isAtNumericLimit/hasCapability helpers. Infinity for unlimited tiers. Pure TS, no Zod/Prisma deps.
+  - apps/web/src/server/trpc/middleware/plan-limit.ts — enforceNumericPlanLimit/requirePlanCapability middleware factories (plain async functions, .use()-able) + assertNumericPlanLimit/assertPlanCapability inline helpers (for tx-consistent counts).
+  - apps/web/src/server/trpc/middleware/plan-limit.test.ts — 12 cases: at-cap throw, below-cap pass, Infinity tier, capability flags (free/pro/enterprise × whiteLabel/filePersistence), missing org context, org not found.
+  - apps/web/src/server/trpc/routers/plan-limit-integration.test.ts — 14 cases exercising the new at-cap reject paths in departments.create/update + admin.users.invite + billing.usage shape.
+  - apps/web/src/lib/plan-usage/compute-banner-state.ts — pure helpers: getBannerSeverity (80% warning / 100% destructive per PRODUCT.md L108), formatFeatureLabel, formatUsageMessage, canUpgrade.
+  - apps/web/src/lib/plan-usage/compute-banner-state.test.ts — 14 cases pinning threshold boundaries, Infinity, label/message shape, canUpgrade.
+  - apps/web/src/lib/plan-usage/use-plan-usage.ts — client hook wrapping trpc.billing.usage.current; exposes getBannerProps + isAtLimit.
+  - apps/web/src/components/plan-limit/usage-banner.tsx — thin client component over shadcn Alert (warning/destructive variants + upgrade CTA via next/link).
+- Files modified:
+  - packages/shared/src/index.ts — re-export plan-limits via barrel.
+  - apps/web/src/server/trpc/routers/departments.ts — `create` counts departments in tx + asserts cap; gates autoAnswerStations cap when input.auto_answer_enabled=true. `update` enforces autoAnswerStations only on false→true flip (no-op flips and flip-offs bypass).
+  - apps/web/src/server/trpc/routers/admin.ts — `users.invite` asserts users cap always + admins sub-cap when role=tenant_admin. Both counts inside the tx so concurrent invites can't both squeak under either cap.
+  - apps/web/src/server/trpc/routers/billing.ts — added `usage.current` adminProcedure query returning {plan_tier, limits, usage} with explicit organization_id filter on every count (defense-in-depth).
+  - apps/web/src/app/admin/users/page.tsx — banner for users + admins; "Invite user" header button + dialog submit gated; invalidates billing.usage on success.
+  - apps/web/src/app/admin/departments/page.tsx — banner for departments + autoAnswerStations; New/Import CSV header buttons + dialog submit gated; invalidates billing.usage on every CRUD mutation.
+  - apps/web/src/app/app/page.tsx — Speed Dial RSC now renders `<PlanLimitBanner feature="autoAnswerStations" />` + `<PlanLimitBanner feature="departments" />` below the heading.
+- Files deleted: none
+- Schema/migrations: none (caps derive from existing Organization.plan_tier + live counts; no new columns)
+- Errors encountered:
+  - Sonnet 2a-i dispatch thrashed (autocompact 3× in 3 turns) during validation phase. Files were authored correctly; thrash occurred while running tests + lint + typecheck. Architect (Opus) salvaged + drove validation inline.
+  - Sonnet wrapped middleware factory in tRPC's `middleware()` helper, making it non-callable from unit tests (TypeError: middleware is not a function on 12/12 cases). Fixed by dropping the wrapper — `.use()` accepts plain async functions identically per trpc.ts:81 pattern.
+  - Test helper `makeCtx(organizationId = "org-1")` default param silently rebound `undefined` to "org-1", hiding the missing-org guard branches in 2 tests. Fixed by removing the default value.
+  - z.string().cuid() input validation rejected my placeholder IDs ("dept-1") in plan-limit-integration.test.ts, causing 7 false failures masking as plan-limit logic bugs. Fixed by adopting the 25-char cuid format used in existing tests ("clh3z8t3d0000qzpqfakedept").
+  - TypeScript strict mode rejected vi.mocked(prisma.$transaction).mockImplementationOnce's loose callback against Prisma's generated tx type. Fixed via local `LooseTxMock` cast that exposes mockImplementationOnce against `(tx: unknown) => unknown`.
+  - ESLint import/order broke after restructuring vi.mock + import positions. Resolved via `pnpm lint --fix` + minor manual order tweaks.
+- Errors resolved: see above — each error caught at the earliest validation stage (typecheck or test run), no production code defects shipped.
+
+---
+
 ## 2026-05-23 — Phase 8 Batch 1 Item 1 — Pre-flight hardening (CVE refresh + 9-guardrail DECISIONS_LOG + IMPLEMENTATION_MAP rewrite)
 
 - Agent: CLAUDE_CODE

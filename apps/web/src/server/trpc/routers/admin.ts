@@ -3,6 +3,7 @@ import { prisma, writeAuditLog } from "@yelli/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+import { assertNumericPlanLimit } from "@/server/trpc/middleware/plan-limit";
 import { adminProcedure, router } from "@/server/trpc/trpc";
 
 // ----------------------------------------------------------------------------
@@ -79,6 +80,30 @@ const usersRouter = router({
             code: "CONFLICT",
             message: "A user with that email already exists in this organization.",
           });
+        }
+
+        // Plan-tier enforcement (Phase 8 Item 2). Two caps may apply:
+        //   1. `users` (always) — total seats per org
+        //   2. `admins` (only when role === "tenant_admin") — admin sub-seats
+        // Counts taken inside the tx so concurrent invites can't both squeak
+        // under either cap.
+        const userCount = await tx.user.count({
+          where: { organization_id: ctx.organizationId },
+        });
+        await assertNumericPlanLimit(ctx.organizationId, "users", userCount);
+
+        if (input.role === "tenant_admin") {
+          const adminCount = await tx.user.count({
+            where: {
+              organization_id: ctx.organizationId,
+              role: "tenant_admin",
+            },
+          });
+          await assertNumericPlanLimit(
+            ctx.organizationId,
+            "admins",
+            adminCount,
+          );
         }
 
         const created = await tx.user.create({

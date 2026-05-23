@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { prisma, writeAuditLog } from "@yelli/db";
+import { PLAN_LIMITS } from "@yelli/shared";
 import { z } from "zod";
 
 import { env } from "@/env";
@@ -207,6 +208,71 @@ const checkoutRouter = router({
 });
 
 // ----------------------------------------------------------------------------
+// Usage query — read-side companion to plan-limit enforcement (Phase 8 Item 2)
+// ----------------------------------------------------------------------------
+
+/**
+ * Returns the caller org's plan tier alongside the static cap matrix and the
+ * current usage counts for every gated feature. Consumed by the UI (Speed Dial /
+ * Departments / Users pages) to render proactive usage banners and disabled-CTA
+ * states without waiting for a server-side rejection. The banner is purely
+ * informational — backend mutations still re-check via assertNumericPlanLimit,
+ * so a stale client cache can never bypass a cap.
+ *
+ * Defense-in-depth: explicit organization_id filter on every count even though
+ * L6 auto-injection would already scope reads.
+ */
+const usageRouter = router({
+  current: adminProcedure.query(async ({ ctx }) => {
+    const org = await prisma.organization.findUnique({
+      where: { id: ctx.organizationId },
+      select: { plan_tier: true },
+    });
+    if (!org) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Organization not found.",
+      });
+    }
+
+    const [userCount, adminCount, departmentCount, autoAnswerCount] =
+      await Promise.all([
+        prisma.user.count({
+          where: { organization_id: ctx.organizationId },
+        }),
+        prisma.user.count({
+          where: {
+            organization_id: ctx.organizationId,
+            role: "tenant_admin",
+          },
+        }),
+        prisma.department.count({
+          where: { organization_id: ctx.organizationId },
+        }),
+        prisma.department.count({
+          where: {
+            organization_id: ctx.organizationId,
+            auto_answer_enabled: true,
+          },
+        }),
+      ]);
+
+    const limits = PLAN_LIMITS[org.plan_tier];
+
+    return {
+      plan_tier: org.plan_tier,
+      limits,
+      usage: {
+        users: userCount,
+        admins: adminCount,
+        departments: departmentCount,
+        autoAnswerStations: autoAnswerCount,
+      },
+    };
+  }),
+});
+
+// ----------------------------------------------------------------------------
 // Composed billing router
 // ----------------------------------------------------------------------------
 
@@ -214,4 +280,5 @@ export const billingRouter = router({
   subscription: subscriptionRouter,
   invoices: invoicesRouter,
   checkout: checkoutRouter,
+  usage: usageRouter,
 });

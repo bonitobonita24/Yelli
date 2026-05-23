@@ -26,6 +26,8 @@ import { toast } from "@yelli/ui/use-toast";
 import { useMemo, useState } from "react";
 
 import { DepartmentUserPicker } from "@/components/admin/department-user-picker";
+import { PlanLimitBanner } from "@/components/plan-limit/usage-banner";
+import { usePlanUsage } from "@/lib/plan-usage/use-plan-usage";
 import { trpc } from "@/lib/trpc/react";
 
 interface DepartmentFormValues {
@@ -89,6 +91,7 @@ export default function AdminDepartmentsPage(): JSX.Element {
   const utils = trpc.useUtils();
   const list = trpc.departments.list.useQuery();
   const usersQuery = trpc.admin.users.list.useQuery();
+  const planUsage = usePlanUsage();
   const activeUsers = useMemo(
     () =>
       (usersQuery.data ?? [])
@@ -109,6 +112,8 @@ export default function AdminDepartmentsPage(): JSX.Element {
   const create = trpc.departments.create.useMutation({
     onSuccess: () => {
       utils.departments.list.invalidate();
+      // Refresh usage banner so the next New button click sees the new count.
+      utils.billing.usage.current.invalidate();
       setEditing(null);
       toast({ title: "Department created" });
     },
@@ -120,6 +125,8 @@ export default function AdminDepartmentsPage(): JSX.Element {
   const update = trpc.departments.update.useMutation({
     onSuccess: () => {
       utils.departments.list.invalidate();
+      // Auto-answer flips change the autoAnswerStations usage count.
+      utils.billing.usage.current.invalidate();
       setEditing(null);
       toast({ title: "Department updated" });
     },
@@ -131,6 +138,8 @@ export default function AdminDepartmentsPage(): JSX.Element {
   const remove = trpc.departments.delete.useMutation({
     onSuccess: () => {
       utils.departments.list.invalidate();
+      // Deleting a department frees a seat and possibly an auto-answer slot.
+      utils.billing.usage.current.invalidate();
       toast({ title: "Department deleted" });
     },
     onError: (err) => {
@@ -141,6 +150,7 @@ export default function AdminDepartmentsPage(): JSX.Element {
   const csvImport = trpc.departments.csvImport.useMutation({
     onSuccess: (result) => {
       utils.departments.list.invalidate();
+      utils.billing.usage.current.invalidate();
       setCsvOpen(false);
       setCsvText("");
       toast({ title: `Imported ${result.imported} departments` });
@@ -230,12 +240,24 @@ export default function AdminDepartmentsPage(): JSX.Element {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setCsvOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setCsvOpen(true)}
+            disabled={planUsage.isAtLimit("departments")}
+          >
             Import CSV
           </Button>
-          <Button onClick={openNew}>New department</Button>
+          <Button
+            onClick={openNew}
+            disabled={planUsage.isAtLimit("departments")}
+          >
+            New department
+          </Button>
         </div>
       </header>
+
+      <PlanLimitBanner feature="departments" />
+      <PlanLimitBanner feature="autoAnswerStations" />
 
       <Card>
         <CardContent className="p-0">
@@ -397,7 +419,19 @@ export default function AdminDepartmentsPage(): JSX.Element {
               </Button>
               <Button
                 type="submit"
-                disabled={create.isPending || update.isPending}
+                disabled={
+                  create.isPending ||
+                  update.isPending ||
+                  // Creating a new dept blocked by the departments cap.
+                  (editing?.id === null &&
+                    planUsage.isAtLimit("departments")) ||
+                  // Enabling auto-answer (on create OR edit) blocked by station cap.
+                  // The backend update path only enforces on a false→true flip,
+                  // so this disables a few extra clicks that would no-op anyway —
+                  // safer than letting the dialog submit and fail.
+                  (form.auto_answer_enabled &&
+                    planUsage.isAtLimit("autoAnswerStations"))
+                }
               >
                 {editing?.id ? "Save" : "Create"}
               </Button>
