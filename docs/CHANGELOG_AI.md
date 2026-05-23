@@ -22,6 +22,40 @@
 
 # ---
 
+## 2026-05-23 — (fix/livekit-url-host-reachability) — pickClientLivekitWsUrl helper + NEXT_PUBLIC_LIVEKIT_URL — alice's SFU signal connects via host port
+
+- Agent: CLAUDE_CODE
+- Why: Filed as a follow-up ticket from the 2026-05-23 multi-context Playwright smoke that hit "Call failed: could not establish signal connection: Failed to fetch" on alice's call page. Root cause: server-side `mintLiveKitToken` (in `apps/web/src/lib/livekit/client.ts`) returned `env.LIVEKIT_URL` (= `ws://yelli_dev_livekit:7880`, the docker-internal hostname) to the browser as the `wsUrl` field of the join-token response. Browser couldn't resolve the hostname.
+- Files added:
+  - apps/web/src/lib/livekit/client.test.ts (NEW +56, 4 RED→GREEN cases): tests for the new `pickClientLivekitWsUrl(env)` pure helper — verifies NEXT_PUBLIC takes precedence, LIVEKIT_URL fallback when public undefined, undefined when both unset, empty-string treated as unset.
+- Files modified:
+  - apps/web/src/lib/livekit/client.ts (+24/-1): exported new pure helper `pickClientLivekitWsUrl({ NEXT_PUBLIC_LIVEKIT_URL, LIVEKIT_URL })` and rewired `mintLiveKitToken` to use it for the returned wsUrl. Module-level docstring cross-references [[livekit-url-host-reachability]].
+  - .env.dev (+7 lines): added `NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:43532` with comment block explaining the server-vs-browser URL split + host-mapped port rationale.
+
+VERIFICATION (post-rebuild via start.sh):
+- Container env contains both vars at runtime:
+    LIVEKIT_URL=ws://yelli_dev_livekit:7880      (server, docker-internal)
+    NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:43532 (browser, host-mapped)
+- 287 → 291 ✓ (+4 new bypass tests). pnpm lint ✓ 0 errors (2 pre-existing warnings unchanged) / pnpm typecheck ✓ 0 errors.
+- Multi-context Playwright smoke captured alice's WebSocket events via page.on('websocket'):
+    OPEN ws://localhost:43515/socket.io/?EIO=4&transport=websocket   (main Socket.IO)
+    OPEN ws://localhost:43532/rtc/v1?access_token=eyJ...             (LiveKit SFU signal — NEW)
+  No immediate CLOSE on the LiveKit WebSocket — connection holds. Pre-fix this exact connection never opened (URL was the unreachable docker hostname).
+- alice's call page no longer shows the "Call failed: could not establish signal connection" string.
+
+TWO-STAGE REVIEW (Rule 25):
+- Stage 1 (spec compliance) PASS: token mint returns browser-reachable URL; defense-in-depth fallback to server var preserved for host-pnpm-dev workflow where browser+server share the same network.
+- Stage 2 (code quality) PASS: TDD RED→GREEN evidenced; helper is single-responsibility pure function; zero `any`; blast radius = 3 files (1 source modified + 1 test new + 1 env edit) matching plan; no scope creep into refactoring the broader LiveKit module.
+
+LESSONS ADDED: 1 NEW 🔴 [[livekit-url-host-reachability]] at lessons.md head — documents the server-vs-browser URL split, the empirical Playwright proof, and the operational rule "every URL the SERVER embeds in a response that the BROWSER opens a connection on MUST come from NEXT_PUBLIC_*, not a server-only env var".
+
+QUEUE STATUS:
+- ✅ CLOSED: (livekit-url-host-reachability) — this ticket
+- 🟡 STILL OPEN: (incoming-call-dialog-not-rendered) Tier 1-2 — bob's IncomingCallDialog count = 0 after alice's call:initiated; needs investigation of dialog mount + socket subscription
+- 🟡 STILL OPEN: (turnstile-app-env-guard) Tier 1 — turnstile.ts:46 still uses env.NODE_ENV (same DefinePlugin trap; not blocking smoke since bypass skips Turnstile)
+
+SKIPPED vercel-plugin auto-suggestions: env-vars / nextjs / next-cache-components (false positives on .env.dev + livekit/client.ts reads) per Rule 28.
+
 ## 2026-05-23 — (fix/dev-compose-expose-socket-port) — dev SOCKET_PORT exposure + socket/auth.ts NODE_ENV→APP_ENV; Phase 7 #14/#15 smoke advanced to PARTIAL with diagnosed LiveKit-host-reachability blocker
 
 - Agent: CLAUDE_CODE

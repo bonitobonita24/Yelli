@@ -8,6 +8,13 @@
 
 # ---
 
+## 2026-05-23 — 🔴 [[livekit-url-host-reachability]] Server env LIVEKIT_URL points at docker-internal hostname — token mint must return NEXT_PUBLIC_LIVEKIT_URL to the browser instead
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (auth-bypass-for-e2e) smoke chain — LiveKit follow-up shipped 2026-05-23 PM
+- Files:     apps/web/src/lib/livekit/client.ts (new pickClientLivekitWsUrl helper + mintLiveKitToken switch), apps/web/src/lib/livekit/client.test.ts (4 RED→GREEN cases), .env.dev (NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:43532)
+- Concepts:  livekit, websocket, sfu, docker-network, browser-reachability, env-split, server-vs-client, host-mapping
+- Narrative: LiveKit JWT token mint (server-only) historically returned env.LIVEKIT_URL to the browser as the wsUrl field. The browser used it to `new Room({ url: wsUrl })`. In containerized dev, LIVEKIT_URL is overridden in the dev compose environment block to `ws://${COMPOSE_PROJECT_NAME}_livekit:7880` so server-side code can reach LiveKit via the docker network. The browser cannot resolve that hostname → alice's call page rendered "Call failed: could not establish signal connection: Failed to fetch". Fix: pure helper `pickClientLivekitWsUrl({ NEXT_PUBLIC_LIVEKIT_URL, LIVEKIT_URL })` prefers the public var (host-mapped `ws://localhost:43532` in dev) and falls back to the server var. Set NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:43532 in .env.dev. Verified empirically: Playwright captured `OPEN ws://localhost:43532/rtc/v1?access_token=eyJ...` as alice's second WebSocket (after Socket.IO at :43515), with NO immediate CLOSE — the SFU signal connection holds. **Operational rule**: every URL the SERVER embeds into a response that the BROWSER will use for a network connection MUST come from a NEXT_PUBLIC_* env var, NOT a server-only env var. Server-only vars are for inter-service traffic within the deployment network. Cross-references: [[dev-compose-socket-port-exposure]] (sibling), [[playwright-smoke-auth-configuration-blocker]] (root smoke).
+
 ## 2026-05-23 — 🔴 [[dev-compose-socket-port-exposure]] Dev compose only exposed APP_PORT, not SOCKET_PORT — browser couldn't reach Socket.IO at all
 - Type:      🔴 gotcha
 - Phase:     Phase 7 (auth-bypass-for-e2e) smoke retry continued 2026-05-23 PM

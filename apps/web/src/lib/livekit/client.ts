@@ -16,13 +16,37 @@ function base64url(input: Buffer | string): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+/**
+ * Pick the LiveKit WebSocket URL the BROWSER should connect to.
+ * Prefer NEXT_PUBLIC_LIVEKIT_URL (host-reachable in containerized dev,
+ * public-domain WSS in staging/prod). Fall back to the server-side
+ * LIVEKIT_URL only when no client-facing override is configured —
+ * correct when host and browser share the same network (e.g. host
+ * pnpm dev where ws://localhost:7880 resolves at both ends).
+ *
+ * See lessons.md [[livekit-url-host-reachability]].
+ */
+export function pickClientLivekitWsUrl(env: {
+  NEXT_PUBLIC_LIVEKIT_URL: string | undefined;
+  LIVEKIT_URL: string | undefined;
+}): string | undefined {
+  if (env.NEXT_PUBLIC_LIVEKIT_URL) return env.NEXT_PUBLIC_LIVEKIT_URL;
+  if (env.LIVEKIT_URL) return env.LIVEKIT_URL;
+  return undefined;
+}
+
 export function mintLiveKitToken(options: MintOptions): {
   token: string;
   wsUrl: string;
 } {
   const apiKey = env.LIVEKIT_API_KEY;
   const apiSecret = env.LIVEKIT_API_SECRET;
-  const wsUrl = env.LIVEKIT_URL;
+  // Browser-facing URL — NOT the server-side env.LIVEKIT_URL because that
+  // points at the docker-internal hostname in containerized dev.
+  const wsUrl = pickClientLivekitWsUrl({
+    NEXT_PUBLIC_LIVEKIT_URL: env.NEXT_PUBLIC_LIVEKIT_URL,
+    LIVEKIT_URL: env.LIVEKIT_URL,
+  });
 
   if (!apiKey || !apiSecret || !wsUrl) {
     throw new Error("LiveKit not configured");
