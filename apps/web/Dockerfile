@@ -62,6 +62,22 @@ COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/public ./apps/web/public
 
+# Prisma generated client + engine binary — Next.js standalone's outputFileTracing
+# CANNOT follow Prisma's dynamic engine require() (path computed at runtime from
+# `runtime` field in schema.prisma), so the .prisma/client directory is dropped
+# from the standalone bundle entirely. Empirical proof from the original
+# PrismaClientInitializationError: "could not locate Query Engine for runtime
+# linux-musl-openssl-3.0.x" searching at five paths including the one below.
+# Copy the entire .prisma/client tree to the canonical pnpm-hoisted location so
+# Prisma's loader finds the engine binary on first .user.findMany() call.
+# Path matches the pnpm-hoisted layout `prisma generate` produces in the builder
+# stage — peer-deps suffix `_prisma@5.22.0` reflects the @prisma+client peer
+# dependency on the `prisma` package and matches the lockfile pin.
+# See lessons.md [[prisma-standalone-engine-bundling]] for the full rationale.
+COPY --from=builder --chown=nextjs:nodejs \
+  /repo/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma \
+  ./node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma
+
 USER nextjs
 EXPOSE 3000
 

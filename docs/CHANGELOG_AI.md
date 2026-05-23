@@ -22,6 +22,30 @@
 
 # ---
 
+## 2026-05-23 — (fix/prisma-engine-standalone-bundle) — Prisma engine COPY in Dockerfile + PgBouncer AUTH_TYPE scram-sha-256
+
+- Agent: CLAUDE_CODE
+- Why: After landing (auth-bypass-for-e2e) + (fix/auth-bypass-app-env-guard), the first retry of the Playwright smoke through the containerized dev path surfaced two more infrastructure bugs that had been masked by the prior session's host-pnpm-dev workaround: (a) Next.js standalone bundle was missing Prisma's engine binary (PrismaClientInitializationError on first .user.findMany call — error message listed 5 candidate paths, all empty in the runtime image); (b) PgBouncer's AUTH_TYPE=md5 mismatched Postgres 16's default scram-sha-256 password_encryption (FATAL: server login failed: wrong password type from PgBouncer's upstream forward). Both are long-latent bugs from older compose/Dockerfile templates that only surfaced now that the auth-bypass + DefinePlugin fixes unblocked the containerized auth path.
+- Files modified:
+  - apps/web/Dockerfile (+14 lines): added COPY --from=builder for /repo/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma → ./node_modules/.pnpm/.../.prisma. Comment block explains the standalone-tracer limitation + cross-references the new [[prisma-standalone-engine-bundling]] lesson.
+  - deploy/compose/dev/docker-compose.db.yml (~5 lines): AUTH_TYPE: md5 → AUTH_TYPE: scram-sha-256 on the pgbouncer service. Comment cross-references [[pgbouncer-scram-auth]].
+- Files added: none
+- Files deleted: none
+- Schema/migrations: none
+- Errors resolved (in order):
+  1. PrismaClientInitializationError "could not locate Query Engine for runtime linux-musl-openssl-3.0.x" — fixed by Dockerfile COPY.
+  2. PgBouncer upstream auth "wrong password type" — fixed by AUTH_TYPE change + pgbouncer container recreate.
+
+VERIFICATION:
+- Container rebuilt via `bash deploy/compose/start.sh dev up -d` (forced rebuild from new Dockerfile).
+- Post-rebuild `ls /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma/client/` shows libquery_engine-debian-openssl-3.0.x.so.node + libquery_engine-linux-musl-openssl-3.0.x.so.node + schema.prisma + client JS files (was empty before).
+- pgbouncer container recreated via `docker compose ... up -d --force-recreate pgbouncer`.
+- End-to-end bypass signIn via Node fetch: status 302 → http://localhost:43512/app; `GET /api/auth/session` returns `{"user":{"email":"alice@yelli.local","id":"cmpfmyv9i0003a8k1l6cj8a0c","organizationId":"cmpfmyluz0000ypfxb09zinj9","organizationSlug":"system","role":"host","isSuperAdmin":false,"securityVersion":0},"expires":"2026-05-30T..."}` — full session populated, all 6 user fields propagated via JWT + session callback.
+
+LESSONS ADDED: 2 NEW 🔴 entries at lessons.md head — [[pgbouncer-scram-auth]] (AUTH_TYPE must match Postgres password_encryption) and [[prisma-standalone-engine-bundling]] (Dockerfile COPY required because outputFileTracing cannot follow Prisma's dynamic engine require).
+
+SKIPPED vercel-plugin auto-suggestions: turbopack / next-upgrade / next-cache-components / next-forge / vercel-storage / env-vars / bootstrap / auth / nextjs (all false positives — basename matches on Dockerfile/next.config.ts/.env.dev/seed.ts/auth.ts) per Rule 28 + established skip-list precedent.
+
 ## 2026-05-23 — (fix/auth-bypass-app-env-guard) — switch (auth-bypass-for-e2e) prod-guard from NODE_ENV to APP_ENV (webpack DefinePlugin trap)
 
 - Agent: CLAUDE_CODE

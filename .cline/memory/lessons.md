@@ -8,6 +8,20 @@
 
 # ---
 
+## 2026-05-23 — 🔴 [[pgbouncer-scram-auth]] PgBouncer AUTH_TYPE must match Postgres `password_encryption` — md5 vs scram-sha-256 produces "wrong password type" on every upstream forward
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (auth-bypass-for-e2e) smoke retry hotfix 2026-05-23 PM
+- Files:     deploy/compose/dev/docker-compose.db.yml (AUTH_TYPE: md5 → scram-sha-256)
+- Concepts:  pgbouncer, postgres, scram-sha-256, md5, auth-type, dev-stack-infra
+- Narrative: Postgres 16 defaults `password_encryption=scram-sha-256`. PgBouncer's `AUTH_TYPE` must match how Postgres stores client passwords or upstream forward fails with `FATAL: server login failed: wrong password type` at first query (not at startup — healthcheck only pings the port). Long-latent bug from the older compose template; prior smokes used host pnpm dev which bypassed PgBouncer entirely. Surfaced only after (auth-bypass-for-e2e) + (fix/auth-bypass-app-env-guard) + (fix/prisma-engine-standalone-bundle) unblocked the containerized DB path. Fix: `AUTH_TYPE: md5 → scram-sha-256` in the dev pgbouncer compose. Verified post-fix: bypass signIn returns 302 → /app with full session (alice@yelli.local, host, system org, securityVersion: 0). Operational rule: when Postgres rejects PgBouncer with "wrong password type", check `SHOW password_encryption;` AND the AUTH_TYPE env — must match. Staging/prod compose files likely have the same drift; audit before they bite.
+
+## 2026-05-23 — 🔴 [[prisma-standalone-engine-bundling]] Next.js standalone tracer drops Prisma engine binary — explicit Dockerfile COPY required
+- Type:      🔴 gotcha
+- Phase:     Phase 7 (auth-bypass-for-e2e) smoke retry hotfix 2026-05-23 PM
+- Files:     apps/web/Dockerfile (added COPY for .prisma/client tree)
+- Concepts:  prisma, nextjs, standalone-output, dockerfile, query-engine, libquery_engine
+- Narrative: `output: "standalone"` uses outputFileTracing to copy node_modules into the runtime image. The tracer follows static require()/import but CANNOT follow Prisma's dynamic engine load — Prisma reads runtime from schema.prisma, computes the engine filename, requires it via runtime-computed path. Tracer sees zero static references → drops the entire `.prisma/client` directory. Verified empirically: `find / -name "libquery_engine*"` returned ZERO matches in the runtime container before fix; error `PrismaClientInitializationError: Prisma Client could not locate the Query Engine` searching 5 paths, all empty. Fix: COPY `/repo/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma` from builder stage into the same path in the runner stage. Pre-existing flag in memory observation 2960 (2026-05-20) — this entry is the actual remediation. Alternatives rejected: outputFileTracingIncludes (fragile glob), prisma generate at runtime (+80MB), direct postgres (orthogonal). Operational rule: every Next.js standalone build using Prisma MUST add this Dockerfile COPY step.
+
 ## 2026-05-23 — 🔴 [[webpack-define-plugin-trap]] Webpack's DefinePlugin inlines `process.env.NODE_ENV` as a compile-time constant — never gate runtime logic on `env.NODE_ENV` in a Next.js production build
 - Type:      🔴 gotcha
 - Phase:     Phase 7 (auth-bypass-for-e2e) hotfix 2026-05-23 AM

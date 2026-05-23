@@ -49,7 +49,11 @@ services:
       POOL_MODE: transaction
       MAX_CLIENT_CONN: "100"
       DEFAULT_POOL_SIZE: "20"
-      AUTH_TYPE: md5
+      # AUTH_TYPE must match Postgres 16's default password_encryption=scram-sha-256.
+      # Was AUTH_TYPE: md5 (from older compose template) — caused
+      # "FATAL: server login failed: wrong password type" when PgBouncer tried
+      # to forward client creds upstream. See lessons.md [[pgbouncer-scram-auth]].
+      AUTH_TYPE: scram-sha-256
     ports:
       - "${PGBOUNCER_PORT}:5432"
     networks: [app_network]
