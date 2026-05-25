@@ -2,8 +2,9 @@
 
 import { Button, Input } from "@yelli/ui";
 import { Send, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useChatMessages } from "@/lib/chat/use-chat-messages";
 import { trpc } from "@/lib/trpc/react";
 
 interface InCallChatProps {
@@ -12,13 +13,15 @@ interface InCallChatProps {
   onClose: () => void;
 }
 
-const POLL_INTERVAL_MS = 3000;
 const MAX_MESSAGE_LEN = 4000;
 
 /**
  * Slide-in chat sidebar overlay anchored to the right edge of the meeting
- * room. Polls the chat router every 3s — Socket.IO push-based delivery is
- * a follow-up once the Egress/chat event bus is wired in Part 8.
+ * room. Receives messages over Socket.IO via `useChatMessages` — the
+ * server-side chat.send mutation broadcasts `chat:message` to the org
+ * channel after persisting, and this component invalidates the
+ * listByMeeting query on every matching payload (the realtime push
+ * replaces the prior 3s polling fallback).
  *
  * Renders as a fixed positioned aside (mobile: full-width sheet via
  * inset-x-0 / sm:inset-x-auto sm:right-0 sm:max-w-sm).
@@ -30,15 +33,23 @@ export function InCallChat({ meetingId, open, onClose }: InCallChatProps) {
 
   const messagesQuery = trpc.chat.listByMeeting.useQuery(
     { meetingId, limit: 200 },
-    {
-      enabled: open,
-      refetchInterval: open ? POLL_INTERVAL_MS : false,
-    },
+    { enabled: open },
   );
+
+  // Realtime: invalidate on every chat:message event for this meeting. The
+  // query then refetches and the new message appears. Stable callback so
+  // useChatMessages does not re-subscribe on every render.
+  const handleChatMessage = useCallback(() => {
+    void utils.chat.listByMeeting.invalidate({ meetingId });
+  }, [utils, meetingId]);
+  useChatMessages(meetingId, handleChatMessage);
 
   const sendMutation = trpc.chat.send.useMutation({
     onSuccess: () => {
       setDraft("");
+      // Defensive invalidate covers the case where the socket round-trip is
+      // slower than the mutation resolution (or the socket is disconnected).
+      // Idempotent — TanStack Query dedupes concurrent fetches.
       void utils.chat.listByMeeting.invalidate({ meetingId });
     },
   });

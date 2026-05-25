@@ -8,6 +8,20 @@
 
 # ---
 
+## 2026-05-25 — 🟤 [[realtime-chat-org-channel-with-client-filter]] Chat realtime uses ONE org-scoped channel (`${organizationId}:chat:message`) with payload-side `meetingId` for client filtering — NOT per-meeting channels
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-session 1 — locked at implementation time
+- Files:     apps/web/src/server/socket/chat.ts, apps/web/src/server/trpc/routers/chat.ts (emit site), apps/web/src/lib/chat/use-chat-messages.ts (client filter site), apps/web/src/lib/socket/types.ts (ChatMessageEventPayload contract)
+- Concepts:  socket-io, channels, fan-out, multi-tab, attach-handlers, decisions-log-line-173, presence-pattern-precedent
+- Narrative: Two channel-scope options existed when wiring `chat.send → broadcast`. Option A: per-meeting channels (`${meetingId}:chat:message`) — each connected user joins one channel per meeting they have open. Option B (CHOSEN): one org-wide channel (`${organizationId}:chat:message`) — each socket joins once on connection; payload carries `meetingId` and the client hook (`useChatMessages`) filters before dispatching to the React tree.
+  WHY OPTION B WINS for Yelli today:
+  (1) Pattern consistency — DECISIONS_LOG.md line 173 (locked 2026-05-11) defines the channel-naming standard as `${tenantId}:${eventType}` and `joinOrgChannel(socket, eventType)` sources orgId from `socket.data.session` for cross-org security. Per-meeting channels would require a NEW security helper that authorises socket-side per-meeting subscription (need a join-meeting handshake event + server-side check that the user is actually in the meeting), doubling the auth surface. The existing org-channel pattern is already proven safe by Phase 7 #11/#14/#15 realtime engines.
+  (2) Multi-tab UX — a user with 3 meeting tabs open under one browser still has ONE socket connection (per SocketProvider lifecycle). Per-meeting channels would force re-joins on every tab open/close + complex bookkeeping. Org channel + client filter is stateless on the server.
+  (3) Tenant volume — chat is low-volume (~few messages per active meeting per minute) and the org has at most a few hundred concurrent meetings even at scale. Broadcasting ~all-org-chat to ~all-org-sockets costs <1 KB/s/socket — well below the network budget. Per-meeting channels save broadcast bandwidth at the cost of per-meeting subscription bookkeeping; the trade-off favours org broadcast for this volume.
+  (4) Cross-tenant isolation — already guaranteed by `joinOrgChannel` sourcing orgId from `socket.data.session`. There is no API surface for a client to subscribe to another org's chat channel. The Phase 7 audit (Item 1) locked this as guardrail G4 in DECISIONS_LOG.md.
+  WHEN TO REVISIT: if a single org's chat volume approaches 100+ msg/sec sustained (e.g. all-hands livestream chat with thousands of participants), per-meeting channels become attractive. Then add `joinMeetingChannel(socket, meetingId)` with a server-side participation check + add a `chat:subscribe` / `chat:unsubscribe` lifecycle event. Until then, the org-channel-plus-client-filter design is cheaper to maintain.
+  Mirrors the same trade-off already locked for `call:active` (org channel, payload carries `userId` for client filtering) — see `apps/web/src/server/socket/in-call.ts:103`. Cross-reference: [[phase-7-realtime-engine-closeout-criterion]] (the parent pattern lock).
+
 ## 2026-05-25 — 🔴 [[xendit-internal-id-in-api-wire]] tRPC select clauses for billing routers must NEVER include xendit_invoice_id, xendit_customer_id, xendit_subscription_id, or any other external-correlation column
 - Type:      🔴 gotcha
 - Phase:     Phase 8 Batch 1 Item 3 sub-session 3c-i — caught during pre-3c-i existing-surface scan + locked at Item 3 close-out

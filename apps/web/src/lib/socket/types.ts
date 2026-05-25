@@ -1,3 +1,4 @@
+import type { ChatMessageEventPayload } from "@/lib/chat/chat-message-handler";
 import type { IncomingCallPayload } from "@/lib/livekit/types";
 
 export interface ServerToClientEvents {
@@ -26,6 +27,13 @@ export interface ServerToClientEvents {
   // the org. See apps/web/src/server/socket/in-call.ts.
   "call:active": (payload: { userId: string; in_call: boolean }) => void;
   "call:active-snapshot": (payload: { userIds: string[] }) => void;
+  // Phase 8 Batch B sub-session 1 — chat realtime engine on the auth-gated
+  // server. `chat:message` broadcasts a newly-persisted message to the org
+  // channel after `chatRouter.send` completes. Payload carries `meetingId`
+  // for client-side filtering — the same socket connection serves chat for
+  // every meeting tab the user has open. See apps/web/src/server/socket/chat.ts
+  // and apps/web/src/lib/chat/chat-message-handler.ts.
+  "chat:message": (payload: ChatMessageEventPayload) => void;
 }
 
 export interface ClientToServerEvents {

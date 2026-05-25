@@ -22,6 +22,39 @@
 
 # ---
 
+## 2026-05-25 — Phase 8 Batch B sub-session 1 — Realtime chat over Socket.IO
+
+- Agent: CLAUDE_CODE (Architect + Executor: Opus 4.7 inline per [[opus-inline-escalation-pattern]] — estimated ~19K Sonnet budget, borderline §1 Step 2.5 threshold; no Sonnet dispatch this session)
+- Why: PRODUCT.md L173-180 declares in-meeting chat as a realtime surface; the existing `/app/meeting/[id]` and `InCallChat` sidebar were scaffolded in Phase 7 #13 with a 3-second `refetchInterval` polling fallback (apps/web/src/components/meeting/in-call-chat.tsx:15) pending the Socket.IO push wiring that landed across Phase 7 #8e (auth-gated socket server) + #10 (SocketProvider context) + #11 (presence engine) + #14 (in-call roster) + #15 (call:incoming broadcast). This sub-session closes the chat-push gap by mirroring the established `getIO()` + `emitToOrg(io, organizationId, eventType, payload)` server-side pattern (calls.ts:58) and the `attach*Handler` + `useSocketOptional` client-side pattern (user-presence-handler.ts + use-user-presence.ts). Result: <100ms message delivery, network traffic drops by ~95% during idle chat (no more 3s polling round-trips), polling-fallback removed entirely.
+- Files added:
+  - apps/web/src/server/socket/chat.ts — server-side `attachChatHandlers({socket})` that joins the authenticated socket to `${organizationId}:chat:message` via `joinOrgChannel`. Exports `CHAT_MESSAGE_EVENT = "chat:message"` constant. No roster, no per-message handlers — chat send goes through tRPC, not socket emit, so attach is subscribe-only.
+  - apps/web/src/lib/chat/chat-message-handler.ts — pure client-side handler `attachChatMessageHandler(socket, callback) → dispose`. Mirrors `user-presence-handler.ts` shape with `MinimalChatSocketEventTarget` narrowed interface. Exports `ChatMessageEventPayload` (= {meetingId, message}) and `ChatMessagePayload` (the persisted ChatMessage shape returned by tRPC `chat.send`).
+  - apps/web/src/lib/chat/use-chat-messages.ts — React hook `useChatMessages(meetingId, onMessage)` composing `useSocketOptional()` with the pure handler. Filters payloads by `meetingId` client-side (org channel broadcasts every chat message in the org; one socket per user serves all open meeting tabs). `onMessage` captured via ref so inline closures do not re-trigger subscribe/unsubscribe on every parent render.
+  - apps/web/src/server/trpc/routers/chat.test.ts — 8 unit tests on chat.send + listByMeeting: happy path emits {meetingId, message}, sanitize-before-emit XSS preservation, BAD_REQUEST/NOT_FOUND/FORBIDDEN paths emit nothing, getIO() null graceful degradation, listByMeeting never emits.
+  - apps/web/src/lib/chat/chat-message-handler.test.ts — 3 unit tests on attachChatMessageHandler: callback invocation, dispose removal, multiple-subscription independence.
+- Files modified:
+  - apps/web/src/server/trpc/routers/chat.ts — after `prisma.chatMessage.create`, emit `chat:message` via `getIO()` + `emitToOrg(io, ctx.organizationId, CHAT_MESSAGE_EVENT, {meetingId, message})`. Null-io guard for tRPC-without-socket test contexts. New imports: emitToOrg, CHAT_MESSAGE_EVENT, getIO.
+  - apps/web/src/server/socket/server.ts — added `attachChatHandlers({socket})` to the `io.on("connection")` block (line 107) alongside the existing 3 attach calls.
+  - apps/web/src/lib/socket/types.ts — registered `"chat:message": (payload: ChatMessageEventPayload) => void` in `ServerToClientEvents` so TypedSocket satisfies `MinimalChatSocketEventTarget` without cast.
+  - apps/web/src/components/meeting/in-call-chat.tsx — removed `POLL_INTERVAL_MS` constant + `refetchInterval` option on the listByMeeting query. Added `useChatMessages(meetingId, handleChatMessage)` invocation where `handleChatMessage` is a `useCallback`-stabilized invalidate of the listByMeeting query for this meetingId. Send-mutation onSuccess invalidate kept as defensive fallback (idempotent — TanStack dedupes concurrent fetches; covers socket-disconnect cases).
+- Files deleted: none
+- Schema/migrations: none
+- Errors encountered:
+  - `TS2345: Argument of type 'TypedSocket' is not assignable to parameter of type 'MinimalChatSocketEventTarget'` — TypedSocket's `on()` is strictly typed against `ServerToClientEvents`, which did not list `"chat:message"`. Caught by typecheck on first run.
+- Errors resolved:
+  - Added `"chat:message"` to `ServerToClientEvents` in apps/web/src/lib/socket/types.ts with payload type `ChatMessageEventPayload` imported from the new pure handler module. Pattern matches the existing `"presence:user"` / `"call:active"` registrations. Typecheck clean afterward.
+- Validation:
+  - pnpm --filter @yelli/web typecheck → exit 0
+  - pnpm --filter @yelli/web lint → exit 0 (6 warnings, all pre-existing patterns: 4 new `vi.mocked(...).mock.calls[0]!` non-null assertions match the established convention from calls.test.ts:112)
+  - pnpm --filter @yelli/web test → 392/392 pass across 43 test files (11 new tests added by this sub-session)
+- Tier classification (§1 Tiered Decomposition):
+  - Initial estimate: Tier 2 (~6 files, 2 modules)
+  - After pre-flight scan ([[existing-surface-scan-before-scaffold]]): pivoted Tier 2 → Tier 1 (gap-find on infrastructure 80%+ scaffolded by Phase 7 #8e/#10/#11/#14/#15) — actual scope: 4 new files + 4 edits = 8 files, but all surgical and pattern-mirroring with no new architecture decisions
+  - Sonnet token estimate at session start: ~19K (borderline §1 Step 2.5); Opus inline elected per [[opus-inline-escalation-pattern]]; final actual session token spend stayed within ~50K including pre-flight scans
+- Architect-Execute trail: Opus 4.7 inline solo (no Sonnet dispatch). Sixth data point for the ~20K Sonnet budget pattern: when a Tier 2 task pivots to Tier 1 via pre-flight scan and the gap-find result fits in <8 files of established-pattern mirroring, Opus inline at <50K total is the cheapest path.
+
+# ---
+
 ## 2026-05-25 — Phase 8 Batch 1 Item 3 — Xendit payment + billing flow (bundled close-out)
 
 - Agent: CLAUDE_CODE (Architect: Opus 4.7; Executors: 1× Sonnet 4.6 dispatch for 3c-ii-a banner-UI atom + 5× Opus inline per memory-governance.md §2.5b after each Sonnet task re-estimated to >20K effective budget — fifth, sixth, and seventh data points for the ~20K Sonnet pattern locked below)

@@ -3,6 +3,9 @@ import { prisma } from "@yelli/db";
 import { z } from "zod";
 
 import { sanitizePlainText } from "@/server/lib/sanitize";
+import { emitToOrg } from "@/server/socket/channels";
+import { CHAT_MESSAGE_EVENT } from "@/server/socket/chat";
+import { getIO } from "@/server/socket/server";
 import { protectedProcedure, router } from "@/server/trpc/trpc";
 
 import type { Prisma } from "@yelli/db";
@@ -139,6 +142,20 @@ export const chatRouter = router({
           },
         },
       });
+
+      // Broadcast to every socket in the org so subscribers can patch their
+      // per-meeting query cache without a polling round-trip. Payload carries
+      // meetingId so the client-side handler can filter to the correct chat
+      // surface (a user may have several meeting tabs open at once). getIO()
+      // may legitimately be null in tRPC test contexts or when the separate
+      // socket server has not booted yet — silently skip rather than throw.
+      const io = getIO();
+      if (io !== null) {
+        emitToOrg(io, ctx.organizationId, CHAT_MESSAGE_EVENT, {
+          meetingId: input.meetingId,
+          message,
+        });
+      }
 
       return message;
     }),

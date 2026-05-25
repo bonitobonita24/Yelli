@@ -30,6 +30,7 @@ import { Server as IOServer } from "socket.io";
 import { env } from "@/env";
 import { socketAuthMiddleware } from "@/server/socket/auth";
 import { attachCallHandlers } from "@/server/socket/calls";
+import { attachChatHandlers } from "@/server/socket/chat";
 import {
   attachInCallHandlers,
   createInCallRoster,
@@ -104,6 +105,7 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
     attachPresenceHandlers({ io, socket, roster: presenceRoster });
     attachInCallHandlers({ io, socket, roster: inCallRoster });
     attachCallHandlers({ io, socket });
+    attachChatHandlers({ socket });
   });
 
   return io;
