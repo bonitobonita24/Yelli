@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 import { assertNumericPlanLimit } from "@/server/trpc/middleware/plan-limit";
+import { reportsRouter } from "@/server/trpc/routers/reports";
 import { adminProcedure, router } from "@/server/trpc/trpc";
 
 // ----------------------------------------------------------------------------
@@ -298,101 +299,11 @@ const settingsRouter = router({
 });
 
 // ----------------------------------------------------------------------------
-// Reports sub-router — CSV export of call_logs
+// Reports sub-router — relocated to ./reports.ts (Phase 8 Batch B sub-2).
+// The wire path is still admin.reports.* because adminRouter nests reportsRouter
+// under `reports:` below. Existing UI calls (admin.reports.exportCallLogsCsv)
+// keep working without change.
 // ----------------------------------------------------------------------------
-
-const exportCallLogsInput = z
-  .object({
-    // ISO-8601 datetime strings; bounded to 1-year range to prevent runaway exports
-    start: z.coerce.date(),
-    end: z.coerce.date(),
-  })
-  .strict()
-  .refine((v) => v.end >= v.start, { message: "end must be on or after start" })
-  .refine(
-    (v) => v.end.getTime() - v.start.getTime() <= 365 * 24 * 60 * 60 * 1000,
-    { message: "Date range cannot exceed 365 days." },
-  );
-
-function csvEscape(value: string | number | Date | null): string {
-  if (value === null) return "";
-  const str = value instanceof Date ? value.toISOString() : String(value);
-  if (/[",\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-const reportsRouter = router({
-  exportCallLogsCsv: adminProcedure
-    .input(exportCallLogsInput)
-    .mutation(async ({ ctx, input }) => {
-      // Defense-in-depth: explicit org filter. CSV exports without org
-      // scoping would dump every tenant's call_logs into one file —
-      // exactly the failure mode security.md §DATABASE SAFETY rule 10
-      // is designed to prevent.
-      const rows = await prisma.callLog.findMany({
-        where: {
-          organization_id: ctx.organizationId,
-          started_at: { gte: input.start, lte: input.end },
-        },
-        orderBy: { started_at: "desc" },
-        take: 10000,
-        select: {
-          id: true,
-          started_at: true,
-          ended_at: true,
-          call_type: true,
-          status: true,
-          participant_count: true,
-          caller_user_id: true,
-          caller_department_id: true,
-          recipient_department_id: true,
-          meeting_id: true,
-        },
-      });
-
-      const header = [
-        "id",
-        "started_at",
-        "ended_at",
-        "call_type",
-        "status",
-        "participant_count",
-        "caller_user_id",
-        "caller_department_id",
-        "recipient_department_id",
-        "meeting_id",
-      ].join(",");
-
-      const body = rows
-        .map((r) =>
-          [
-            r.id,
-            r.started_at,
-            r.ended_at,
-            r.call_type,
-            r.status,
-            r.participant_count,
-            r.caller_user_id,
-            r.caller_department_id,
-            r.recipient_department_id,
-            r.meeting_id,
-          ]
-            .map(csvEscape)
-            .join(","),
-        )
-        .join("\n");
-
-      return {
-        filename: `call-logs-${input.start.toISOString().slice(0, 10)}-${input.end
-          .toISOString()
-          .slice(0, 10)}.csv`,
-        content: `${header}\n${body}\n`,
-        row_count: rows.length,
-      };
-    }),
-});
 
 // ----------------------------------------------------------------------------
 // Dashboard sub-router — top-level metrics for /admin home

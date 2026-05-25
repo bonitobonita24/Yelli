@@ -55,6 +55,9 @@ export default async function SuperAdminLayout({
               <Link href="/superadmin" className="hover:text-white">
                 Organizations
               </Link>
+              <Link href="/superadmin/revenue" className="hover:text-white">
+                Revenue
+              </Link>
               <Link
                 href="/superadmin/platform-settings"
                 className="hover:text-white"

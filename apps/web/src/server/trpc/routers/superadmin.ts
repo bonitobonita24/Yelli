@@ -2,6 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { platformPrisma, writeAuditLog } from "@yelli/db";
 import { z } from "zod";
 
+import { serializeCsv, type CsvColumn } from "@/lib/reports/csv";
+import { generateTablePdf, type PdfColumn } from "@/lib/reports/pdf";
 import { router, superAdminProcedure } from "@/server/trpc/trpc";
 
 // ============================================================================
@@ -271,10 +273,194 @@ const platformSettingsRouter = router({
 });
 
 // ----------------------------------------------------------------------------
+// Revenue sub-router — platform-wide invoice aggregations for /superadmin/revenue
+//
+// Per PRODUCT.md line 113: "Revenue reports: revenue by period, by plan tier,
+// by payment method — exportable CSV/PDF". Cross-tenant by design: uses
+// platformPrisma (no L6) and is gated by superAdminProcedure.
+//
+// ⚠️ [[xendit-internal-id-in-api-wire]] — every Prisma select clause here MUST
+// explicitly enumerate columns. NEVER use default-select-everything on Invoice
+// or Subscription: those rows carry xendit_invoice_id, xendit_subscription_id
+// which are internal-correlation IDs that must never leave the server.
+// ----------------------------------------------------------------------------
+
+const REVENUE_MAX_RANGE_DAYS = 366;
+
+const revenueRangeInput = z
+  .object({
+    start: z.coerce.date(),
+    end: z.coerce.date(),
+  })
+  .strict()
+  .refine((v) => v.end > v.start, {
+    message: "End date must be after start date.",
+  })
+  .refine(
+    (v) =>
+      (v.end.getTime() - v.start.getTime()) / (1000 * 60 * 60 * 24) <=
+      REVENUE_MAX_RANGE_DAYS,
+    { message: `Range must be at most ${REVENUE_MAX_RANGE_DAYS} days.` },
+  );
+
+type RevenueRange = z.infer<typeof revenueRangeInput>;
+
+interface RevenueRow {
+  period_month: string; // YYYY-MM (UTC)
+  plan_tier: string;
+  payment_method: string;
+  invoice_count: number;
+  paid_count: number;
+  failed_count: number;
+  refunded_count: number;
+  paid_amount_php: number;
+}
+
+async function queryRevenue(range: RevenueRange): Promise<RevenueRow[]> {
+  // EXPLICIT select clauses on BOTH Invoice and the nested subscription —
+  // omits xendit_invoice_id, xendit_subscription_id, xendit_customer_id.
+  // Add a row to this list ONLY if you also add it to the corresponding
+  // CsvColumn/PdfColumn array below — see [[xendit-internal-id-in-api-wire]].
+  const invoices = await platformPrisma.invoice.findMany({
+    where: { issued_at: { gte: range.start, lte: range.end } },
+    select: {
+      id: true,
+      amount_cents: true,
+      currency: true,
+      status: true,
+      issued_at: true,
+      subscription: {
+        select: {
+          plan_tier: true,
+          payment_method: true,
+        },
+      },
+    },
+  });
+
+  const buckets = new Map<string, RevenueRow>();
+  for (const inv of invoices) {
+    const period = inv.issued_at.toISOString().slice(0, 7);
+    const plan = inv.subscription.plan_tier;
+    const method = inv.subscription.payment_method ?? "-";
+    const key = `${period} ${plan} ${method}`;
+    let row = buckets.get(key);
+    if (row === undefined) {
+      row = {
+        period_month: period,
+        plan_tier: plan,
+        payment_method: method,
+        invoice_count: 0,
+        paid_count: 0,
+        failed_count: 0,
+        refunded_count: 0,
+        paid_amount_php: 0,
+      };
+      buckets.set(key, row);
+    }
+    row.invoice_count += 1;
+    if (inv.status === "paid") {
+      row.paid_count += 1;
+      row.paid_amount_php += inv.amount_cents / 100;
+    } else if (inv.status === "failed") {
+      row.failed_count += 1;
+    } else if (inv.status === "refunded") {
+      row.refunded_count += 1;
+    }
+  }
+
+  return Array.from(buckets.values()).sort((a, b) => {
+    if (a.period_month !== b.period_month) {
+      return a.period_month.localeCompare(b.period_month);
+    }
+    if (a.plan_tier !== b.plan_tier) return a.plan_tier.localeCompare(b.plan_tier);
+    return a.payment_method.localeCompare(b.payment_method);
+  });
+}
+
+const REVENUE_CSV_COLUMNS: ReadonlyArray<CsvColumn<RevenueRow>> = [
+  { header: "period_month", accessor: (r) => r.period_month },
+  { header: "plan_tier", accessor: (r) => r.plan_tier },
+  { header: "payment_method", accessor: (r) => r.payment_method },
+  { header: "invoice_count", accessor: (r) => r.invoice_count },
+  { header: "paid_count", accessor: (r) => r.paid_count },
+  { header: "failed_count", accessor: (r) => r.failed_count },
+  { header: "refunded_count", accessor: (r) => r.refunded_count },
+  { header: "paid_amount_php", accessor: (r) => r.paid_amount_php },
+];
+
+const REVENUE_PDF_COLUMNS: ReadonlyArray<PdfColumn<RevenueRow>> = [
+  { header: "Period", accessor: (r) => r.period_month, width: 80 },
+  { header: "Plan", accessor: (r) => r.plan_tier, width: 80 },
+  { header: "Method", accessor: (r) => r.payment_method, width: 100 },
+  { header: "Invoices", accessor: (r) => r.invoice_count, width: 70 },
+  { header: "Paid", accessor: (r) => r.paid_count, width: 60 },
+  { header: "Failed", accessor: (r) => r.failed_count, width: 60 },
+  { header: "Refunded", accessor: (r) => r.refunded_count, width: 70 },
+  { header: "Paid PHP", accessor: (r) => r.paid_amount_php, width: 100 },
+];
+
+function revenueFilename(start: Date, end: Date, ext: "csv" | "pdf"): string {
+  return `platform-revenue-${start.toISOString().slice(0, 10)}-${end.toISOString().slice(0, 10)}.${ext}`;
+}
+
+const revenueRouter = router({
+  /** Cross-tenant revenue summary CSV. Audit-logged PLATFORM:EXPORT_REVENUE. */
+  exportRevenueCsv: superAdminProcedure
+    .input(revenueRangeInput)
+    .mutation(async ({ ctx, input }) => {
+      const rows = await queryRevenue(input);
+      await writeAuditLog(platformPrisma, {
+        organizationId: null,
+        userId: ctx.user.id,
+        action: "PLATFORM:EXPORT_REVENUE_CSV",
+        entity: "Invoice",
+        entityId: `range:${input.start.toISOString()}..${input.end.toISOString()}`,
+        before: null,
+        after: { row_count: rows.length, format: "csv" },
+      });
+      return {
+        filename: revenueFilename(input.start, input.end, "csv"),
+        content: serializeCsv(rows, REVENUE_CSV_COLUMNS),
+        row_count: rows.length,
+      };
+    }),
+
+  /** Cross-tenant revenue summary PDF. Audit-logged PLATFORM:EXPORT_REVENUE. */
+  exportRevenuePdf: superAdminProcedure
+    .input(revenueRangeInput)
+    .mutation(async ({ ctx, input }) => {
+      const rows = await queryRevenue(input);
+      const buf = await generateTablePdf({
+        title: "Platform Revenue Summary",
+        subtitle: `Range: ${input.start.toISOString().slice(0, 10)} → ${input.end.toISOString().slice(0, 10)}`,
+        orgName: "Yelli Platform",
+        columns: REVENUE_PDF_COLUMNS,
+        rows,
+      });
+      await writeAuditLog(platformPrisma, {
+        organizationId: null,
+        userId: ctx.user.id,
+        action: "PLATFORM:EXPORT_REVENUE_PDF",
+        entity: "Invoice",
+        entityId: `range:${input.start.toISOString()}..${input.end.toISOString()}`,
+        before: null,
+        after: { row_count: rows.length, format: "pdf" },
+      });
+      return {
+        filename: revenueFilename(input.start, input.end, "pdf"),
+        contentBase64: buf.toString("base64"),
+        row_count: rows.length,
+      };
+    }),
+});
+
+// ----------------------------------------------------------------------------
 // Composed superadmin router
 // ----------------------------------------------------------------------------
 
 export const superadminRouter = router({
   organizations: organizationsRouter,
   platformSettings: platformSettingsRouter,
+  revenue: revenueRouter,
 });
