@@ -45,6 +45,7 @@ enum SubscriptionStatus {
   past_due
   cancelled
   trialing
+  suspended
 
   @@map("subscription_status")
 }
@@ -223,6 +224,9 @@ model Subscription {
   status                              SubscriptionStatus @default(trialing)
   current_period_start                DateTime
   current_period_end                  DateTime
+  // Set when invoice.expired flips status to past_due (now + 7 days).
+  // Grace-sweeper cron (every 6h) transitions past_due → suspended once this passes.
+  grace_period_end                    DateTime?
   minutes_used_this_period            Int                @default(0)
   recording_minutes_used_this_period  Int                @default(0)
 
@@ -291,6 +295,28 @@ model PlatformSettings {
   updated_at DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ProcessedWebhookEvent (Phase 8 Item 3b-ii)
+// Platform-global idempotency table for inbound webhooks.
+// `event_id` is the provider's globally-unique event id (Xendit
+// `id` field) and serves as the primary key. Inserting on every
+// webhook intake produces a P2002 unique violation on duplicate
+// delivery — the worker uses that as the DB-level idempotency
+// gate before mutating Subscription / Invoice.
+// NO organization_id: webhook intake is platform-global; the
+// worker resolves the tenant from xendit_invoice_id on Invoice.
+// ─────────────────────────────────────────────────────────────
+
+model ProcessedWebhookEvent {
+  event_id     String   @id
+  provider     String   @db.VarChar(50)
+  event_type   String   @db.VarChar(100)
+  processed_at DateTime @default(now())
+
+  @@index([provider, processed_at])
+  @@map("processed_webhook_events")
 }
 
 // ─────────────────────────────────────────────────────────────

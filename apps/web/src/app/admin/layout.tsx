@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import { PastDueBanner } from "@/components/billing/past-due-banner";
 import { auth } from "@/server/auth";
 import { buildTenantBouncePath } from "@/server/tenant-redirect";
 
@@ -52,7 +53,10 @@ export default async function AdminLayout({
         displayName={displayName ?? "Admin"}
       />
       <main className="flex-1 overflow-y-auto bg-background">
-        <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <PastDueBanner />
+          {children}
+        </div>
       </main>
     </div>
   );

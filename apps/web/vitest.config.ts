@@ -9,6 +9,10 @@ export default defineConfig({
     globals: true,
     env: {
       SKIP_ENV_VALIDATION: "1",
+      // Satisfies @yelli/jobs/connection.ts buildRedisUrl() guard at module
+      // load time. ioredis lazy-connects on first command — no real Redis
+      // round-trip happens during unit tests that don't enqueue jobs.
+      REDIS_URL: "redis://localhost:6379",
     },
     include: ["src/**/*.test.{ts,tsx}"],
     exclude: ["node_modules", ".next", "dist"],

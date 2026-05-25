@@ -28,6 +28,41 @@ export interface BillingCycleJob extends TenantJobBase {
   cycleDate: string; // ISO date — the day this cron run represents
 }
 
+/**
+ * Grace-sweeper cron envelope (Phase 8 Item 3 sub-session 3c-ii-b).
+ *
+ * Fires every 6 hours via registerCronJobs. The worker scans for
+ * Subscription rows where status='past_due' AND grace_period_end <= now
+ * and transitions each to 'suspended' (with plan_tier downgrade to 'free'
+ * + Organization.suspended_at + PLATFORM:GRACE_PERIOD_EXPIRED AuditLog).
+ *
+ * Empty organizationId is the cron sentinel — the worker iterates all
+ * eligible tenants per security.md Queue Safety rule 7 (cron jobs).
+ */
+export interface GraceSweeperJob extends TenantJobBase {
+  cycleAt: string; // ISO timestamp — the moment this cron run represents
+}
+
+/**
+ * Xendit webhook envelope handed off from apps/web's POST /api/webhooks/xendit
+ * route (Phase 8 Item 3b-i) to the xendit-webhook worker (Item 3b-ii).
+ *
+ * Deliberately NOT a TenantJobBase — at intake time the route handler has no
+ * session, no tenant context. The worker (3b-ii) resolves the organization by
+ * looking up `xendit_invoice_id` on the Invoice row before any side-effect.
+ *
+ * `event_id` is Xendit's globally unique webhook event ID (the `id` field on
+ * the payload). It serves as the primary idempotency key — both at the queue
+ * level (jobId) and at the DB level (ProcessedWebhookEvent.event_id unique).
+ */
+export interface XenditWebhookJob {
+  event_id: string;
+  event_type: string;
+  external_id: string;
+  payload: Record<string, unknown>;
+  received_at: string; // ISO timestamp the route handler received the webhook
+}
+
 const defaultJobOptions = (retries: number): DefaultJobOptions => ({
   attempts: retries,
   backoff: { type: 'exponential', delay: 5_000 },
@@ -40,6 +75,8 @@ export const QUEUE_NAMES = {
   reportGeneration: 'report-generation',
   usageCalculation: 'usage-calculation',
   billingCycle: 'billing-cycle',
+  xenditWebhook: 'xendit-webhook',
+  graceSweeper: 'grace-sweeper',
 } as const;
 
 const connection = getRedisConnection();
@@ -65,9 +102,40 @@ export const billingCycleQueue = new Queue<BillingCycleJob>(
 );
 
 /**
+ * Xendit webhook processing queue (Phase 8 Item 3b-i).
+ *
+ * Retry count: 5 — payment events must self-heal before paging on-call
+ * (same posture as billing-cycle). Backoff is exponential per defaultJobOptions
+ * so a transient DB blip doesn't slam the worker.
+ *
+ * Idempotency: the route handler attaches `jobId: xendit-event-{event_id}`
+ * on every add(), so Xendit retries before the worker drains are absorbed at
+ * the queue level. The worker (3b-ii) ALSO checks a ProcessedWebhookEvent
+ * row before mutating Subscription / Invoice — both guards are required.
+ */
+export const xenditWebhookQueue = new Queue<XenditWebhookJob>(
+  QUEUE_NAMES.xenditWebhook,
+  { connection, defaultJobOptions: defaultJobOptions(5) },
+);
+
+/**
+ * Grace-sweeper cron queue (Phase 8 Item 3 sub-session 3c-ii-b).
+ *
+ * Retry count: 3 — the worker is idempotent (already-suspended rows are
+ * filtered out by the findMany WHERE clause) so transient blips can safely
+ * re-run without double-suspending anyone.
+ */
+export const graceSweeperQueue = new Queue<GraceSweeperJob>(
+  QUEUE_NAMES.graceSweeper,
+  { connection, defaultJobOptions: defaultJobOptions(3) },
+);
+
+/**
  * Cron schedules — call once at app boot to register repeatable jobs.
  * usage-calculation: every 15 minutes
  * billing-cycle:     daily at 02:00 server time
+ * grace-sweeper:     every 6 hours (transitions past_due → suspended once
+ *                    Subscription.grace_period_end passes)
  */
 export async function registerCronJobs(): Promise<void> {
   await usageCalculationQueue.upsertJobScheduler(
@@ -86,6 +154,17 @@ export async function registerCronJobs(): Promise<void> {
     {
       name: 'billing-cycle-cron',
       data: { organizationId: '', userId: null, cycleDate: '' },
+    },
+  );
+
+  await graceSweeperQueue.upsertJobScheduler(
+    'grace-sweeper:cron',
+    { pattern: '0 */6 * * *' },
+    {
+      name: 'grace-sweeper-cron',
+      data: { organizationId: '', userId: null, cycleAt: '' },
+      // Worker enumerates eligible Subscription rows — empty organizationId
+      // is a sentinel (cron has no tenant context per security.md rule 7).
     },
   );
 }

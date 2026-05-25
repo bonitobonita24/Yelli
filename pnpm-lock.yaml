@@ -84,6 +84,9 @@ importers:
       '@yelli/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@yelli/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@yelli/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -234,6 +237,9 @@ importers:
 
   packages/jobs:
     dependencies:
+      '@yelli/db':
+        specifier: workspace:*
+        version: link:../db
       bullmq:
         specifier: ^5.21.0
         version: 5.76.8

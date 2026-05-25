@@ -177,7 +177,8 @@ export default function AdminBillingPage(): JSX.Element {
           )}
           {invoices.data && invoices.data.items.length === 0 && (
             <p className="p-6 text-sm text-muted-foreground">
-              No invoices yet.
+              No invoices yet. Your first invoice will appear here after your
+              first paid period.
             </p>
           )}
           {invoices.data && invoices.data.items.length > 0 && (

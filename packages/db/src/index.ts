@@ -8,7 +8,12 @@
 
 export { prisma } from './client';
 export { platformPrisma } from './platform-client';
-export { writeAuditLog, type AuditAction, type AuditLogEntry } from './audit';
+export {
+  writeAuditLog,
+  type AuditAction,
+  type AuditLogEntry,
+  type AuditLogWriter,
+} from './audit';
 export { withTenantRLS } from './rls';
 export {
   tenantContextStore,

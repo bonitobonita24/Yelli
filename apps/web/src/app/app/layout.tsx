@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { PastDueBanner } from "@/components/billing/past-due-banner";
 import { IncomingCallDialog } from "@/components/call/incoming-call-dialog";
 import { SocketProvider } from "@/lib/socket/socket-context";
 import { auth } from "@/server/auth";
@@ -35,6 +36,9 @@ export default async function AppLayout({
   return (
     <SocketProvider>
       <div className="min-h-screen bg-background">
+        <div className="mx-auto max-w-7xl px-6 pt-4">
+          <PastDueBanner />
+        </div>
         {children}
         <IncomingCallDialog />
       </div>
