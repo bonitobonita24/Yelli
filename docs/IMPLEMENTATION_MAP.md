@@ -368,7 +368,7 @@ Framework: Spec-Driven Platform V31
 | In-Call Chat                                     | `/app/chat/[id]`       | ✅    | n/a (B sub-1 closed)       |
 | File Sharing (in-call overlay)                   | `/app` overlay         | 🟡    | B (quick-wins)             |
 | Whiteboard (in-call overlay)                     | `/app` overlay         | 🟡    | B (quick-wins)             |
-| Recording library + playback                     | `/app/recordings`      | 🟡    | B (quick-wins)             |
+| Recording library + playback                     | `/app/recordings`      | 🟢    | B sub-3 (Egress wired; playback page pending) |
 | Meeting Management (create / lobby / host ctrl)  | `/app/meetings/*`      | ✅    | n/a (closed)               |
 | Department Management                            | `/admin/departments`   | ✅    | n/a (closed)               |
 | User Management                                  | `/admin/users`         | ✅    | n/a (closed)               |

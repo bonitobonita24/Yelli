@@ -7,18 +7,31 @@ interface MeetingControlsProps {
   isHost: boolean;
   onLeave: () => void;
   onEndForAll: () => void;
+  /** Live recording state — drives Record/Stop button label + indicator parity. */
+  isRecording?: boolean | undefined;
+  /** Disable both record/stop actions while a mutation is in flight. */
+  isRecordingActionPending?: boolean | undefined;
+  /** Host-only Egress start. Omit to hide the record button entirely. */
+  onStartRecording?: (() => void) | undefined;
+  /** Host-only Egress stop. Omit to hide the stop button entirely. */
+  onStopRecording?: (() => void) | undefined;
 }
 
 /**
  * Bottom control bar for /app/meeting/[id]. Mic + camera + screen share for all
- * participants; "End for all" button only rendered when isHost === true.
- * Per security.md tenant middleware safety: moderator controls are display-gated
- * AND server-enforced (host_user_id check on the end mutation).
+ * participants; "End for all" + "Record"/"Stop recording" buttons only render
+ * when isHost === true. Per security.md tenant middleware safety: moderator
+ * controls are display-gated AND server-enforced (host_user_id check on
+ * recordings.start/stop and meetings.end mutations).
  */
 export function MeetingControls({
   isHost,
   onLeave,
   onEndForAll,
+  isRecording = false,
+  isRecordingActionPending = false,
+  onStartRecording,
+  onStopRecording,
 }: MeetingControlsProps) {
   return (
     <div className="flex items-center justify-center gap-4 p-4">
@@ -98,6 +111,34 @@ export function MeetingControls({
       >
         Leave
       </button>
+
+      {isHost && (onStartRecording || onStopRecording) ? (
+        <button
+          onClick={isRecording ? onStopRecording : onStartRecording}
+          disabled={
+            isRecordingActionPending ||
+            (isRecording ? !onStopRecording : !onStartRecording)
+          }
+          className={
+            isRecording
+              ? "flex h-11 items-center justify-center gap-2 rounded-full bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              : "flex h-11 items-center justify-center gap-2 rounded-full bg-secondary px-4 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          }
+          aria-label={isRecording ? "Stop recording" : "Start recording"}
+          aria-pressed={isRecording}
+          type="button"
+        >
+          <span
+            className={
+              isRecording
+                ? "inline-block size-2 rounded-full bg-white motion-safe:animate-pulse"
+                : "inline-block size-2 rounded-full bg-red-600"
+            }
+            aria-hidden
+          />
+          {isRecording ? "Stop recording" : "Record"}
+        </button>
+      ) : null}
 
       {isHost ? (
         <button

@@ -1,8 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { prisma, writeAuditLog } from "@yelli/db";
-import { getDownloadUrl, verifyKeyOwnership } from "@yelli/storage";
+import {
+  buildStorageKey,
+  getDownloadUrl,
+  verifyKeyOwnership,
+} from "@yelli/storage";
 import { z } from "zod";
 
+import {
+  startRoomCompositeRecording,
+  stopRoomEgress,
+} from "@/lib/livekit/egress-client";
 import { protectedProcedure, router } from "@/server/trpc/trpc";
 
 const LIST_LIMIT_DEFAULT = 50;
@@ -156,6 +164,221 @@ export const recordingsRouter = router({
           entityId: existing.id,
           before: { status: existing.status, meeting_id: existing.meeting_id },
           after: { status: "deleted", deleted_at: now.toISOString() },
+        });
+      });
+
+      return { ok: true } as const;
+    }),
+
+  /**
+   * Start a RoomComposite Egress recording for the active call in a meeting.
+   * Host-only (Meeting.host_user_id check). Inserts a Recording row in
+   * status='processing'; the webhook (egress_ended) will flip it to 'ready'
+   * once LiveKit finishes uploading the MP4 to MinIO.
+   *
+   * Locked decisions (DECISIONS_LOG.md — Phase 8 Batch B sub-3):
+   *   - Egress mode: RoomCompositeEgress (single MP4 per meeting)
+   *   - Storage:     MinIO via @yelli/storage S3 client
+   *   - Permission:  Host only — Meeting.host_user_id === ctx.user.id
+   */
+  start: protectedProcedure
+    .input(z.object({ meetingId: z.string().cuid() }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: input.meetingId },
+        select: {
+          id: true,
+          organization_id: true,
+          host_user_id: true,
+          livekit_room_name: true,
+          status: true,
+        },
+      });
+
+      if (!meeting || meeting.organization_id !== ctx.organizationId) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Meeting not found.",
+        });
+      }
+      if (meeting.host_user_id !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the meeting host can start recording.",
+        });
+      }
+
+      // Recording requires an active CallLog (FK is non-null). The meeting
+      // must already be in a call — recording cannot precede the call.
+      const activeCall = await prisma.callLog.findFirst({
+        where: {
+          organization_id: ctx.organizationId,
+          meeting_id: meeting.id,
+          ended_at: null,
+        },
+        orderBy: { started_at: "desc" },
+        select: { id: true },
+      });
+
+      if (!activeCall) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Start the call before recording.",
+        });
+      }
+
+      // Reject double-start. The Recording row alone is the source of
+      // truth — Meeting.recording_enabled is a denormalised flag for UI.
+      const existingActive = await prisma.recording.findFirst({
+        where: {
+          organization_id: ctx.organizationId,
+          meeting_id: meeting.id,
+          status: "processing",
+          deleted_at: null,
+        },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Recording already in progress.",
+        });
+      }
+
+      const storageKey = buildStorageKey(
+        ctx.organizationId,
+        "recordings",
+        "mp4",
+      );
+
+      // Start Egress first — if LiveKit rejects we must not leave an
+      // orphan Recording row. The DB writes only happen after a
+      // successful start.
+      let egressInfo;
+      try {
+        egressInfo = await startRoomCompositeRecording({
+          roomName: meeting.livekit_room_name,
+          storageKey,
+        });
+      } catch (err) {
+        // Generic error to client — server-side log keeps the real cause.
+        console.error(
+          "[recordings.start] LiveKit Egress start failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message: "Recording could not be started. Please try again.",
+        });
+      }
+
+      const recording = await prisma.$transaction(async (tx) => {
+        const created = await tx.recording.create({
+          data: {
+            organization_id: ctx.organizationId,
+            meeting_id: meeting.id,
+            call_log_id: activeCall.id,
+            recorded_by_user_id: ctx.user.id,
+            file_path: storageKey,
+            storage_type: "s3",
+            status: "processing",
+            egress_id: egressInfo.egressId,
+          },
+          select: { id: true },
+        });
+        await tx.meeting.update({
+          where: { id: meeting.id },
+          data: { recording_enabled: true },
+        });
+        await writeAuditLog(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.user.id,
+          action: "CREATE",
+          entity: "Recording",
+          entityId: created.id,
+          before: null,
+          after: {
+            meeting_id: meeting.id,
+            egress_id: egressInfo.egressId,
+            status: "processing",
+          },
+        });
+        return created;
+      });
+
+      return { recordingId: recording.id, egressId: egressInfo.egressId };
+    }),
+
+  /**
+   * Stop an active recording for a meeting. Host-only.
+   * Tells LiveKit to wrap up — Recording row stays at 'processing' until
+   * the egress_ended webhook arrives. Sets recording_enabled=false on
+   * the Meeting immediately so the UI stops showing the live indicator.
+   */
+  stop: protectedProcedure
+    .input(z.object({ meetingId: z.string().cuid() }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: input.meetingId },
+        select: {
+          id: true,
+          organization_id: true,
+          host_user_id: true,
+        },
+      });
+      if (!meeting || meeting.organization_id !== ctx.organizationId) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Meeting not found.",
+        });
+      }
+      if (meeting.host_user_id !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the meeting host can stop recording.",
+        });
+      }
+
+      const active = await prisma.recording.findFirst({
+        where: {
+          organization_id: ctx.organizationId,
+          meeting_id: meeting.id,
+          status: "processing",
+          deleted_at: null,
+        },
+        select: { id: true, egress_id: true },
+      });
+      if (!active || !active.egress_id) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No active recording for this meeting.",
+        });
+      }
+
+      try {
+        await stopRoomEgress(active.egress_id);
+      } catch (err) {
+        // Best-effort stop. If LiveKit reports the egress already ended
+        // we still flip the UI flag; the webhook completes the row.
+        console.warn(
+          "[recordings.stop] stopEgress returned error (treating as already-stopped):",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.meeting.update({
+          where: { id: meeting.id },
+          data: { recording_enabled: false },
+        });
+        await writeAuditLog(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.user.id,
+          action: "UPDATE",
+          entity: "Recording",
+          entityId: active.id,
+          before: { status: "processing" },
+          after: { stop_requested: true },
         });
       });
 

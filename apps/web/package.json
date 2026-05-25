@@ -35,6 +35,7 @@
     "bcryptjs": "^2.4.3",
     "isomorphic-dompurify": "^2.16.0",
     "livekit-client": "^2.7.5",
+    "livekit-server-sdk": "^2.15.3",
     "lru-cache": "^11.0.2",
     "lucide-react": "^0.460.0",
     "next": "^15.0.3",

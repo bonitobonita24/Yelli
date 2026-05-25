@@ -8,6 +8,66 @@
 
 # ---
 
+## 2026-05-26 — 🟤 [[livekit-egress-room-composite-minio-host-only]] LiveKit Egress: RoomComposite + MinIO direct upload + host-only initiation
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-session 3 — LiveKit Egress recording feed
+- Files:     apps/web/src/lib/livekit/egress-client.ts, apps/web/src/server/trpc/routers/recordings.ts (start/stop), packages/db/prisma/schema.prisma (Recording.egress_id), docs/DECISIONS_LOG.md (locked entry)
+- Concepts:  livekit, egress, room-composite, minio, s3, host-only, host_user_id, recording-permission
+- Narrative: Three decisions locked together via direct user response 2026-05-26 06:50 GMT+8.
+  (1) Egress mode = RoomCompositeEgress — single MP4 per meeting, all participants composited.
+      Rationale: simplest playback, smallest storage footprint, matches Zoom/Meet defaults.
+      Rejected ParticipantEgress (per-user — heavier storage + post-processing) and
+      TrackCompositeEgress (more wiring with no clear win for our use case).
+  (2) Storage = MinIO via @yelli/storage S3 client with forcePathStyle: true.
+      LiveKit Egress writes the MP4 directly to MinIO under
+      `${organizationId}/recordings/${cuid}.mp4` built by buildStorageKey().
+      The S3 endpoint/access/secret/bucket all come from existing STORAGE_* env vars —
+      reuses the prod-ready storage stack; zero migration cost if we move to AWS S3 or R2.
+  (3) Permission = Host only. Meeting.host_user_id === ctx.user.id check enforced in
+      recordings.start AND recordings.stop. Aligns with established consent model
+      (host owns the call; participants implicitly consent by joining). Rejected
+      host-plus-admin and anyone-with-plan-tier-gate. Future expansion requires
+      PRODUCT.md update + Feature Update — do not unilaterally widen the permission.
+  Implementation hooks: Recording.egress_id (String? @unique, migration 20260526070000)
+  correlates LiveKit egress_ended webhook events back to the originating Recording row.
+  LiveKitEgressWebhookJob (NOT a TenantJobBase — webhook intake has no session) carries
+  the egress_id; worker resolves tenant via Recording.organization_id lookup. Two-layer
+  idempotency: jobId-level (BullMQ) + DB short-circuit when Recording already terminal.
+
+## 2026-05-26 — 🔴 [[vitest-class-constructor-mocking-with-hoisted]] vi.mock + `new` constructors require function (not arrow) factories + vi.hoisted for shared variables
+- Type:      🔴 gotcha
+- Phase:     Phase 8 Batch B sub-session 3 — egress-client + webhook-verify tests
+- Files:     apps/web/src/lib/livekit/egress-client.test.ts, apps/web/src/lib/livekit/webhook-verify.test.ts
+- Concepts:  vitest, vi.mock, vi.hoisted, class-mock, constructor-mock, new-keyword, hoisting
+- Narrative: When mocking an SDK that the code-under-test instantiates with `new` (e.g.
+  `new EgressClient(url, key, secret)`, `new WebhookReceiver(key, secret)`,
+  `new S3Upload({...})`), two traps fire simultaneously:
+  TRAP 1 — Top-level `const x = vi.fn()` captured into a `vi.mock(...)` factory: the
+  variable name resolves to undefined at factory eval time because vi.mock is hoisted
+  ABOVE the top-level let/const initialisers. Error surfaces as the factory returning
+  undefined for the named export. Fix: put the mock state inside `vi.hoisted(() => {...})`
+  and reference it as `hoisted.xxx` inside the factory.
+  TRAP 2 — `vi.fn().mockImplementation((args) => ({ ... }))` returning an object via an
+  arrow function. When the production code does `new MockedExport(...)`, V8 throws
+  "() => ({...}) is not a constructor" because arrow functions cannot be called with
+  `new`. Fix: use a regular function expression assigning to `this`:
+  `vi.fn(function (this: any, args: any) { Object.assign(this, args); this.method = ...; })`
+  — the function form IS constructable. Pattern:
+  ```ts
+  const hoisted = vi.hoisted(() => {
+    const method = vi.fn();
+    const Ctor = vi.fn(function (this: any) { this.method = method; });
+    return { method, Ctor };
+  });
+  vi.mock("the-sdk", () => ({ TheClass: hoisted.Ctor }));
+  ```
+  Bonus pattern: tests using `vi.doMock("@/env", …) + vi.resetModules()` leave the
+  module cache polluted for SUBSEQUENT tests (vi.doUnmock undoes the doMock but does
+  NOT restore the original `vi.mock` value — there is none after resetModules). Fix:
+  extract a `mockEnv(env)` helper that re-establishes ALL mocks (env + queue + verify)
+  and invoke it from `beforeEach` so every test starts from a known state regardless
+  of what prior tests did. Cost ~30 min to surface + fix; documenting saves repeat.
+
 ## 2026-05-25 — 🟤 [[realtime-chat-org-channel-with-client-filter]] Chat realtime uses ONE org-scoped channel (`${organizationId}:chat:message`) with payload-side `meetingId` for client filtering — NOT per-meeting channels
 - Type:      🟤 decision
 - Phase:     Phase 8 Batch B sub-session 1 — locked at implementation time

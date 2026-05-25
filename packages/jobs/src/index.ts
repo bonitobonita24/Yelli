@@ -9,6 +9,7 @@ export {
   usageCalculationQueue,
   billingCycleQueue,
   xenditWebhookQueue,
+  livekitEgressWebhookQueue,
   graceSweeperQueue,
   registerCronJobs,
 } from './queues';
@@ -20,6 +21,7 @@ export type {
   UsageCalculationJob,
   BillingCycleJob,
   XenditWebhookJob,
+  LiveKitEgressWebhookJob,
   GraceSweeperJob,
 } from './queues';
 
@@ -44,3 +46,10 @@ export {
   type GraceSweeperJobResult,
   type GraceSweeperPrismaClient,
 } from './workers/grace-sweeper';
+export {
+  createLiveKitEgressWebhookWorker,
+  processLiveKitEgressWebhookJob,
+  type LiveKitEgressWebhookHandlerDeps,
+  type LiveKitEgressWebhookJobResult,
+  type LiveKitEgressWebhookPrismaClient,
+} from './workers/livekit-egress-webhook';

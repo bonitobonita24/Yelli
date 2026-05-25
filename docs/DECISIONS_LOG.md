@@ -14,6 +14,25 @@
 
 # ---
 
+## LiveKit Egress recording integration
+
+Decision: Three sub-decisions locked together (Phase 8 Batch B sub-3 — user response 2026-05-26 06:50 GMT+8):
+  1. **Egress mode**: RoomCompositeEgress — single MP4 per meeting with all participants composited
+     together. Rejected ParticipantEgress (per-user) and TrackCompositeEgress.
+  2. **Storage**: MinIO via the existing @yelli/storage S3 client (forcePathStyle: true).
+     LiveKit Egress writes the MP4 directly to MinIO under the tenant prefix
+     `{organizationId}/recordings/{cuid}.mp4` built by buildStorageKey().
+  3. **Permission**: Host only — Meeting.host_user_id === ctx.user.id check in
+     recordings.start and recordings.stop mutations. Rejected host-plus-admin
+     and anyone-with-plan-tier-gate.
+Rationale: RoomComposite has the simplest playback path (one MP4, no client-side mux)
+and matches Zoom/Google Meet defaults. MinIO is already in the production stack; the
+S3-compatible API means zero migration if we move to AWS S3 or Cloudflare R2 later.
+Host-only matches the established consent model (the host owns the call; participants
+implicitly consent by joining a host-controlled meeting).
+Locked: yes — 2026-05-26. Do not re-ask. Future expansion (admin-can-record toggle,
+recording consent banner) requires PRODUCT.md update + Feature Update.
+
 ## Dev Environment Mode
 
 Decision: MODE A — WSL2 native (the only supported mode as of V25)

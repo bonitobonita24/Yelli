@@ -565,11 +565,15 @@ model Recording {
   meeting_id          String
   call_log_id         String
   file_path           String
-  file_size_bytes     BigInt
-  duration_seconds    Int
+  file_size_bytes     BigInt          @default(0)
+  duration_seconds    Int             @default(0)
   storage_type        StorageType     @default(local)
   status              RecordingStatus @default(processing)
   recorded_by_user_id String
+  // LiveKit egress ID — set when Egress starts, used by webhook to correlate
+  // completion events back to this Recording row. Unique because every
+  // egress lifetime maps 1:1 to exactly one Recording.
+  egress_id           String?         @unique
 
   created_at DateTime  @default(now())
   deleted_at DateTime?

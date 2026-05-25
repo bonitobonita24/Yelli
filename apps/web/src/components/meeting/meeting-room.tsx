@@ -72,6 +72,11 @@ function MeetingInner({
   const [chatOpen, setChatOpen] = useState(false);
   const [dropzoneOpen, setDropzoneOpen] = useState(false);
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
+  // Locally-tracked recording state so the UI flips immediately on start/stop
+  // mutations without waiting for a meeting refetch. Initialised from the
+  // server-side recording_enabled prop; webhook completion still flows in
+  // via the next meeting fetch / Socket.IO push.
+  const [recordingLive, setRecordingLive] = useState(recordingEnabled);
 
   const endMutation = trpc.meetings.end.useMutation({
     onSuccess: () => {
@@ -87,12 +92,48 @@ function MeetingInner({
     },
   });
 
+  const startRecordingMutation = trpc.recordings.start.useMutation({
+    onSuccess: () => {
+      setRecordingLive(true);
+      toast({ title: "Recording started" });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to start recording",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const stopRecordingMutation = trpc.recordings.stop.useMutation({
+    onSuccess: () => {
+      setRecordingLive(false);
+      toast({ title: "Recording stopped" });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to stop recording",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   function handleEndForAll() {
     endMutation.mutate({
       meetingId,
       participantCount: participants.length,
       status: "completed",
     });
+  }
+
+  function handleStartRecording() {
+    startRecordingMutation.mutate({ meetingId });
+  }
+
+  function handleStopRecording() {
+    stopRecordingMutation.mutate({ meetingId });
   }
 
   return (
@@ -108,7 +149,7 @@ function MeetingInner({
               {formatDuration(Date.now() - startedAt)}
             </p>
           </div>
-          <InCallRecordingIndicator active={recordingEnabled} />
+          <InCallRecordingIndicator active={recordingLive} />
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -167,6 +208,12 @@ function MeetingInner({
           isHost={isHost}
           onLeave={onLeave}
           onEndForAll={handleEndForAll}
+          isRecording={recordingLive}
+          isRecordingActionPending={
+            startRecordingMutation.isPending || stopRecordingMutation.isPending
+          }
+          onStartRecording={isHost ? handleStartRecording : undefined}
+          onStopRecording={isHost ? handleStopRecording : undefined}
         />
       </div>
 

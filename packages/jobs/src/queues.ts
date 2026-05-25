@@ -63,6 +63,30 @@ export interface XenditWebhookJob {
   received_at: string; // ISO timestamp the route handler received the webhook
 }
 
+/**
+ * LiveKit Egress webhook envelope handed off from POST /api/webhooks/livekit
+ * (Phase 8 Batch B sub-3) to the livekit-egress-webhook worker.
+ *
+ * Deliberately NOT a TenantJobBase — at intake time the route handler has
+ * no session, no tenant context. The worker resolves the organization by
+ * looking up `egress_id` on the Recording row before any side-effect.
+ *
+ * `event_id` is composed from `<event_type>:<egress_id>:<received_at>` so
+ * BullMQ's jobId-level idempotency absorbs LiveKit's retry storms even
+ * before the worker checks the Recording row state.
+ */
+export interface LiveKitEgressWebhookJob {
+  event_id: string;
+  event_type: string; // 'egress_started' | 'egress_updated' | 'egress_ended' | 'egress_failed'
+  egress_id: string;
+  room_name: string;
+  status: string; // EGRESS_STARTING | EGRESS_ACTIVE | EGRESS_COMPLETE | EGRESS_FAILED | …
+  file_size_bytes: string; // BigInt-as-string for JSON safety
+  duration_seconds: number;
+  error_message: string | null;
+  received_at: string;
+}
+
 const defaultJobOptions = (retries: number): DefaultJobOptions => ({
   attempts: retries,
   backoff: { type: 'exponential', delay: 5_000 },
@@ -76,6 +100,7 @@ export const QUEUE_NAMES = {
   usageCalculation: 'usage-calculation',
   billingCycle: 'billing-cycle',
   xenditWebhook: 'xendit-webhook',
+  livekitEgressWebhook: 'livekit-egress-webhook',
   graceSweeper: 'grace-sweeper',
 } as const;
 
@@ -116,6 +141,23 @@ export const billingCycleQueue = new Queue<BillingCycleJob>(
 export const xenditWebhookQueue = new Queue<XenditWebhookJob>(
   QUEUE_NAMES.xenditWebhook,
   { connection, defaultJobOptions: defaultJobOptions(5) },
+);
+
+/**
+ * LiveKit Egress webhook processing queue (Phase 8 Batch B sub-3).
+ *
+ * Retry count: 3 — the worker is idempotent (looks up by egress_id and
+ * checks current status before mutating) so transient blips can safely
+ * re-run. Backoff is exponential per defaultJobOptions.
+ *
+ * Idempotency: the route handler attaches a deterministic jobId derived
+ * from the webhook envelope so LiveKit retries between worker drains
+ * collapse at the queue level. The worker ALSO short-circuits when the
+ * Recording row is already in the target state — defence in depth.
+ */
+export const livekitEgressWebhookQueue = new Queue<LiveKitEgressWebhookJob>(
+  QUEUE_NAMES.livekitEgressWebhook,
+  { connection, defaultJobOptions: defaultJobOptions(3) },
 );
 
 /**
