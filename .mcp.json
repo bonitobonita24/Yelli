@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "socraticode": {
+      "type": "stdio",
+      "command": "socraticode",
+      "args": [],
+      "env": {}
+    }
+  }
+}
