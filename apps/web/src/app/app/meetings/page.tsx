@@ -47,9 +47,17 @@ export default async function MeetingsPage() {
     <main className="container mx-auto px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
-        <Button asChild>
-          <Link href="/app/meetings/new">New Meeting</Link>
-        </Button>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/app/recordings"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            View recordings →
+          </Link>
+          <Button asChild>
+            <Link href="/app/meetings/new">New Meeting</Link>
+          </Button>
+        </div>
       </div>
 
       {meetings.length === 0 ? (

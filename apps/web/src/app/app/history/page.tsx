@@ -58,11 +58,19 @@ export default async function CallHistoryPage() {
 
   return (
     <main className="container mx-auto px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Call History</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Recent intercom calls and meetings across your organization.
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Call History</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Recent intercom calls and meetings across your organization.
+          </p>
+        </div>
+        <Link
+          href="/app/recordings"
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          View recordings →
+        </Link>
       </div>
 
       {logs.length === 0 ? (

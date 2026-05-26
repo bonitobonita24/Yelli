@@ -1,6 +1,6 @@
 {
-  "scannedAt": "2026-05-22",
-  "previousScans": ["2026-05-11", "2026-05-13"],
+  "scannedAt": "2026-05-26",
+  "previousScans": ["2026-05-11", "2026-05-13", "2026-05-22", "2026-05-26-am", "2026-05-26-pm-1432"],
   "techStack": [
     "Next.js 15 App Router",
     "tRPC v11",
@@ -28,7 +28,7 @@
     "frameworkVersion": "V31",
     "memoryGovernanceInstalled": true,
     "memoryGovernancePath": ".claude/rules/memory-governance.md",
-    "currentPhase": "Phase 7 — items #11/#12/#13/#16 shipped; #14/#15 blocked on (trpc-client-procedure-type-missing) on branch fix/trpc-client-procedure-type-missing",
+    "currentPhase": "Phase 8 Batch B — sub-1 (Socket.IO chat, 85ea101), sub-2 (Reports CSV/PDF, 2955eae), sub-3 (LiveKit Egress recording, 1053729) all CLOSED. NEXT: overlay cluster (File Sharing + Whiteboard) OR sub-3 polish pass. Phase 8 Batch 1 Item 3 (Xendit billing) shipped 8a40ede.",
     "midProjectAdoption": false,
     "mcpJsonWired": true,
     "mcpServers": ["socraticode", "context7", "shadcn"]
@@ -54,10 +54,11 @@
     { "name": "claude-mem", "status": "installed", "reason": "Compressed cross-session memory — replaces governance doc re-reads" },
     { "name": "superpowers", "status": "installed", "reason": "BUNDLE: TDD + systematic-debugging + root-cause-tracing + brainstorming + git-worktrees + finishing-branch + parallel-agents + code-review + defense-in-depth" },
     { "name": "planning-with-files", "status": "installed", "reason": "Slot 3 — persistent task_plan.md/findings.md matches STATE.md pattern" },
-    { "name": "frontend-design", "status": "installed (via document-skills bundle)", "reason": "Slot 4 — Anthropic's production UI code generation" },
-    { "name": "fullstack-dev-skills", "status": "installed (= claude-skills-65 equivalent)", "reason": "Slot 6 — framework skills for React/Next.js/tRPC/Prisma/TypeScript/Postgres", "activatedSubSkills": ["websocket-engineer", "monitoring-expert"] },
+    { "name": "document-skills", "status": "installed", "reason": "Anthropic's official document skills bundle — provides frontend-design (Slot 4 UI), pdf (Phase 8 Batch B Item 2 reports), xlsx (Phase 8 Batch B Item 2 CSV exports), claude-api, mcp-builder, theme-factory, webapp-testing, doc-coauthoring, internal-comms, brand-guidelines, canvas-design, algorithmic-art, web-artifacts-builder, skill-creator, slack-gif-creator", "activatedSubSkills": ["frontend-design", "pdf", "xlsx"] },
+    { "name": "fullstack-dev-skills", "status": "installed (= claude-skills-65 equivalent)", "reason": "Slot 6 — framework skills for React/Next.js/tRPC/Prisma/TypeScript/Postgres", "activatedSubSkills": ["websocket-engineer", "monitoring-expert", "react-expert"] },
     { "name": "vercel-plugin", "status": "installed", "reason": "Vercel deployment guidance, AI SDK, Next.js cache components, shadcn integration" },
-    { "name": "code-review", "status": "installed", "reason": "PR review workflow companion to code-review-graph" }
+    { "name": "code-review", "status": "installed", "reason": "PR review workflow companion to code-review-graph" },
+    { "name": "andrej-karpathy-skills", "status": "installed 2026-05-26 06:17", "reason": "Universal advisory CLAUDE.md merge layer (forrestchang). 4 Karpathy behavioral principles: Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven Execution. No mutex with foundation." }
   ],
   "pluginsAvailableButNotInstalled": [
     { "name": "ui-ux-pro-max", "command": "/plugin install ui-ux-pro-max@ui-ux-pro-max-skill", "reason": "Phase 2.6 design system regeneration — already ran once, install only if regenerating MASTER.md" }
@@ -66,7 +67,7 @@
     { "name": "a11y-skill", "rejectedAt": "2026-05-12", "decisionRef": "DECISIONS_LOG.md + observation 565", "reason": "Layered accessibility coverage already provided by design-auditor + frontend-design + ui-ux-pro-max + oiloil-ui-ux-guide + Phase 2.6 MASTER.md a11y enforcement block. Dedicated a11y-skill would be redundant." }
   ],
   "systemTools": [
-    { "name": "code-review-graph", "status": "installed at /home/me/.local/bin/code-review-graph", "nextAction": "Run 'code-review-graph build' after Part 3 (Prisma schema + first router scaffolding) for richer blast-radius analysis in Phase 7" }
+    { "name": "code-review-graph", "status": "binary installed at /home/me/.local/bin/code-review-graph; .code-review-graph/ NOT yet built in project", "nextAction": "Run 'code-review-graph build' in WSL2 terminal (~1-3 min) to enable blast-radius analysis for Phase 8 Feature Updates. Then 'code-review-graph watch' in background terminal for live graph updates." }
   ],
   "mcpsAlreadyWired": [
     { "name": "socraticode", "location": ".vscode/mcp.json", "purpose": "Vector search — 61% less context" },
@@ -86,7 +87,7 @@
     { "name": "n8n-workflow-patterns", "reason": "OPTIONAL — same as above" },
     { "name": "fullstack-dev-skills:nextjs-developer", "reason": "Overlap MEDIUM with vercel-agent-skills + vercel-plugin:nextjs — those cover Next.js 15 App Router rules + cache components already" },
     { "name": "fullstack-dev-skills:postgres-pro", "reason": "Overlap MEDIUM with installed postgres skill — postgres covers read-only queries needed for Prisma migration verification" },
-    { "name": "fullstack-dev-skills:react-expert", "reason": "Overlap with frontend-design + vercel-agent-skills (React 67 rules)" },
+    { "name": "fullstack-dev-skills:react-expert", "reason": "RE-EVALUATED 2026-05-26pm: ACTIVATED for upcoming Whiteboard overlay (canvas-heavy React). Originally skipped due to overlap, but Whiteboard component refactor benefits from dedicated React expertise beyond what vercel-agent-skills covers." },
     { "name": "fullstack-dev-skills:typescript-pro", "reason": "Covered by fullstack-dev-skills parent bundle + vercel-agent-skills" },
     { "name": "fullstack-dev-skills:secure-code-guardian", "reason": "Overlap MEDIUM with owasp-security + superpowers/defense-in-depth" },
     { "name": "fullstack-dev-skills:debugging-wizard", "reason": "Overlap HIGH with superpowers/systematic-debugging — superpowers wins per H1 priority" }
@@ -109,5 +110,52 @@
       "reason": "LiveKit + coturn + Socket.io = three infrastructure layers needing telemetry before production. inputs.yml has staging/prod envs but no observability skill activated. Pre-production gate before Phase 8 buildout reaches production hardening."
     }
   ],
-  "globalCleanupAdvised": false
+  "globalCleanupAdvised": true,
+  "globalCleanupAdvisedReason": "Skipped advisory in 2026-05-26-pm scan — ~/.claude/skills/ is empty (zero global skills). Project-level scoping already optimal. No action required.",
+  "scan_2026_05_26_pm": {
+    "runAt": "2026-05-26T14:32+08:00",
+    "trigger": "/scan-project (4th run today)",
+    "summary": "Re-verification scan after Phase 8 Batch B sub-3 (LiveKit Egress) closed. All foundation skills, plugins, MCPs verified active. Zero new skills to install. Zero unresolved conflicts. karpathy-guidelines moved from pluginsAvailableButNotInstalled → installedPlugins (confirmed installed 2026-05-26 06:17 per session memory S5112).",
+    "newInstalls": 0,
+    "newRemovals": 0,
+    "conflictsDetected": 0,
+    "outstandingActions": [
+      "code-review-graph build — binary at /home/me/.local/bin/code-review-graph but project graph not yet built. Run in WSL2 terminal before Phase 8 Batch B sub-4 (overlay cluster: File Sharing + Whiteboard) to enable blast-radius analysis on multi-module changes."
+    ]
+  },
+  "phase8Additions_2026_05_26": [
+    {
+      "name": "document-skills:pdf",
+      "category": "Documents",
+      "tier": "T3",
+      "activatedAt": "2026-05-26",
+      "deliveryMechanism": "plugin sub-skill (no file copy — already in document-skills bundle)",
+      "reason": "Phase 8 Batch B sub-session 2 (Reports CSV/PDF generation per memory observation S684) needs PDF export capability. Reports module spec declares printable report output. Skill auto-activates when task description matches PDF generation."
+    },
+    {
+      "name": "document-skills:xlsx",
+      "category": "Documents",
+      "tier": "T3",
+      "activatedAt": "2026-05-26",
+      "deliveryMechanism": "plugin sub-skill (no file copy — already in document-skills bundle)",
+      "reason": "Phase 8 Batch B sub-session 2 — Reports module spec declares CSV/spreadsheet export. xlsx skill covers .xlsx, .xlsm, .csv, .tsv read/edit/create. Auto-activates when task description matches spreadsheet generation."
+    },
+    {
+      "name": "karpathy-guidelines",
+      "category": "Universal Behavioral",
+      "tier": "T4",
+      "activatedAt": "APPROVED 2026-05-26pm — user must run marketplace install in Claude Code CLI",
+      "deliveryMechanism": "marketplace plugin (forrestchang) — not file-copyable",
+      "installCommand": "/plugin marketplace add forrestchang/claude-code-skills && /plugin install karpathy-guidelines@forrestchang",
+      "reason": "Lightweight 2.3KB CLAUDE.md merge layer. 4 Karpathy behavioral principles: Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven Execution. No mutex with foundation (skillpilot/superpowers/claude-mem/context-mode)."
+    },
+    {
+      "name": "fullstack-dev-skills:react-expert",
+      "category": "Framework",
+      "tier": "T2",
+      "activatedAt": "2026-05-26pm",
+      "deliveryMechanism": "plugin sub-skill (no file copy — already in fullstack-dev-skills bundle)",
+      "reason": "Phase 8 Batch B overlay cluster (Whiteboard) is canvas-heavy React work. Dedicated React expertise complements vercel-agent-skills (which covers React 67 rules) — react-expert covers React patterns like Concurrent Mode, useTransition, Suspense boundaries that the Whiteboard collab UI will need."
+    }
+  ]
 }

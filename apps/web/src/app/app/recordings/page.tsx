@@ -6,6 +6,7 @@ import {
 } from "@yelli/ui";
 import { redirect } from "next/navigation";
 
+import { RecordingDeleteButton } from "@/components/recordings/recording-delete-button";
 import { RecordingDownloadButton } from "@/components/recordings/recording-download-button";
 import { createServerCaller } from "@/lib/trpc/server";
 import { auth } from "@/server/auth";
@@ -110,10 +111,14 @@ export default async function RecordingsPage() {
                     <div className="text-right text-xs text-muted-foreground shrink-0">
                       <p>Duration: {formatDuration(r.duration_seconds)}</p>
                       <p className="mt-0.5">Size: {formatBytes(r.file_size_bytes)}</p>
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-col items-end gap-1">
                         <RecordingDownloadButton
                           recordingId={r.id}
                           disabled={r.status !== "ready"}
+                        />
+                        <RecordingDeleteButton
+                          recordingId={r.id}
+                          disabled={r.status === "deleted"}
                         />
                       </div>
                     </div>

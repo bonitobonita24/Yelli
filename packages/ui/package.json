@@ -20,6 +20,7 @@
     "./sonner": "./src/components/sonner.tsx",
     "./badge": "./src/components/badge.tsx",
     "./alert": "./src/components/alert.tsx",
+    "./alert-dialog": "./src/components/alert-dialog.tsx",
     "./form": "./src/components/form.tsx",
     "./table": "./src/components/table.tsx",
     "./use-toast": "./src/components/use-toast.ts",
@@ -30,6 +31,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-select": "^2.1.2",

@@ -74,6 +74,20 @@ export type { BadgeProps } from './components/badge';
 export { Alert, AlertTitle, AlertDescription } from './components/alert';
 
 export {
+  AlertDialog,
+  AlertDialogPortal,
+  AlertDialogOverlay,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from './components/alert-dialog';
+
+export {
   Form,
   FormItem,
   FormLabel,
