@@ -8,6 +8,57 @@
 
 # ---
 
+## 2026-05-26 PM — 🔴 [[yelli-vitest-node-env-no-rtl]] Yelli vitest is locked to environment: "node" — RTL component tests require pre-work
+
+- Type:      🔴 gotcha
+- Phase:     Phase 8 Batch B sub-3 polish — RecordingDeleteButton component test
+- Files:     apps/web/vitest.config.ts, apps/web/package.json, apps/web/src/components/recordings/recording-delete-copy.ts (precedent: apps/web/src/lib/meeting/end-of-call-policy.ts + .test.ts)
+- Concepts:  vitest, environment, node, jsdom, rtl, react-testing-library, component-test, pure-constants
+- Narrative: Polish-pass spec called for `RecordingDeleteButton.test.tsx` with React Testing Library cases (renders trigger, opens dialog, fires mutation, etc.). Architect assumed jsdom + RTL were available. They are NOT. `apps/web/vitest.config.ts` has `environment: "node"` (NOT "jsdom"), and `apps/web/package.json` has zero @testing-library/* deps. The codebase precedent for "testing UI logic" is to extract pure copy strings and pure helper functions into a `.ts` file and test those as constants — see `end-of-call-policy.ts` + `end-of-call-policy.test.ts`. Trying to test a JSX component file (.tsx) in node env produces `Failed to parse source for import analysis because the content contains invalid JS syntax` because vite tries to parse JSX without an RTL/jsx-runtime transform. Fix in this session: pulled `recordingDeleteCopy` (label strings) + `buildDeletePayload(id)` (mutation payload shape) into `recording-delete-copy.ts`, imported them into the component for use + re-export, and pointed the test at the `.ts` file directly (NOT through the component's re-export — re-export still pulls JSX into the parse graph). Behavioral coverage (dialog actually opens, mutation actually fires) shifts to Playwright e2e. If future work requires real component behavior tests, ADD jsdom + @testing-library/react as deps + change vitest.config.ts environment OR introduce a vitest project for component tests — do not silently try to use RTL without that.
+
+# ---
+
+## 2026-05-26 PM — 🔴 [[sonnet-subagent-thrash-budget-pattern]] Sonnet subagent thrashing pattern: vitest suite + typecheck + lint in one dispatch exceeds 30K
+
+- Type:      🔴 gotcha
+- Phase:     Phase 8 Batch B sub-3 polish — Task 4 sub-dispatches via subagent-driven-development
+- Files:     .cline/memory/lessons.md (this entry), .claude/rules/memory-governance.md §1 Step 2.5 (the 30K rule), docs/superpowers/plans/2026-05-26-recordings-polish.md (Task 4 originally one task, had to be split into 4a/4b/4c)
+- Concepts:  sonnet, subagent, thrashing, autocompact, 30k-budget, vitest-output, architect-execute
+- Narrative: Two Sonnet 4.6 subagent dispatches thrashed this session despite token-estimate planning. Both thrash points shared a pattern: the agent's task involved running `vitest run` (full suite OR with multiple typecheck/lint runs accumulating outputs). The first thrash (sub-task 4a — shadcn install + barrel) hit during the `pnpm -F @yelli/ui typecheck && pnpm -F @yelli/web typecheck` chain — 15 tool calls before autocompact ran 3x in 3 turns. The second thrash (sub-task 4c-ii — verify + commit bundle) hit during `pnpm test --run` full suite output processing — 17 tool calls before thrash. Root cause: vitest output is 8-15K per run depending on test count (53 files / 470 tests at sub-3 polish time). Combined with two typecheck runs + one lint run + git operations + reasoning overhead, ONE task can blow 30K easily. Mitigations applied here: (1) split Task 4 into 4a/4b/4c sub-dispatches that each handle ONE phase (install / write-test / write-impl / verify), (2) explicit `2>&1 | tail -N` in subagent prompts to bound output. Even with both mitigations, 4c-ii still thrashed because "verify" alone needed: targeted vitest + full suite vitest + typecheck both workspaces + lint + git diff stat + commit = >30K cumulative output. Lesson: NEVER bundle "verify (multiple test runs) + commit" in one Sonnet dispatch. Either split verify FROM commit, or do verify-and-commit inline as architect after smaller-scope subagent tasks finish. The architect-correction path (run the verification commands inline using targeted output piping) is faster than re-dispatching after thrash + safer because the architect already has the context.
+
+# ---
+
+## 2026-05-26 PM — 🟤 [[credentials-md-gitignored-never-in-pr]] CREDENTIALS.md is gitignored — all modifications are local-only
+
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-3 polish — Task 2 (LiveKit section promotion)
+- Files:     .gitignore (CREDENTIALS.md entry), Bootstrap Step 8 + Step 18 docs in .claude/rules/bootstrap.md, .ai_prompt/bootstrap.md
+- Concepts:  credentials, gitignore, security, never-commit, bootstrap-step-8, planning-error
+- Narrative: Polish-pass spec §6.2 called for "Modify CREDENTIALS.md (insert section, remove old comment)" and §9 Task 2 listed it as a committable file in the squash-merge. This was an architect error. CREDENTIALS.md is gitignored from Bootstrap Step 8 onward — by deliberate framework design. Sonnet subagent for Task 2 caught this correctly: ran all edits cleanly on disk, then refused to commit per the explicit rule. Outcome: local CREDENTIALS.md now has the dedicated `## 🎥 LiveKit (Self-Hosted SFU)` section, but this improvement does NOT propagate via squash-merge. Future developers who clone the repo see only `.env.example` (committed) + `scripts/sync-credentials-to-env.sh` (committed) to set up their own copy. Rule: whenever a spec/plan mentions modifying CREDENTIALS.md, treat the change as local-only. NEVER include CREDENTIALS.md in any branch's commit list. The improvement value of editing the local file is limited to the developer who runs the edit — if the change needs to propagate to other developers, it must be encoded in the Bootstrap Step 18 CREDENTIALS.md template (which IS architect-owned and shipped with the framework prompt), not in any project's local CREDENTIALS.md. Additional related risk: the architect should AVOID reading CREDENTIALS.md content into context. In this session I read lines 238-275 of CREDENTIALS.md (to verify the existing LiveKit subsection structure) — that file contained `⏳` placeholders, not real secrets, so no values leaked, but the act of reading violated CLAUDE.md "NEVER read CREDENTIALS.md into context, tool calls, logs, or governance docs". Correct path: dispatch the subagent to read + edit in isolation, accept their report on structure, do not request snippets back.
+
+# ---
+
+## 2026-05-26 PM — 🟤 [[polish-spec-verify-codebase-before-assuming]] Polish-pass spec assumptions need codebase verification before locking — multiple architect errors discovered in this session
+
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-3 polish — design spec authoring
+- Files:     docs/superpowers/specs/2026-05-26-livekit-egress-polish-design.md (45e71a3), docs/superpowers/plans/2026-05-26-recordings-polish.md (3c63f37)
+- Concepts:  spec, planning, polish, codebase-verification, rule-29, no-fuzzy, architect-error
+- Narrative: Three discrete spec errors surfaced during execution of a "small polish pass", all from architect-side assumptions that should have been verified against the codebase BEFORE locking the spec.
+  (1) Spec item A claimed `.env.example` was "missing LIVEKIT_* and COTURN_* placeholders". Reality: pre-existing entries already covered all keys per Rule 22 (random project ports). `LIVEKIT_WEBHOOK_URL` in the spec was a hallucination — codebase has zero references; webhook URL is server-side LiveKit config, not an app env var.
+  (2) Spec item B claimed CREDENTIALS.md needed a commit. CREDENTIALS.md is gitignored — see separate [[credentials-md-gitignored-never-in-pr]] lesson.
+  (3) Spec item F called for RTL component tests. Project locks vitest `environment: "node"` with no jsdom/RTL deps — see [[yelli-vitest-node-env-no-rtl]] lesson.
+  All three errors should have been caught by running these verifications during spec authoring:
+    - `grep -i 'LIVEKIT\|COTURN' .env.example` (would have shown the keys exist)
+    - `grep -rn 'LIVEKIT_WEBHOOK_URL' apps/web/src/` (would have shown zero hits)
+    - `grep -E 'jsdom|@testing-library' apps/web/package.json` (would have shown they're absent)
+    - `cat apps/web/vitest.config.ts` (would have shown `environment: "node"`)
+    - `grep CREDENTIALS .gitignore` (would have shown it's gitignored)
+  Rule 29 ("no fuzzy reasoning — never 'probably/seems like/I assume'") was violated implicitly: the spec assumed RTL availability, assumed env.example was incomplete, and assumed CREDENTIALS.md could be committed. None of those were verified.
+  Lesson for future polish-pass specs: BEFORE locking the design doc, run a short pre-flight investigation of every file the spec proposes to modify. Read or grep each one to confirm the gap is real, the test framework is compatible, and the file is actually committable. The brainstorming skill's "Explore project context" step is meant to catch exactly this — it was followed loosely (the spec author DID read the codebase, but did not verify each specific claim against the live state). The cost of these errors this session: 2 Sonnet thrashes during execution + 1 BLOCKED subagent dispatch + ~30 min architect correction time. The cost of running the 5 verification commands above during spec authoring: ~2 min. Always prefer the cheap verification.
+
+# ---
+
 ## 2026-05-26 — 🟤 [[livekit-egress-room-composite-minio-host-only]] LiveKit Egress: RoomComposite + MinIO direct upload + host-only initiation
 - Type:      🟤 decision
 - Phase:     Phase 8 Batch B sub-session 3 — LiveKit Egress recording feed

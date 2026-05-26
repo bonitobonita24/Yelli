@@ -22,6 +22,49 @@
 
 # ---
 
+## 2026-05-26 PM — Phase 8 Batch B sub-3 polish (recordings UX + governance scaffold)
+
+- Agent: CLAUDE_CODE (Architect: Opus 4.7 inline + Sonnet 4.6 subagent executors via memory-governance.md §4 Architect-Execute Model. 2 Sonnet thrashes recovered inline by architect — see lessons.md.)
+- Why: Sub-3 (`1053729`) shipped the LiveKit Egress recording feature but left UX + scaffolding gaps. `/app/recordings` page existed but was unreachable from the app shell. `softDelete` mutation was tested server-side but had no UI surface. CREDENTIALS.md LiveKit appeared only as a one-line comment under "Third-Party API Keys" rather than a dedicated section. This polish closes those gaps via 5 atomic commits squashed to main as `2175f61`.
+- Spec ref:  `docs/superpowers/specs/2026-05-26-livekit-egress-polish-design.md` (`45e71a3`)
+- Plan ref:  `docs/superpowers/plans/2026-05-26-recordings-polish.md` (`3c63f37`)
+- Parent commit: `1053729` (sub-3 LiveKit Egress recording feed)
+- Files added:
+  - apps/web/src/components/recordings/recording-delete-button.tsx — client component. Trash icon Button (variant=ghost, aria-label="Delete recording") triggers shadcn AlertDialog confirmation. On confirm: fires `recordings.softDelete.mutate({ id })`, on success: closes dialog, invalidates `recordings.list` query, calls router.refresh(). On error: inline `<p role="alert">` below the trigger, dialog stays open for retry. Loader2 spin icon during in-flight (mirrors RecordingDownloadButton pattern). Re-exports the pure copy/payload helpers from recording-delete-copy.ts for callers that want them.
+  - apps/web/src/components/recordings/recording-delete-button.test.tsx — 5 vitest cases under `environment: "node"` testing the pure copy constants and payload builder (trigger label, dialog title pattern, dialog body soft-delete + storage cleanup phrases, cancel label, payload shape `{ id: string }`). Imports from `./recording-delete-copy` directly (NOT from the component .tsx) so vitest's node env doesn't choke on JSX. Matches existing `end-of-call-policy.ts` + `end-of-call-policy.test.ts` precedent.
+  - apps/web/src/components/recordings/recording-delete-copy.ts — pure constants (`recordingDeleteCopy.triggerLabel | dialogTitle | dialogDescription | cancelLabel | confirmLabel`) + `buildDeletePayload(recordingId): { id: string }`. Extracted from the component so vitest tests can import pure values without pulling in JSX.
+  - packages/ui/src/components/alert-dialog.tsx — shadcn AlertDialog primitive (Radix-based). Installed via `npx shadcn@latest add alert-dialog` against packages/ui. 11 exports: AlertDialog, AlertDialogPortal, AlertDialogOverlay, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel. First destructive-action confirmation primitive in the codebase — future delete UIs reuse from @yelli/ui.
+- Files modified:
+  - apps/web/src/app/app/meetings/page.tsx — header gains `View recordings →` secondary link inside a flex container alongside the existing "New Meeting" button. Tailwind classes: `text-sm text-muted-foreground hover:text-foreground transition-colors`.
+  - apps/web/src/app/app/history/page.tsx — header wrapped in `flex items-center justify-between`, `View recordings →` link on the right. Same Tailwind classes as meetings page.
+  - apps/web/src/app/app/recordings/page.tsx — actions column now `flex flex-col items-end gap-1` containing both `<RecordingDownloadButton>` (existing) and new `<RecordingDeleteButton>` (disabled when `r.status === "deleted"`).
+  - packages/ui/src/index.ts — barrel re-export added for AlertDialog primitive (`export { AlertDialog, AlertDialogPortal, ..., AlertDialogCancel } from './components/alert-dialog'`).
+  - packages/ui/package.json — `@radix-ui/react-alert-dialog ^1.1.2` added as runtime dep.
+  - pnpm-lock.yaml — lockfile updated for the radix dep.
+  - .claude/scan-results.json — date bump from the 2026-05-26 /scan-project re-verification run, bundled into commit #1 as a chore window.
+- Files deleted: none
+- Schema/migrations: none — `Recording` model unchanged from sub-3
+- Architect-corrected scope (3 spec errors discovered during execution — see lessons.md):
+  - Spec item A (.env.example LiveKit/Coturn placeholders): GAP DID NOT EXIST. Pre-existing `.env.example` entries already cover all needed keys per Rule 22 (random project ports — LIVEKIT_URL=ws://localhost:43532 etc.). `LIVEKIT_WEBHOOK_URL` in the spec was a hallucination — codebase has zero references; webhook URL is configured on the LiveKit server side, not an app env var.
+  - Spec item B (CREDENTIALS.md LiveKit section): EDITS LOCAL-ONLY (gitignored per Bootstrap Step 8). LiveKit promoted to a dedicated `## 🎥 LiveKit (Self-Hosted SFU) ⏳ FILL LATER` section in the local CREDENTIALS.md with per-environment URL/key/secret table + Option A/B setup notes preserved, but this change does NOT propagate via this commit. Future devs who clone the repo will see only the .env.example (which is committed) + scripts/sync-credentials-to-env.sh to set up their own copy.
+  - Spec item F (RTL component tests): NOT POSSIBLE in current setup. Project locks `vitest environment: "node"` with no jsdom or @testing-library/react in package.json. Pure-constant extraction (recording-delete-copy.ts) matches existing end-of-call-policy.ts convention. Behavioral coverage gap (does the dialog actually open? does the mutation actually fire with the right args?) shifts to the deferred Playwright e2e in item G (followups).
+- Sonnet thrashing recovery (Architect-Execute Model §4 status handling):
+  - Sub-task 4a (shadcn install + barrel) completed most work before thrashing during typecheck — architect verified outputs inline, no re-dispatch.
+  - Sub-task 4c-ii (verify + commit bundle) thrashed during full vitest suite run — architect ran the verification steps inline using targeted commands with output piped through tail. Discovered + fixed 1 typecheck error (component re-exported but didn't import recordingDeleteCopy for its own JSX use) and 1 test import path bug (test imported via JSX-containing `.tsx` instead of pure `.ts`). Both fixes documented in component file lines 21-25 and test file line 9-12.
+- Errors encountered:
+  - Sonnet subagent for 4a thrashed during typecheck phase (15 tool calls, autocompact ran 3x within 3 turns) — recovered inline.
+  - Sonnet subagent for 4c-ii thrashed during full vitest suite output processing (17 tool calls) — recovered inline.
+  - Typecheck error after thrashed-agent rewrite: `Cannot find name 'recordingDeleteCopy'` at line 99:17 — component re-exported the constants but didn't import them for its own use. Fixed by changing `export { ... } from "./recording-delete-copy"` to `import { ... } from "./recording-delete-copy"; export { ... };`.
+  - Test parse error: `Failed to parse source for import analysis ... invalid JS syntax` — test imported from `.tsx` file which contains JSX (vitest node env can't parse). Fixed by changing test import to point at `.ts` file (recording-delete-copy) directly.
+- Errors resolved:
+  - All inline architect fixes confirmed via `pnpm -F @yelli/web typecheck` (0 errors), `pnpm -F @yelli/web vitest run src/components/recordings/recording-delete-button.test.tsx` (5/5 GREEN), `pnpm -F @yelli/web exec vitest run` full suite (470/470 passing).
+- Test suite: 465 → 470 passing (+5 new RecordingDeleteCopy tests)
+- Typecheck: 0 errors (both @yelli/ui + @yelli/web)
+- Lint: 0 new errors; 8 pre-existing warnings in other files unchanged
+- Squash commit: `2175f61` (3 sub-commits squashed: scan-results chore at bf2084d, nav links at f6e9e81, delete UI bundle at 159d466)
+
+# ---
+
 ## 2026-05-26 — Phase 8 Batch B sub-session 3 — LiveKit Egress recording feed
 
 - Agent: CLAUDE_CODE (Architect + Executor: Opus 4.7 inline. 10th ~20K Sonnet-budget data point — Tier 2 estimate fit cleanly within inline budget once pre-flight scan revealed substantial existing scaffolding: recordings.ts router (list/getDownloadUrl/softDelete), packages/storage S3 client + buildStorageKey helper, Meeting.host_user_id field, xendit-webhook worker pattern, RecordingProcessingJob queue.)
