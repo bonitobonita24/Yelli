@@ -23,6 +23,7 @@ test-results/
 .env
 .env.*
 !.env.example
+!.env.test.e2e.example
 
 # Credentials master list — GITIGNORED FROM STEP 8. NO EXCEPTIONS.
 CREDENTIALS.md
@@ -46,6 +47,12 @@ skills-lock.json
 .augment/
 .roo/
 
+# ─── Playwright e2e artifacts (local, never committed) ───
+playwright/.auth/*.json
+playwright-results/
+# Note: playwright-report/ is already covered under Test artifacts.
+# Note: .env.test.e2e is already covered under Environment files (.env.* with .env.example exception).
+
 # ─── Automation Handoff Docs (consumed by framework, not committed) ───
 n8n-handoff.md
 openclaw-handoff.md
@@ -67,3 +74,11 @@ Thumbs.db
 *.swo
 .idea/
 # .vscode/ — tracked: only mcp.json + tasks.json are framework-owned
+
+# ─── Build + TypeScript cache (Spec-Driven V32) ───
+
+# ─── Environment files — NEVER commit real credentials ───
+
+# ─── Credentials master list ───
+
+# ─── Third-Party AI Tool Artifacts (safety net) ───

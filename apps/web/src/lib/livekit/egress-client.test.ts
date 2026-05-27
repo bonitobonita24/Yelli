@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => {
   const startRoomCompositeEgress = vi.fn();
@@ -237,6 +237,69 @@ describe("egress-client", () => {
         /LiveKit Egress not configured/,
       );
       vi.doUnmock("@/env");
+    });
+  });
+
+  describe("LIVEKIT_E2E_MOCK guard", () => {
+    afterEach(() => {
+      delete process.env.LIVEKIT_E2E_MOCK;
+    });
+
+    it("startRoomCompositeRecording returns synthetic egressId without calling the LiveKit SDK when guard is 'true'", async () => {
+      process.env.LIVEKIT_E2E_MOCK = "true";
+      const { startRoomCompositeRecording } = await import("./egress-client");
+
+      const result = await startRoomCompositeRecording({
+        roomName: "mock-room",
+        storageKey: "tenant-x/recordings/mock.mp4",
+      });
+
+      expect(result.egressId).toMatch(/^e2e-mock-/);
+      expect(result.roomName).toBe("mock-room");
+      expect(result.status).toBe("EGRESS_ACTIVE");
+      expect(EgressClientCtor).not.toHaveBeenCalled();
+      expect(startRoomCompositeEgress).not.toHaveBeenCalled();
+    });
+
+    it("stopRoomEgress is a no-op (resolves without calling SDK) when guard is 'true'", async () => {
+      process.env.LIVEKIT_E2E_MOCK = "true";
+      const { stopRoomEgress } = await import("./egress-client");
+
+      await expect(stopRoomEgress("e2e-mock-12345")).resolves.toBeUndefined();
+      expect(EgressClientCtor).not.toHaveBeenCalled();
+      expect(stopEgress).not.toHaveBeenCalled();
+    });
+
+    it("guard is bypassed when LIVEKIT_E2E_MOCK is unset — SDK path runs normally", async () => {
+      delete process.env.LIVEKIT_E2E_MOCK;
+      vi.doMock("@/env", () => ({
+        env: {
+          LIVEKIT_URL: "ws://livekit.local:7880",
+          LIVEKIT_API_KEY: "test-key",
+          LIVEKIT_API_SECRET: "test-secret",
+          STORAGE_ENDPOINT: "http://minio.local:9000",
+          STORAGE_ACCESS_KEY: "minio-access",
+          STORAGE_SECRET_KEY: "minio-secret",
+          STORAGE_BUCKET: "yelli-dev",
+          STORAGE_REGION: "us-east-1",
+        },
+      }));
+      vi.resetModules();
+      startRoomCompositeEgress.mockResolvedValueOnce({
+        egressId: "real-egress-id",
+        roomName: "real-room",
+        status: 1,
+      });
+      const { startRoomCompositeRecording } = await import("./egress-client");
+
+      const result = await startRoomCompositeRecording({
+        roomName: "real-room",
+        storageKey: "tenant-x/recordings/real.mp4",
+      });
+
+      expect(EgressClientCtor).toHaveBeenCalled();
+      expect(startRoomCompositeEgress).toHaveBeenCalled();
+      expect(result.egressId).toBe("real-egress-id");
     });
   });
 });

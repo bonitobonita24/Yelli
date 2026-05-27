@@ -99,6 +99,13 @@ function requireStorageConfig(): {
 export async function startRoomCompositeRecording(
   input: StartRecordingInput,
 ): Promise<StartRecordingOutput> {
+  if (process.env.LIVEKIT_E2E_MOCK === "true") {
+    return {
+      egressId: `e2e-mock-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      roomName: input.roomName,
+      status: "EGRESS_ACTIVE",
+    };
+  }
   const lk = requireLiveKitConfig();
   const s3 = requireStorageConfig();
 
@@ -140,6 +147,9 @@ export async function startRoomCompositeRecording(
  * tells LiveKit to wrap up.
  */
 export async function stopRoomEgress(egressId: string): Promise<void> {
+  if (process.env.LIVEKIT_E2E_MOCK === "true") {
+    return;
+  }
   const lk = requireLiveKitConfig();
   const client = new EgressClient(lk.url, lk.apiKey, lk.apiSecret);
   await client.stopEgress(egressId);

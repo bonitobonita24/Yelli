@@ -139,28 +139,6 @@ Each sub-task is Tier 1 ✅
 "This refactor needs full-file understanding of an 1800-line file, so dispatch to Opus with Agent(model: 'opus')."
 → V32 FORBIDS this. Instead: use R5 (Scout-then-edit). Scout extracts a 200-line summary of the relevant sections; edit agent works from the summary. If even the scout output is too large, split by line ranges. Opus NEVER executes.
 
-### Operational Note — Sonnet Subagent Context Overhead (V32.1, 2026-05-27)
-
-**Finding (validated in production Phase 8, Yelli Task 3):** Sonnet subagents dispatched via `Agent(model: "sonnet")` inherit **~30-50K tokens** of baseline context from auto-loaded skills + MCP server descriptions BEFORE any task work begins. This consumes a large portion of Sonnet's working budget and can trigger "Autocompact is thrashing" *earlier* than the 500-line R2 gate would predict.
-
-**Symptoms:**
-- Sonnet thrashes on tasks that look small on paper (e.g., 2 files, ~75 lines net change).
-- Thrash fires within 6–10 tool uses, before substantive edits complete.
-- Re-dispatching the same task at the same scope thrashes again.
-
-**Mitigation pattern (proven):**
-1. **Dispatch prompts ≤ ~1K tokens.** Drop all explanation, history, rationale. Hand Sonnet only the exact edits + verify + commit commands.
-2. **Per-dispatch tool-use budget ≤ 5.** If the task needs more, split it into sequential micro-dispatches (edit-only → verify → fix → commit as separate Sonnet calls).
-3. **Verification runs on the Opus side** via `ctx_execute` (or equivalent sandboxed runner) — keeps test output and typecheck logs out of Sonnet's context.
-4. **Decompose by surface, not by feature.** "Edit production file only" + "Append test block only" + "Fix import line only" + "Commit only" — each gets a tiny prompt.
-5. **After-thrash check (added 2026-05-27 from Yelli Phase 8 Task 5).** Before re-dispatching recovery work, run `git status` + `git diff` to identify file writes that already landed before Sonnet thrashed. The recovery dispatch should pick up FROM current state — not redo completed edits. Treating thrash as "everything rolled back" causes duplicate writes and risks merge conflicts on partial-write files.
-
-**Worked example (Yelli Phase 8 Batch B sub-4 Task 5, 2026-05-27):** First Sonnet dispatch wrote 4 files (spec, tsconfig, page.tsx data-testid, seed-recording enum fix), then thrashed on the verification step (autocompact fired 3×). Recovery: confirmed all 4 files landed via `git status`; split remaining work into 3 surgical Sonnet dispatches — (a) typeRoots/tsconfig fix, (b) enum fixes in seed-recording.ts, (c) commit. Each dispatch ≤ ~1K-token prompt, ≤ 5 tool uses. Result: Web typecheck 0 errors, vitest 473/473, E2E tsc 0 errors after recovery.
-
-**Relationship to R4:** If thrash persists after the first re-decomposition, do NOT keep retrying the same scope. Re-decompose to a smaller surface (single file, then sub-file). R4's max-3-attempts rule applies to each task; each re-decomposition resets the counter only if the scope genuinely shrank.
-
-**When this matters most:** Phase 4 Parts with heavy test infrastructure, Phase 8 Tasks touching files already at 200–300L, any task where the Sonnet agent must read existing test mocks or fixtures before editing.
-
 ---
 
 ## §2 — SMART CHECKPOINT PROTOCOL

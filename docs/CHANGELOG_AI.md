@@ -22,6 +22,46 @@
 
 # ---
 
+## 2026-05-27 — Phase 8 Batch B sub-4: Playwright E2E pipeline (full close-out)
+
+- Agent: CLAUDE_CODE (Architect: Opus 4.7 inline + Sonnet 4.6 subagent executors via memory-governance.md §4 Architect-Execute Model. V32.1 Sonnet overhead mitigation applied throughout — dispatch prompts ≤1K tokens, writes split from verifications, recovery dispatches picked up from current git state not from scratch.)
+- Why: Phase 8 Batch B sub-4 was planned as 6 implementation tasks + 1 governance task. This entry closes the batch: Playwright installed + configured, e2e directory scaffolded, auth setup spec created, env template updated, LIVEKIT_E2E_MOCK guard added to egress-client, seed fixtures created for meetings/recordings, two full E2E specs implemented (recording lifecycle + recording soft-delete via AlertDialog), TypeScript compilation verified clean, pnpm test suite regression-green, governance checkpoint completed.
+- Branch: `feat/e2e-playwright` — 15 atomic commits squashed to main.
+- Files added:
+  - `playwright.config.ts` (root) — Playwright configuration with webServer, testDir, projects
+  - `e2e/.gitignore` — ignores test-results, playwright-report, auth state
+  - `e2e/tsconfig.json` — standalone TypeScript config for e2e directory; `typeRoots` set explicitly because pnpm hoists `@types/node` into `apps/web/node_modules/@types/` (not root)
+  - `e2e/auth.setup.ts` — Playwright auth setup spec; reads `E2E_WEBMASTER_PASSWORD` from env
+  - `e2e/fixtures/seed-meeting.ts` — programmatic seed using `platformPrisma` (tenant-unguarded client) to create CallLog rows for E2E use
+  - `e2e/fixtures/seed-recording.ts` — programmatic seed using `platformPrisma` to create Recording rows; status typed as `RecordingStatus` enum literal
+  - `e2e/specs/recording-flow.spec.ts` — spec (a): recording lifecycle (create via tRPC helper + verify row appears in `/recordings` feed; start recording + verify status badge transitions)
+  - `e2e/specs/recording-delete.spec.ts` — spec (b): recording soft-delete via AlertDialog (open dialog → confirm → verify row removed from feed)
+  - `.env.e2e.example` — E2E-specific env template documenting `E2E_WEBMASTER_PASSWORD`, `E2E_BASE_URL`, `LIVEKIT_E2E_MOCK`
+- Files modified:
+  - `packages/egress-client/src/index.ts` — added `LIVEKIT_E2E_MOCK` env guard: when set to `"true"` all LiveKit Egress HTTP calls return deterministic stubs instead of hitting real infrastructure; guard lives at HTTP-egress boundary, not in production code paths
+  - `apps/web/src/app/(dashboard)/recordings/page.tsx` — added `data-testid="recording-row"` to list item element for resilient Playwright selector
+  - `package.json` (root) — added `@playwright/test` + `@types/node` to `devDependencies`; added `test:e2e`, `test:e2e:ui`, `test:e2e:debug` scripts
+  - `packages/db/prisma/schema.prisma` — no schema change; enum literals confirmed: `RecordingStatus` = `processing | ready | failed | deleted` (no "completed")
+- Files deleted: none
+- Schema/migrations: none
+- Key decisions locked:
+  - E2E fixtures use `platformPrisma` (the tenant-unguarded Prisma client) rather than tRPC calls to seed test data, because `recordings.start` tRPC requires an active `CallLog` with `ended_at: null` and no production seeding path exists for that state.
+  - `LIVEKIT_E2E_MOCK` env guard pattern: external-service stubs in E2E live at the HTTP-egress boundary only, never as branches in production-code logic. Opt-in via env var. Guard is removed from the call path in production by never setting the var.
+  - E2E typecheck gate is mandatory as a pre-commit verification stage (`cd e2e && tsc --noEmit`).
+  - `e2e/tsconfig.json` requires explicit `typeRoots` pointing to `../apps/web/node_modules/@types` because pnpm does not hoist `@types/node` to root `node_modules` in this monorepo layout.
+- Errors encountered:
+  - `RecordingStatus` enum used invalid literals `"completed"` and `"active"` in seed fixtures and spec calls — both absent from the Prisma enum definition.
+  - `CallStatus` "active" state is not an enum value; active calls are identified exclusively by `ended_at: null`.
+  - `e2e/tsconfig.json` initially missing `typeRoots`, causing `Cannot find name 'process'` TypeScript errors that blocked `tsc --noEmit`.
+  - First Sonnet subagent dispatch on Task 5 thrashed (autocompact fired 3× during verification step); 4 files had already landed before thrash — recovery picked up from current `git status` rather than redoing completed edits.
+- Errors resolved:
+  - Enum literals corrected: `"completed"` → `"ready"` for `RecordingStatus`, `"active"` for `CallStatus` removed and replaced with `ended_at: null` seeding pattern.
+  - `typeRoots` added to `e2e/tsconfig.json`: `["../apps/web/node_modules/@types", "../node_modules/@types"]`.
+  - Task 5 thrash recovery: three surgical Sonnet dispatches (a) tsconfig fix, (b) enum fixes, (c) commit — each ≤1K token prompt, ≤5 tool uses. Result: `tsc --noEmit` 0 errors, vitest 473/473, Playwright listing shows 4 tests.
+  - V32.1 lesson applied: after-thrash recovery checks `git status` + `git diff` to confirm which writes already landed before re-dispatching; avoids duplicate writes and merge conflicts on partial-write files.
+
+# ---
+
 ## 2026-05-26 PM — Phase 8 Batch B sub-3 polish (recordings UX + governance scaffold)
 
 - Agent: CLAUDE_CODE (Architect: Opus 4.7 inline + Sonnet 4.6 subagent executors via memory-governance.md §4 Architect-Execute Model. 2 Sonnet thrashes recovered inline by architect — see lessons.md.)

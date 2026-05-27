@@ -411,3 +411,27 @@ When a new realtime/bundling/env failure mode surfaces that does not match G1–
 gotcha to lessons.md AND append a tenth guardrail here in a follow-up edit.
 
 Locked: yes — 2026-05-23.
+
+#### G10 — E2E (Playwright) standalone typecheck is part of the pre-commit verification gate
+Pattern: `e2e/` is a separate workspace from `apps/web`. `pnpm --filter @yelli/web typecheck` does
+NOT recurse into `e2e/`. Pre-commit verification MUST run BOTH `pnpm --filter @yelli/web typecheck`
+AND `cd e2e && npx tsc -p . --noEmit`. Without the e2e typecheck, latent type errors in fixtures
+or specs (invalid Prisma enum literals, missing `@types/node` resolution) only surface at
+Playwright runtime. The `e2e/tsconfig.json` itself requires explicit `typeRoots` because pnpm
+hoists `@types/node` into `apps/web/node_modules/@types/`, not project root. Symptom anchor:
+"Playwright runtime fails on a type error that web typecheck did not catch." Lessons:
+[[e2e-tsconfig-typeRoots-required]] · [[recording-call-status-enum-literals]] ·
+[[e2e-typecheck-gate-mandatory]] · [[e2e-tsconfig-wired]] (all 2026-05-27, Phase 8 Batch B sub-4).
+
+#### G11 — External-service stubs in E2E use opt-in env guards, never production-code test branches
+Pattern: When an E2E flow depends on a paid/networked external service (LiveKit Egress, Xendit,
+SMTP, etc.), gate the stub via a dedicated env var (e.g. `LIVEKIT_E2E_MOCK`) checked at the
+HTTP-egress boundary in the client wrapper (e.g. `egress-client.ts`). The mock returns
+deterministic identifiers prefixed `e2e-mock-*` so production code and spec assertions both
+recognise them. Stubs MUST default to OFF (production-safe) — only opt in via `e2e/.env` or
+Playwright `webServer.env`. NEVER add per-feature `if (isTest) {}` branches inside production
+business logic — gate at the I/O boundary only. Symptom anchor: "E2E spec needs to exercise
+the real tRPC path but cannot afford a real LiveKit Egress call." Lesson:
+[[livekit-e2e-mock-env-guard]] (2026-05-27 Task 3, branch commit `d64e9f9`).
+
+Locked: yes — 2026-05-27.

@@ -348,8 +348,7 @@ Install:  Auto-installed by /scan-project on Spec-Driven projects
 - **Section 3 — Phase Hooks:** One-liner hooks in 12 phase pre-flights enforce governance.
 - **Section 4 — Architect-Execute Model:** Opus 4.6 plans, dispatches Sonnet 4.6 subagents via `Agent(model: "sonnet")`. Uses `superpowers:subagent-driven-development` for orchestration.
 - **Section 5 — Mid-Project Adoption:** 4-step path + thrashing recovery for Phase 7/8 projects.
-- **Step 2.5 — 30K Token Budget Gate:** Every Sonnet subagent task must have a token estimate ≤30K before dispatch. If over, split further regardless of tier.
-- **Step 2.5b — Opus Escalation:** If a task is genuinely atomic and unsplittable but >30K, dispatch to `Agent(model: "opus")` as last resort (100K budget, max 20% of tasks).
+> **V32 update (2026-05-27):** Steps 2.5 (30K token budget gate) and 2.5b (Opus escalation) have been SUPERSEDED by the V32 file-size dispatch model. The Opus executor path is REMOVED. See `memory-governance.md` §1 Step 4 for the current V32 rules: `wc -l` before dispatch, ≤ 500 total lines per Sonnet task, files > 300 lines need explicit line ranges, NO Opus executor escalation.
 - **THRASHING Status:** New Sonnet status detected by Opus. Response: stop immediately, re-decompose.
 
 **When it activates:**

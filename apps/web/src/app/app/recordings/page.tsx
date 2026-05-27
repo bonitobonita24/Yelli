@@ -86,6 +86,7 @@ export default async function RecordingsPage() {
                 return (
                   <li
                     key={r.id}
+                    data-testid={`recording-row-${r.id}`}
                     className="flex items-center justify-between gap-4 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">

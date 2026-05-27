@@ -4,7 +4,7 @@
 
 # ---
 
-## Latest Update (2026-05-26 PM)
+## Latest Update (2026-05-27)
 
 **Phase 8 Batch B sub-3 polish CLOSED** — squash commit `2175f61` on main. 11 files changed (+447/-18). 5 atomic sub-commits squashed: scan-results chore + `View recordings →` nav link from /app/meetings + /app/history + soft-delete UI (shadcn AlertDialog primitive in @yelli/ui + `RecordingDeleteButton` + 5 vitest cases for pure copy/payload) + governance updates. Test suite 465 → 470 passing. Typecheck 0 errors (@yelli/ui + @yelli/web). Lint 0 new errors. Recordings module now reachable from app shell with full create/download/delete flow shipping. Three architect spec errors discovered + corrected during execution (see lessons.md entries [[yelli-vitest-node-env-no-rtl]], [[credentials-md-gitignored-never-in-pr]], [[polish-spec-verify-codebase-before-assuming]]). Two Sonnet subagent thrashes recovered inline by architect — see [[sonnet-subagent-thrash-budget-pattern]]. Spec: `docs/superpowers/specs/2026-05-26-livekit-egress-polish-design.md` (`45e71a3`); Plan: `docs/superpowers/plans/2026-05-26-recordings-polish.md` (`3c63f37`); Parent: `1053729` (sub-3 LiveKit Egress recording feed).
 
@@ -12,7 +12,8 @@
 - sub-1 (Real-time chat over Socket.IO):           ✅ CLOSED 2026-05-25 PM (`85ea101`)
 - sub-2 (Reports CSV/PDF generation):              ✅ CLOSED 2026-05-26 AM (`2955eae`)
 - sub-3 (LiveKit Egress recording feed):           ✅ CLOSED 2026-05-26 AM (`1053729`)
-- sub-3 polish (this work):                        ✅ CLOSED 2026-05-26 PM (`2175f61`)
+- sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
+- sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (squash on main; branch tip `a1e3351`)
 - overlay cluster (File Sharing + Whiteboard):     ⬜ NEXT (or framework V31.3 stash pop / Playwright install / filter UI — user pick)
 
 **Files added in this polish (3):**

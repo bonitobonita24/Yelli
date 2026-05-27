@@ -1,4 +1,4 @@
-# SPEC-DRIVEN PLATFORM — V32.1
+# SPEC-DRIVEN PLATFORM — V32
 
 > **WHAT THIS FILE IS**
 > Compact rules card for Claude Code. Auto-loaded every session.
@@ -151,8 +151,6 @@ require explicit line ranges (V32 R3). Files > 200 lines need a Sonnet Scout fir
 If over budget → split further. **Failure protocol (V32 R4):** Sonnet BLOCKED or thrashing →
 Opus re-decomposes (max 3 attempts) → checkpoint and defer. NEVER fall back to Opus execution.
 The phrase "small justified escalation" is BANNED. The Opus executor path has been removed.
-
-**V32.1 Operational Note (2026-05-27 — Sonnet baseline overhead):** Sonnet subagents inherit ~30–50K tokens of auto-loaded skills + MCP context per dispatch BEFORE task work begins, which can trigger thrash earlier than the 500-line gate predicts. Mitigation: dispatch prompts ≤ ~1K tokens; per-dispatch tool-use budget ≤ 5; verification runs on Opus side via `ctx_execute`; decompose by surface (file/import/test block) not by feature. See `memory-governance.md` §1 "Operational Note — Sonnet Subagent Context Overhead (V32.1)".
 
 ---
 

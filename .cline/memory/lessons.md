@@ -1675,3 +1675,63 @@ The outer `as never` satisfies the DynamicModelExtensionFluentApi parameter type
 - Files:     apps/web/src/components/call/incoming-call-dialog.tsx (line 70 — the stuck useQuery call), apps/web/src/lib/calls/select-incoming-call.ts (the silent drop on `boundDeptIds === undefined`), apps/web/src/server/trpc/routers/departments.ts (the procedure — works correctly when called via direct fetch), apps/web/src/lib/trpc/react.tsx (the createTRPCReact wiring — primary suspect), node_modules/.pnpm/@trpc+client@11.17.0... (the dispatch path that throws — see stack trace below)
 - Concepts:  trpc, react-query, query-proxy, dispatch, procedure-type, dev-mode, incoming-call-dialog, mybounddepartmentids, useeffect-loop, queryclient-fetch
 - Narrative: After [[strictmode-socket-disconnect-permanent]] was fixed, smoke verification of #14 + #15 (alice→bob incoming-call dialog) revealed a THIRD independent bug. Bob's `trpc.departments.myBoundDepartmentIds.useQuery()` in `IncomingCallDialog` stays in `status: "pending", isSuccess: false, dataUpdatedAt: 0, hasData: false` INDEFINITELY despite (a) the server endpoint returning HTTP 200 with the correct payload `[{"result":{"data":{"json":["cmpfmyva2000fa8k1drezs7bw"]}}}]` (verified via plain `fetch('/api/trpc/departments.myBoundDepartmentIds?...', { credentials: 'include' })` from inside bob's `evaluate()` context), AND (b) the dev log showing 10+ identical successful 200 responses (times: 37ms, 45ms, 185ms, 197ms, 199ms, 259ms, 631ms, 645ms, 647ms, 1183ms, 5355ms) — proving the network round-trip succeeds. The React Query observer just never receives the resolved value. Diagnostic root: calling `queryClient.getQueryCache().getAll().filter(q => q.queryKey.includes('myBound'))[0].fetch()` directly from the browser throws `TypeError: client[procedureType] is not a function at @trpc/client/dist/index.mjs:184:31 → @trpc/server/dist/getErrorShape-BPSzUA7W.mjs:79:11`. The stack pointer (`client[procedureType]`) implies the tRPC proxy is missing one of the `query` / `mutation` / `subscription` methods on its dispatcher object. **Cascade**: `boundDeptIds === undefined` permanently → `selectIncomingCall(payload, undefined) === false` (per Phase 7 #16 decisions 3+4 — undefined treated as "do not ring") → `IncomingCallDialog.handleIncoming` silently returns → no dialog ever renders → no accept → no in-call yellow-dot on alice's view. The `call:incoming` event IS delivered (subscriber count = 1 on bob's socket post-fix); the handler IS invoked; the bound-dept check is what drops the payload. **Open questions**: (1) why does the SpeedDial tRPC query (`departments.listForGrid` or similar) work but `myBoundDepartmentIds` not? — both use the same `trpc.<router>.<procedure>.useQuery()` pattern. Need to test other queries that worked vs this one. (2) Is the issue specific to IncomingCallDialog's mount context (e.g., it's rendered as a portal/sibling outside the main tRPC provider tree)? — `apps/web/src/app/app/layout.tsx` is where it's mounted; need to compare to where SpeedDialGrid is mounted. (3) Is this a React-StrictMode-x-tRPC-react-query-v5 dev-mode-only interaction (similar dev-mode-only symptom shape as [[strictmode-socket-disconnect-permanent]])? Versions involved: `@trpc/client@11.17.0`, `@trpc/server@11.17.0`, `@tanstack/react-query@5.x` (per next-15 monorepo), `typescript@5.9.3`. Queued as `(trpc-client-procedure-type-missing)` Tier 1-2 for dedicated investigation. **DO NOT** try to "fix" by gating `selectIncomingCall` on a non-undefined check — that would let arbitrary tenants ring random users when the query is loading. The query's pending state IS the right behavior; the bug is that it never resolves. Cross-references: [[strictmode-socket-disconnect-permanent]] (sibling pattern — both dev-mode-only "events not firing for fresh client" but distinct root causes).
+
+## 2026-05-27 — 🟡 livekit-webhook route.test.ts flake: passes isolated, occasionally fails under full vitest suite — test-pollution from sibling tRPC mocks `[[livekit-webhook-route-test-pollution]]`
+- Type:      🟡 fix
+- Phase:     Phase 8 Batch B sub-4 Task 1 pre-flight (Playwright install)
+- Files:     apps/web/src/app/api/webhooks/livekit/route.test.ts (the flake — `503 when LIVEKIT_API_KEY is unset` at line 55), apps/web/src/app/api/webhooks/livekit/route.ts (target under test), apps/web/vitest.config.ts (vitest config, environment:"node")
+- Concepts:  vitest, test-pollution, vi.doMock, vi.resetModules, env-mocking, baseline-flake, turbo, dev-only-symptom
+- Narrative: First `pnpm test` run during Task 1 pre-flight reported `1 failed | 469 passed (470)` with the failure being `POST /api/webhooks/livekit > 503 when LIVEKIT_API_KEY is unset`. Re-running the same file in isolation (`cd apps/web && npx vitest run src/app/api/webhooks/livekit/route.test.ts`) produced `6/6 passed`. Re-running the full suite a second time also produced `470/470 passed`. The "redis down / ECONNREFUSED 127.0.0.1:6379" noise lines that bracketed the failure are from a sibling test that DOES try to enqueue against a live redis (unrelated to the failed assertion) — but they confirm the suite has imperfect mock isolation across files. The route.test.ts uses `vi.doMock` + `vi.resetModules` + dynamic `await import("./route")` inside each test. This pattern is fragile when another test file (loaded earlier in the same vitest worker) registers a competing mock for `@/env`, `@yelli/jobs`, or `@/lib/livekit/webhook-verify` — the resetModules call doesn't always evict cached module-graph nodes when those mocks are still pinned by another spec's lifecycle. Workers=1 (default) means file ordering is deterministic within a run but can vary across runs if the file glob enumerator hits filesystem-cache differences.
+  **DECISION**: Treated as a pre-existing flake (not introduced by Task 1) and proceeded with Playwright install after baseline re-verified green. The fix is out of scope for sub-4. **Queued as `(livekit-webhook-route-test-pollution-fix)` Tier 1**: refactor route.test.ts to use `vi.mock` (static, hoisted) with `beforeEach` env mutation instead of `vi.doMock` + dynamic import — eliminates the module-graph reset dependency. Estimate ≤4 files, no behavior change.
+  **DETECTION HEURISTIC for future**: if a baseline `pnpm test` shows a single failure in a route.test.ts that uses `vi.doMock` + `vi.resetModules` + dynamic `await import()` pattern, and the failure does NOT reproduce in isolation, suspect this same flake shape. Re-run the suite once before assuming a regression.
+  Cross-references: similar dev-mode-only symptom shape as [[strictmode-socket-disconnect-permanent]] and [[trpc-client-procedure-type-missing]] (the family of "first run shows a flake, isolated repro is clean, full-suite repro is intermittent" gotchas).
+
+# ---
+
+## 2026-05-27 — 🔴 [[e2e-tsconfig-typeRoots-required]] e2e/ standalone tsc fails without explicit typeRoots — pnpm hoists @types/node into apps/web
+
+- Type:      🔴 gotcha
+- Phase:     Phase 8 Batch B sub-4 Task 5 (Playwright recording lifecycle spec)
+- Files:     e2e/tsconfig.json
+- Concepts:  pnpm-hoisting, typescript-typeRoots, e2e-typecheck, @types/node, monorepo, workspace-isolation
+- Narrative: Default `./node_modules/@types/` resolves nothing from `e2e/` because pnpm hoists `@types/node` into the consuming workspace (`apps/web/node_modules/@types/node`), not project root. Without explicit `typeRoots: ["../apps/web/node_modules/@types", "../node_modules/@types"]` in `e2e/tsconfig.json`, `cd e2e && npx tsc -p . --noEmit` fails with `TS2688: Cannot find type definition file for 'node'`. Fix: add typeRoots pointing first at the hoisted location, then project root as fallback. Future `e2e/` specs needing other `@types` packages (e.g. `@types/cookie`) MUST verify the hoist target before relying on auto-resolution. Cross-reference: [[e2e-typecheck-gate-mandatory]] decision lock + [[e2e-tsconfig-wired]] follow-up.
+
+# ---
+
+## 2026-05-27 — 🔴 [[recording-call-status-enum-literals]] RecordingStatus + CallStatus enum literals — "completed" and "active" are NOT valid
+
+- Type:      🔴 gotcha
+- Phase:     Phase 8 Batch B sub-4 Tasks 4 + 5 (seed fixtures + recording lifecycle spec)
+- Files:     packages/db/prisma/schema.prisma (Recording L405-412, CallLog around L400), e2e/fixtures/seed-recording.ts, e2e/recording-flow.spec.ts
+- Concepts:  prisma-enums, recording-status, call-status, e2e-fixtures, latent-type-error, workspace-isolation
+- Narrative: RecordingStatus enum values are `processing | ready | failed | deleted` — there is NO `completed`. CallStatus enum values are `completed | missed | failed` — there is NO `active`. The codebase signals "call is still active" exclusively via `ended_at: null` on `CallLog` (the status column is for terminal classification only). Task 4's seed-recording.ts fixture declared status type as `"processing" | "completed" | "failed"` (default `"completed"`) — both invalid. Web typecheck did NOT catch this because `e2e/` is outside the apps/web workspace. The Task 5 e2e/tsconfig.json wire-up surfaced both errors on its first run (TS2322 narrow-type assignability). Fix: 4 surgical Edits across seed-recording.ts (type + default) and recording-flow.spec.ts (inline seedActiveCallLog placeholder). Pattern: any e2e fixture or spec creating Recording/CallLog rows MUST reference `packages/db/prisma/schema.prisma` before writing literals.
+
+# ---
+
+## 2026-05-27 — 🟤 [[e2e-typecheck-gate-mandatory]] e2e/ standalone tsc IS part of the pre-commit verification gate
+
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-4 Task 5
+- Files:     e2e/tsconfig.json, .claude/rules/phases.md (Phase 5 validation list), docs/DECISIONS_LOG.md G10
+- Concepts:  verification-gate, e2e-typecheck, workspace-isolation, pre-commit
+- Narrative: Web typecheck (`pnpm --filter @yelli/web typecheck`) does NOT include `e2e/` — they are separate workspaces. Pre-Task-5, `e2e/` type errors only surfaced at Playwright runtime, costing one extra dispatch cycle to recover (Task 5 Dispatch A thrash). Post-Task-5 (with `e2e/tsconfig.json` wired), the verification gate is: BOTH `pnpm --filter @yelli/web typecheck` AND `cd e2e && npx tsc -p . --noEmit` must pass before any e2e-touching task commit. Adopt for all future e2e work (any post-Phase-8 Playwright additions or fixture changes). Locked as guardrail G10 in DECISIONS_LOG.md.
+
+# ---
+
+## 2026-05-27 — 🟤 [[sonnet-dispatch-split-writes-from-verifications]] Sonnet dispatches: separate file writes from verification command runs
+
+- Type:      🟤 decision
+- Phase:     Phase 8 Batch B sub-4 Task 5 (also re-validated in Task 6)
+- Files:     .claude/rules/memory-governance.md §1 Operational Note (V32.1, 2026-05-27)
+- Concepts:  sonnet-context, autocompact-thrash, dispatch-split, V32.1, architect-execute-model
+- Narrative: Dispatching file writes + multi-command shell verifications (vitest, tsc, playwright list) in the SAME Sonnet subagent risks autocompact thrash because verification output (full vitest run = 470+ tests = thousands of lines) can dominate Sonnet's context window before the prompt task completes. Confirmed in Task 5 Dispatch A: file writes for tsconfig.json + spec.ts + page.tsx Edit landed cleanly before the verification step overflowed context at ~200K Sonnet tokens. Per V32 R4 (Failure = Split), recovery split the remaining work into 3 smaller surgical dispatches (Dispatch B/C/D). Standardize: ONE Sonnet for writes (with ≤5 tool uses + ≤1K prompt tokens per V32.1), separate Sonnet (or Opus-side `ctx_execute`) for verifications. Cross-reference: `.claude/rules/memory-governance.md` §1 Operational Note documents this V32.1 pattern in detail with the Yelli Task 5 worked example.
+
+# ---
+
+## 2026-05-27 — 🟢 [[e2e-tsconfig-wired]] e2e/tsconfig.json now wired — standalone typecheck for Playwright specs
+
+- Type:      🟢 change
+- Phase:     Phase 8 Batch B sub-4 Task 5 (commit `53c984d`)
+- Files:     e2e/tsconfig.json (NEW 24 lines)
+- Concepts:  e2e-tsconfig, typecheck-gate, workspace-config, monorepo
+- Narrative: New `e2e/tsconfig.json` extends `../tsconfig.base.json` with `rootDir: "."`, excludes `test-results/` + `playwright-report/`, and sets explicit `typeRoots: ["../apps/web/node_modules/@types", "../node_modules/@types"]` to resolve the pnpm-hoisted `@types/node`. Future e2e spec files inherit standalone typecheck out of the box. Future fixture additions that introduce invalid Prisma enum values or other type errors will be caught at authoring time, not deferred to Playwright runtime. Verification command: `cd e2e && npx tsc -p . --noEmit` — now part of pre-commit gate per [[e2e-typecheck-gate-mandatory]] / DECISIONS_LOG G10.
