@@ -22,6 +22,23 @@
 
 # ---
 
+## 2026-05-29 — Overlay Cluster A-group: sharedFiles + whiteboardSnapshots tRPC routers (PR #3)
+
+- Agent:               CLAUDE_CODE (Opus 4.7 architect + Sonnet 4.6 executors per V32 §4)
+- Why:                 Land the persistence layer for in-call file sharing + whiteboard. Unblocks Sub-C / Sub-D client wiring downstream (free-tier socket transport ships in Sub-B / Sub-B′).
+- Files added:         apps/web/src/server/trpc/routers/sharedFiles.ts (315L), apps/web/src/server/trpc/routers/sharedFiles.test.ts (467L), apps/web/src/server/trpc/routers/whiteboardSnapshots.ts (118L), apps/web/src/server/trpc/routers/whiteboardSnapshots.test.ts (238L), packages/db/prisma/migrations/20260529000000_add_shared_file_deleted_at/migration.sql
+- Files modified:      apps/web/src/server/trpc/router.ts (registered sharedFilesRouter + whiteboardSnapshotsRouter), apps/web/src/server/trpc/middleware/plan-limit.ts (tightened MiddlewareOpts.next return type), packages/db/prisma/schema.prisma (added SharedFile.deleted_at + index), packages/storage/src/client.ts (added getPresignedUploadUrl), packages/storage/src/index.ts (exported helper)
+- Files deleted:       none
+- Schema/migrations:   20260529000000_add_shared_file_deleted_at (SharedFile.deleted_at DateTime? + idx_shared_files_deleted_at index)
+- Errors encountered: Sub-A1 pre-flight missed missing deleted_at column on SharedFile (despite Recording precedent); Sub-A1 first dispatch imported @aws-sdk/* directly in web app (workspace boundary violation); Sub-A2 first dispatch imported Prisma from @prisma/client (web app has no direct dep); Sub-A2 lint warnings on non-null assertions in test.
+- Errors resolved:     Added `deleted_at` column + migration via micro-dispatch; moved presigned-URL generation to `@yelli/storage` and re-exported (sharedFiles.ts now imports `getPresignedUploadUrl` from there); changed Prisma import to `import type { Prisma } from "@yelli/db"` (db re-exports * from `@prisma/client`); refactored test to narrow result before `Object.keys` assertions. All resolutions captured as 5 typed lessons.md entries dated 2026-05-29.
+
+Verification: tsc 0 errors, vitest 25/25 (19 sharedFiles + 6 whiteboardSnapshots), eslint 0 errors / 0 warnings on 5 changed/new files. No `as any`, no `@ts-ignore`. Single canonical `as Prisma.InputJsonValue` on whiteboardSnapshots.save (Json column write).
+
+Commits in PR #3 (feat/shared-files-router → main):
+- 5fce2a6 feat(shared-files): add sharedFiles tRPC router with plan-gated procedures
+- cd3c653 feat(whiteboard): add whiteboardSnapshots tRPC router with plan-gated save/getLatest
+
 ## 2026-05-28 — CI Recovery Sprint: 2/8 → 8/8 CI jobs green
 
 - Agent: CLAUDE_CODE (Architect: Opus 4.7 inline orchestration; Sonnet 4.6 dispatches for atomic fixes per V32 Architect-Execute Model. STATE.md was the lone Opus direct write per V32 R1 §4 checkpoint exception across the sprint.)
