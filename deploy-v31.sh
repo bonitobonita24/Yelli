@@ -92,7 +92,7 @@ if [ ! -d "$AI_PROMPT" ]; then
   echo ""
   echo "Expected layout:"
   echo "  $(basename "$PROJECT")/"
-  echo "  ├── .ai_prompt/            ← create this and put the 15 V32 reference files in it"
+  echo "  ├── .ai_prompt/            ← create this and put the 16 V32 reference files in it"
   echo "  └── deploy-v31.sh          ← this script"
   echo ""
   echo "Run this script from the directory containing .ai_prompt/"

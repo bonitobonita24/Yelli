@@ -3,7 +3,7 @@
 > **Purpose:** Human-readable reference for all framework capabilities.  
 > Covers current state, decision rationale, and change history per feature.  
 > Updated alongside every version bump. Agents do not read this file — it is for Bonito only.  
-> Current framework version: **V31**
+> Current framework version: **V32.1** (V31 base + V32 Zero Opus Execution + V32.1 Sonnet context-overhead operational note; filenames retain `_v31_` for deploy script backward compatibility — content describes current V32.1 behavior)
 
 ---
 
@@ -72,7 +72,7 @@
 
 ---
 
-### 1.2 Claude Code (Primary Agent — current in V31)
+### 1.2 Claude Code (Primary Agent — current V32.1 behavior, V31 base)
 | Field | Value |
 |---|---|
 | Status | ACTIVE |
@@ -1395,5 +1395,5 @@ Full deployment guide for teams using Komodo (already installed). V27: Staging u
 
 *Last updated: V32.1 (30 rules · 35 scenarios · 19 bootstrap steps · 59 prompts (36 New ✨) · WSL2 native only · 17-file deliverable set · 84 security checklist items · 11 UI component rules · compact CLAUDE.md + 7 modular rule files architecture · interactive HTML prompt references · DESIGN.md integration · Phase 3.5 execution plan · Phase 4 + Phase 8 anti-thrashing rules · Skill Installer integration · Memory Governance Layer · Architect-Execute Model — Zero Opus Execution (V32 — ALL phases + ad-hoc edits) · 500-Line Dispatch Gate (`wc -l` file-size checks) · Five V32 Rules (R1-R5) · Sonnet Scout (R5 — files > 200 lines) · UI loading-state dual-path with shadcn `<Skeleton>` + `<phantom-ui>` for custom components) · Maintained by Claude on behalf of Bonito — Powerbyte IT Solutions, Lipa City, Philippines*
 
-> **Note:** This file is updated by Claude alongside every version bump. You never edit it manually. It is part of the 16-file V31 deliverable set — 15 files in `.ai_prompt/`: CLAUDE_v31_compact.md · Master_Prompt_v31.md · bootstrap.md · phases.md · security.md · ui-rules.md · scenarios.md · templates.md · Product_md_Planning_Assistant_v31.md · Framework_Feature_Index_v31.md · AI_Tools_Skills_MCPs_Reference_v31.md · Post_Generation_Security_Checklist_v31.md · ChatGPT_V31_Cross_Audit_Prompt.md · Prompt_References.md · Prompt_References.html — plus `deploy-v31.sh` at project root.
+> **Note:** This file is updated by Claude alongside every version bump. You never edit it manually. It is part of the 17-file V32.1 deliverable set — 16 files in `.ai_prompt/`: CLAUDE_v31_compact.md · Master_Prompt_v31.md · bootstrap.md · phases.md · security.md · ui-rules.md · scenarios.md · templates.md · memory-governance.md · Product_md_Planning_Assistant_v31.md · Framework_Feature_Index_v31.md · AI_Tools_Skills_MCPs_Reference_v31.md · Post_Generation_Security_Checklist_v31.md · ChatGPT_V31_Cross_Audit_Prompt.md · Prompt_References.md · Prompt_References.html — plus `deploy-v31.sh` at project root.
 >

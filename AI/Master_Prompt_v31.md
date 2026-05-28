@@ -23,6 +23,9 @@
 > The framework ships two versions of CLAUDE.md:
 > - `CLAUDE.md` — compact (~200 lines). For Claude Code. References `.claude/rules/` for details.
 > - `AI/Master_Prompt_v31.md` — full monolithic (~8000 lines). Reference copy + Copilot/paste workflows.
+>
+> **VERSION + FILENAME POLICY (added V32.1.2 — 2026-05-28)**
+> The framework's active behavior version is **V32.1**. Filenames and body labels retain `V31` as the base-version anchor for two reasons: (1) deploy-v31.sh and target-project file paths depend on the existing names for backward compatibility, and (2) V31 is the architectural baseline that V32 / V32.1 patches build on additively. When you read "V31 primary" or "V31 STRICTEST" in body text, interpret it as "the base-V31 role/discipline, with V32 dispatch patches and V32.1 operational notes layered on top." V32 = Zero Opus Execution (Opus is architect-only; Sonnet executes all file writes). V32.1 = Sonnet subagent context-overhead operational note. The Framework_Feature_Index_v31.md footer always reflects the current canonical version.
 > Both contain identical rules and behavior. The compact version just loads details on demand.
 > `.claude/rules/` contains: `phases.md`, `security.md`, `ui-rules.md`, `bootstrap.md`, `scenarios.md`, `templates.md`.
 >
@@ -7856,6 +7859,8 @@ Version stays same for: wording fixes, clarifications, side note updates.
 **Commits:** `ab0578a` (Prompts 3.21/3.22 V32 alignment), `69e9190` (operational note shipped), plus this propagation commit.
 
 **Migration:** No action needed in target projects — V32.1 is documentation/operational only. Restart Claude Code after `deploy-v31.sh` to pick up the updated `memory-governance.md`.
+
+- **V32.1.1 (2026-05-28):** Planning Assistant Step 7d corrected. Old text routed users from Phase 2.8 confirmation directly to "Start Phase 3" in Claude Code, skipping Bootstrap (Phase 0) and Phase 2's operational interview. This left CREDENTIALS.md uncreated (Phase 2 hard gate), Docker Hub credentials/model routing/dev ports unanswered, and DECISIONS_LOG.md entries for image name + model routing unlocked. New text routes: place handoff files in docs/ → Bootstrap → Start Phase 2 (operational questions only) → confirmed → auto-chain 2.5/2.6/2.7 (Phase 2.8 skipped — done in Planning Assistant) → Start Phase 3. Propagated to Prompt_References.md (Prerequisites, Starting State, 1.2 Check 1, 1.3.1, 1.3.2, 1.3.3) and Prompt_References.html. Rationale: Master Prompt is sole authority (CLAUDE.md §SOLE AUTHORITY); when Planning Assistant disagrees, Planning Assistant must match.
 
 ---
 

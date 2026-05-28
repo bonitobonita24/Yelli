@@ -760,6 +760,76 @@ Verify each is present in the specified locations.
 □ K.13 (V32.1) — Master_Prompt_v31.md changelog contains V32.1 entry positioned above the V32 entry
 □ K.14 (V32.1) — Framework_Feature_Index_v31.md contains V32.1 table row above V32 row, footer bumped to "Last updated: V32.1"
 □ K.15 (V32.1) — CLAUDE_v31_compact.md title bumped to "V32.1", and V32.1 Operational Note paragraph present after the dispatch gate paragraph
+□ K.16 (V32.1.1) — Product_md_Planning_Assistant_v31.md Step 7d (Final handoff) routes Bootstrap FIRST → "Start Phase 2" → "Start Phase 3"
+       LOOK FOR in `Product_md_Planning_Assistant_v31.md` Step 7d Final handoff Output text:
+       the phrase "run 'Bootstrap' FIRST (creates CREDENTIALS.md — required gate for Phase 2)"
+       followed by "THEN 'Start Phase 2'" and the operational-questions list (Docker Hub credentials,
+       model routing, dev port ranges, git strategy, CORS origins), and finally
+       "After Phase 2 confirms, type 'Start Phase 3' to generate inputs.yml".
+       FAIL if Step 7d still tells users to run "Start Phase 3" directly without Bootstrap + Phase 2 first.
+       FAIL if Step 7d does not mention CREDENTIALS.md as the Phase 2 gate.
+□ K.17 (V32.1.1) — Prompt_References.md Prerequisites lists 17 V32 framework files + Planning Assistant deliverables include DESIGN.md + mockup HTML
+       LOOK FOR in `Prompt_References.md` Prerequisites section: a bullet stating
+       "17 V32 framework files (16 in `.ai_prompt/` + `deploy-v31.sh` at project root)"
+       AND a bullet mentioning DESIGN.md + mockup HTML archive as optional Planning Assistant deliverables
+       AND a cross-reference to Appendix A for the V32 `spec-update` workflow.
+       FAIL if Prereqs still says "16 V31 files" or omits DESIGN.md/mockup mention.
+□ K.18 (V32.1.1) — Prompt_References.md Starting State diagram contains memory-governance.md AND docs/DESIGN.md AND docs/mockups/
+       LOOK FOR in `Prompt_References.md` "## The Starting State" ascii block:
+       row for `memory-governance.md` inside `.ai_prompt/`, AND
+       row for `docs/DESIGN.md` with annotation "from Planning Assistant Step 7b — if you picked a getdesign.md aesthetic", AND
+       row for `docs/mockups/` with annotation "from prompt 4.7 — if you saved the Phase 2.8 mockup HTML archive".
+       FAIL if any of the three rows is missing.
+       FAIL if the diagram still says "15 V31 reference files".
+□ K.19 (V32.1.1) — Prompt_References.md 1.3.2 renamed "Phase 2 operational interview" + 1.3.3 contains Phase 2.8 SKIPPED note
+       LOOK FOR in `Prompt_References.md`:
+       (a) `### 1.3.2 — Phase 2 operational interview` (NOT "Phase 2 discovery") followed by body text explaining
+           Phase 2 is NOT a duplicate of Planning Assistant and listing the operational questions it asks
+           (Docker Hub, model routing, dev ports, git, CORS, Komodo, Turnstile).
+       (b) Section 1.3.3 auto-chain line contains "Phase 2.8 is SKIPPED in Claude Code — it already ran in the Planning Assistant chat".
+       FAIL if 1.3.2 still says "Phase 2 discovery" or "Claude only asks remaining open questions".
+       FAIL if 1.3.3 does not explicitly say Phase 2.8 is skipped in Claude Code.
+□ K.20 (V32.1.1) — Master_Prompt_v31.md changelog contains V32.1.1 entry dated 2026-05-28
+       LOOK FOR in `Master_Prompt_v31.md` changelog: a bullet beginning
+       "**V32.1.1 (2026-05-28):** Planning Assistant Step 7d corrected." inside the V32.1 changelog section
+       (positioned after the V32.1 entries, before the V32 entry).
+       The bullet must describe: old behavior (skipped Bootstrap + Phase 2), new behavior
+       (Bootstrap → Phase 2 → Phase 3), propagation to Prompt_References.md + .html, and rationale
+       (Master Prompt = sole authority, Planning Assistant must match).
+       FAIL if V32.1.1 entry is absent or dated differently.
+□ K.21 (V32.1.2) — AI_Tools_Skills_MCPs_Reference_v31.md Claude Code agent row describes V32 Zero Opus Execution
+       LOOK FOR in `AI_Tools_Skills_MCPs_Reference_v31.md` the Claude Code row of the agent table:
+       row must say "Opus 4.6 = Architect ONLY", "NEVER calls Edit/Write on project files",
+       "Sonnet 4.6 = Sole Executor", "`wc -l` ≤ 500 total lines per task", and explicitly call out
+       that "Step 2.5/2.5b (30K token budget gate + Opus executor escalation) was the V31.2-era model
+       and is REMOVED in V32" as a historical note.
+       FAIL if active row still describes "fallback Executor" or "30K token budget" as live behavior.
+□ K.22 (V32.1.2) — AI_Tools_Skills_MCPs_Reference_v31.md footer says 17-file V32.1 deliverable set
+       LOOK FOR: footer line "*This reference is part of the 17-file V32.1 deliverable set (16 files placed in `.ai_prompt/` + deploy script at project root):*"
+       followed by file listing that includes memory-governance.md and ChatGPT_V31_Cross_Audit_Prompt.md and Prompt_References.html.
+       FAIL if footer still says "13-file V31 deliverable set".
+□ K.23 (V32.1.2) — Framework_Feature_Index_v31.md header says current version V32.1
+       LOOK FOR near top: "> Current framework version: **V32.1**" with explanation that
+       filenames retain `_v31_` for deploy backward compatibility.
+       FAIL if header still says "Current framework version: **V31**".
+□ K.24 (V32.1.2) — Framework_Feature_Index_v31.md Note line at end says 17-file V32.1 deliverable set + memory-governance.md
+       LOOK FOR the "**Note:** This file is updated by Claude alongside every version bump..." paragraph
+       near the file end: must say "17-file V32.1 deliverable set — 16 files in `.ai_prompt/`"
+       and the file listing must include memory-governance.md.
+       FAIL if Note still says "16-file V31 deliverable set" or omits memory-governance.md.
+□ K.25 (V32.1.2) — CLAUDE_v31_compact.md role block says V32.1 STRICTEST + Master_Prompt header has V32.1.2 naming-policy note
+       LOOK FOR in `CLAUDE_v31_compact.md` near top: "operating under **V32.1 STRICTEST** discipline"
+       (NOT "V31 STRICTEST"). AND in `Master_Prompt_v31.md` header area: a block titled
+       "**VERSION + FILENAME POLICY (added V32.1.2 — 2026-05-28)**" explaining that body labels saying
+       "V31 primary" / "V31 STRICTEST" should be interpreted as base-V31 with V32/V32.1 patches layered on.
+       FAIL if either is absent.
+□ K.26 (V32.1.3) — deploy-v31.sh count messages consistent with 17-file canonical (16 in .ai_prompt/ + 1 deploy script)
+       LOOK FOR in `deploy-v31.sh`:
+       (a) Header layout block (around line 49) says "put all 16 V32 reference files in here".
+       (b) Footer comment (around line 66) says "this script at project root (17th file — total deliverable set)".
+       (c) Missing-folder error path says "put the 16 V32 reference files in it" — NOT "15 V32 reference files".
+       FAIL if any of the three messages uses 13, 14, 15, or 17 in the .ai_prompt/ reference count
+       (the .ai_prompt/ folder always holds 16 files; deploy-v31.sh is the 17th = total set).
 
 ---
 

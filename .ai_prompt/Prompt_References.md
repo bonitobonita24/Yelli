@@ -35,14 +35,14 @@
 
 - ✅ WSL2 Ubuntu installed, Node 22 + pnpm + Docker Desktop all working
 - ✅ VS Code with Claude Code CLI installed (Cline extension optional — deprecated V31, kept installed only as emergency fallback)
-- ✅ You already ran `Product_md_Planning_Assistant_v31.md` in claude.ai — final `PRODUCT.md` is ready
-- ✅ You have the 16 V31 files (15 in `.ai_prompt/` + `deploy-v31.sh` at project root)
+- ✅ You already ran `Product_md_Planning_Assistant_v31.md` in claude.ai — final `PRODUCT.md` is ready (plus `DESIGN.md` if you picked an aesthetic from getdesign.md, plus the mockup HTML archive if you saved it per prompt 4.7)
+- ✅ You have the 17 V32 framework files (16 in `.ai_prompt/` + `deploy-v31.sh` at project root) — see Appendix A for the V32 `spec-update` deployment workflow
 
 ## The Starting State
 
 ```
 your-project/                      ← empty folder (or existing project)
-├── .ai_prompt/                    ← you drop all 15 V31 reference files in here
+├── .ai_prompt/                    ← you drop all 16 V32 reference files in here
 │   ├── CLAUDE_v31_compact.md
 │   ├── Master_Prompt_v31.md
 │   ├── bootstrap.md
@@ -51,6 +51,7 @@ your-project/                      ← empty folder (or existing project)
 │   ├── ui-rules.md
 │   ├── scenarios.md
 │   ├── templates.md
+│   ├── memory-governance.md       ← V31.1 Memory Governance Layer (NEW)
 │   ├── Product_md_Planning_Assistant_v31.md
 │   ├── Framework_Feature_Index_v31.md
 │   ├── AI_Tools_Skills_MCPs_Reference_v31.md
@@ -58,10 +59,15 @@ your-project/                      ← empty folder (or existing project)
 │   ├── ChatGPT_V31_Cross_Audit_Prompt.md
 │   ├── Prompt_References.md       ← this file (markdown version)
 │   └── Prompt_References.html     ← interactive UI (open in browser)
-├── deploy-v31.sh                  ← you drop this at project root (16th file)
+├── deploy-v31.sh                  ← you drop this at project root (17th file)
 └── docs/
-    └── PRODUCT.md                 ← already ready from claude.ai planning session
+    ├── PRODUCT.md                 ← from Planning Assistant — required
+    ├── DESIGN.md                  ← from Planning Assistant Step 7b — if you picked a getdesign.md aesthetic
+    └── mockups/                   ← from prompt 4.7 — if you saved the Phase 2.8 mockup HTML archive
+        └── [appname]-phase-2.8-mockup.html
 ```
+
+Tip: on V32 machines, skip the manual `.ai_prompt/` copy step — use `spec-update .` (Appendix A) which syncs all 16 files + runs deploy in one command.
 
 ---
 
@@ -153,7 +159,7 @@ DETECTION — run all checks, do not modify any file
 
 Check 1 — V31 framework files in place:
   [ ] CLAUDE.md at project root — confirm it's the compact (~200 line) version
-  [ ] .claude/rules/ contains 6 files: phases, security, ui-rules, bootstrap, scenarios, templates
+  [ ] .claude/rules/ contains 7 files: phases, security, ui-rules, bootstrap, scenarios, templates, memory-governance
   [ ] AI/Master_Prompt_v31.md exists
 
 Check 2 — PRODUCT.md state:
@@ -675,26 +681,31 @@ grep -c "⏳" CREDENTIALS.md  # should be 0 for REQUIRED sections
 
 Use this path when the Analyzer classifies your project as **Situation A** (empty or nearly empty).
 
-### 1.3.1 — Place PRODUCT.md + run Bootstrap
+### 1.3.1 — Place PRODUCT.md (+ DESIGN.md + mockup) + run Bootstrap
 
-Drop your finalized `PRODUCT.md` from the claude.ai planning session into `docs/PRODUCT.md`, then in Claude Code:
+Drop the Planning Assistant deliverables into your project's `docs/` folder:
+- `docs/PRODUCT.md` (always — required)
+- `docs/DESIGN.md` (if you picked a getdesign.md aesthetic in Phase 2.8 Step 7b)
+- `docs/mockups/[appname]-phase-2.8-mockup.html` (if you saved the HTML archive per prompt 4.7)
+
+Then in Claude Code:
 ```
 Bootstrap
 ```
 
-**What happens:** Runs all 19 Bootstrap steps — folder structure, governance docs, `.vscode/mcp.json`, `.specstory/config.json`, typed `lessons.md`, `CREDENTIALS.md` with AI-generated secrets + `⏳ FILL LATER` placeholders, and the Loading Library Lock (DECISIONS_LOG.md entry for ui-rules.md Rule 11 dual-path V31.3). **Does not block on credentials.**
+**What happens:** Runs all 19 Bootstrap steps — folder structure, governance docs, `.vscode/mcp.json`, `.specstory/config.json`, typed `lessons.md`, `CREDENTIALS.md` with AI-generated secrets + `⏳ FILL LATER` placeholders, and the Loading Library Lock (DECISIONS_LOG.md entry for ui-rules.md Rule 11 dual-path). **Does not block on credentials.** CREDENTIALS.md is the required gate for Phase 2 — Phase 2 will refuse to start without it.
 
-### 1.3.2 — Phase 2 discovery
+### 1.3.2 — Phase 2 operational interview
 ```
 Start Phase 2
 ```
-Paste your `docs/PRODUCT.md` when prompted. Claude only asks remaining open questions.
+Paste your `docs/PRODUCT.md` when prompted. Phase 2 is NOT a duplicate of the Planning Assistant interview — it asks ONLY the operational/machine-local questions Planning Assistant couldn't know: Docker Hub username + image name (must be unique on your account), model routing (which Claude model runs which phase), dev port ranges to avoid on this machine, git worktree preference, CORS allowed origins per environment, Komodo webhook config, Turnstile widget hostname strategy. Skip-logic auto-removes sections not applicable to your PRODUCT.md (e.g. no payments declared → skip payment gateway questions).
 
 ### 1.3.3 — Confirm Phase 2.5 summary
 ```
 confirmed
 ```
-Auto-chains into Phase 2.6 (design system) and Phase 2.7 (spec stress-test).
+Auto-chains into Phase 2.6 (design system — reads `docs/DESIGN.md` if present) and Phase 2.7 (spec stress-test). Phase 2.8 is SKIPPED in Claude Code — it already ran in the Planning Assistant chat.
 
 ### 1.3.3b — Phase 2.8 Clickable Mockup Review (NEW V31 — Planning Assistant chat only)
 
@@ -3399,6 +3410,29 @@ bash deploy-v31.sh
 cd /path/to/target-project
 spec-update .
 ```
+
+### Rule of Thumb — When to Use `spec-update`
+
+`spec-update <target>` is the right tool for **both** scenarios below. It handles upgrade and fresh-install symmetrically — no separate first-install script needed.
+
+**1. Upgrade case — existing project on an older framework version (V31.x or V32.x older than current):**
+- `git pull` → fetches the latest framework from `origin/main`
+- `sync-to-project` → overwrites `<target>/.ai_prompt/*.md` and `<target>/deploy-v31.sh` with the current versions (`cp -p` overwrite; backups happen in the next deploy step, not here)
+- `bash deploy-v31.sh` → re-fans out to `.claude/rules/`, backing up any user-modified rule files with timestamped `.bak`
+
+**2. Fresh install case — brand-new project with only Planning Assistant artifacts (`docs/PRODUCT.md`, `docs/DESIGN.md`, `docs/MOCKUP.jsx`) and no `.ai_prompt/` yet:**
+- `sync-to-project` detects the missing `.ai_prompt/` folder and prompts: *"Directory does not exist. Create it? [y/N]"*
+- Answer **y** → creates the folder, copies all 16 V32 reference files in, drops `deploy-v31.sh` at project root
+- `deploy-v31.sh` then bootstraps `.claude/rules/`, `AI/`, and `CLAUDE.md` cleanly from zero
+
+**Workflow for a fresh project:**
+```bash
+cd ~/new-app                    # has only docs/ from Planning Assistant
+spec-update .                   # answer 'y' when prompted to create .ai_prompt/
+# Framework is now installed → ready for Bootstrap → Phase 2 → Phase 3
+```
+
+**One pre-step for brand-new projects:** initialize git (`git init` + first commit) before or after `spec-update` — the script does not initialize git for you. After `spec-update`, your next prompt to Claude Code is `Bootstrap` per the V32.1.1 Step 7d sequence.
 
 ### Verification (run inside target after deploy)
 
