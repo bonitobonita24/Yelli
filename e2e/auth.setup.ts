@@ -13,13 +13,16 @@ setup('authenticate as webmaster', async ({ page }) => {
 
   await page.goto('/login');
 
-  // Primary selectors (Auth.js Credentials provider form labels)
-  const usernameField =
-    page.getByLabel('Username').or(page.locator('input[name="username"]')).first();
-  const passwordField =
-    page.getByLabel('Password').or(page.locator('input[name="password"]')).first();
+  // Login form uses Email field with z.string().email() validation
+  // (apps/web/src/app/(auth)/login/page.tsx). Webmaster email defaults to
+  // `webmaster@${APP_SLUG}.local` matching packages/db/prisma/seed.ts.
+  const APP_SLUG = process.env.APP_SLUG ?? 'yelli';
+  const email = process.env.WEBMASTER_EMAIL ?? `webmaster@${APP_SLUG}.local`;
 
-  await usernameField.fill('webmaster');
+  const emailField = page.getByLabel('Email').first();
+  const passwordField = page.getByLabel('Password').first();
+
+  await emailField.fill(email);
   await passwordField.fill(password);
 
   await page.getByRole('button', { name: /sign in/i }).click();
