@@ -152,14 +152,14 @@ test.describe("Recording lifecycle", () => {
     let recordingRowId: string | null = null;
 
     try {
-      const started = await postTrpc<{ id: string; egress_id: string }>(
+      const started = await postTrpc<{ recordingId: string; egressId: string }>(
         request,
         "recordings.start",
         { meetingId: meeting.id },
       );
 
-      expect(started.egress_id).toMatch(/^e2e-mock-/);
-      recordingRowId = started.id;
+      expect(started.egressId).toMatch(/^e2e-mock-/);
+      recordingRowId = started.recordingId;
 
       await postTrpc(request, "recordings.stop", { meetingId: meeting.id });
     } finally {
