@@ -1791,3 +1791,43 @@ The outer `as never` satisfies the DynamicModelExtensionFluentApi parameter type
 - Concepts:  e2e, fixtures, webmaster-user, lookup-divergence, shared-helper
 - Narrative: `seedRecording` and the auth-bypass provider both resolved the webmaster user by email, but through different DB lookup paths — one joined org membership, the other did not. Symptom: fixture-created records appeared with a `created_by` that did not match the bypass-authenticated session's user ID, breaking every ownership-gated assertion. Both call sites now route through one shared `findWebmaster()` helper. Rule: any user lookup reused across test infra and runtime auth MUST go through a single helper — never duplicate the query.
 # ---
+
+## 2026-05-29 — 🟤 Sub-A1 plan-limit middleware uses unstable-core-do-not-import for MiddlewareResult typing
+- Type:      🟤 decision
+- Phase:     Overlay Cluster Sub-A1
+- Files:     apps/web/src/server/trpc/middleware/plan-limit.ts
+- Concepts:  trpc, middleware, plan-capability, type-import, unstable-core
+- Narrative: Sub-A1 tightened `MiddlewareOpts.next` return type to `Promise<MiddlewareResult<unknown>>` so `.use(filePersistenceGuard)` (Sub-A1) and `.use(whiteboardPersistenceGuard)` (Sub-A2) need zero casts. `MiddlewareResult` is only exported from `@trpc/server/unstable-core-do-not-import`. The path name is misleading — this is the canonical type as of tRPC v11. Custom adapter alternative = more code + more drift surface. Mitigation: pin tRPC minor version; revisit at tRPC v12 when it likely stabilizes or renames the export.
+# ---
+
+## 2026-05-29 — 🔴 Sub-A1 pre-flight scout missed missing deleted_at on SharedFile despite Recording precedent
+- Type:      🔴 gotcha
+- Phase:     Overlay Cluster Sub-A1 pre-flight
+- Files:     packages/db/prisma/schema.prisma, packages/db/prisma/migrations/20260529000000_add_shared_file_deleted_at
+- Concepts:  pre-flight, scout, schema-symmetry, soft-delete, deleted_at
+- Narrative: The Sub-A1 pre-flight confirmed SharedFile + WhiteboardSnapshot models exist but did NOT cross-check that SharedFile had the same `deleted_at DateTime?` soft-delete column as Recording. First Sonnet dispatch wrote `softDelete` assuming the column existed; Opus review caught the missing column in compile errors. Cost: 1 extra Sonnet dispatch + a schema migration. Future pre-flights MUST run a side-by-side diff of analogous models when one is the template for the other (e.g. `diff <(grep -A20 'model Recording' schema.prisma) <(grep -A20 'model SharedFile' schema.prisma)`).
+# ---
+
+## 2026-05-29 — 🟢 getPresignedUploadUrl moved to @yelli/storage; web app no longer imports @aws-sdk/* directly
+- Type:      🟢 change
+- Phase:     Overlay Cluster Sub-A1
+- Files:     packages/storage/src/client.ts, packages/storage/src/index.ts
+- Concepts:  workspace-boundaries, aws-sdk, storage-layer, dep-hygiene
+- Narrative: First Sub-A1 dispatch wrote presigned-URL generation inline in `sharedFiles.ts`, importing `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` directly in the web app. Opus review rejected: AWS SDK belongs in `@yelli/storage`. Refactored to add `getPresignedUploadUrl(args)` to the storage package's public API. Same architectural principle later applied in Sub-A2 to Prisma namespace imports (see next Prisma-namespace entry below).
+# ---
+
+## 2026-05-29 — 🔴 Sub-A2 Prisma namespace must come from @yelli/db, never @prisma/client directly
+- Type:      🔴 gotcha
+- Phase:     Overlay Cluster Sub-A2
+- Files:     apps/web/src/server/trpc/routers/whiteboardSnapshots.ts
+- Concepts:  workspace-boundaries, prisma-namespace, type-import, dep-hygiene
+- Narrative: First Sub-A2 dispatch wrote `import { Prisma } from "@prisma/client"` for the `Prisma.InputJsonValue` cast on Json column writes. tsc failed: `apps/web` has no direct `@prisma/client` dep. Fix: `import type { Prisma } from "@yelli/db"`. `@yelli/db` already does `export * from "@prisma/client"` and is the canonical surface. Existing precedent: `apps/web/src/server/trpc/routers/departments.ts` uses `Prisma.DepartmentUncheckedCreateInput satisfies` via `@yelli/db` import. Same architectural principle as Sub-A1's AWS SDK quarantine.
+# ---
+
+## 2026-05-29 — 🟤 Json column writes use `as Prisma.InputJsonValue` cast as canonical pattern
+- Type:      🟤 decision
+- Phase:     Overlay Cluster Sub-A2
+- Files:     apps/web/src/server/trpc/routers/whiteboardSnapshots.ts
+- Concepts:  prisma, json-column, type-cast, z.unknown, canonical
+- Narrative: Sub-A2 `save` procedure receives `snapshotData: z.unknown()` from the client and writes to the `snapshot_data Json` column. Direct assignment fails Prisma's strict input type. `input.snapshotData as Prisma.InputJsonValue` is the canonical Prisma idiom for the `z.unknown() → Json` flow. This is the ONLY acceptable `as` cast in the codebase — all others remain banned (`grep -E 'as any|as unknown as|@ts-ignore' apps/web/src/server/trpc/routers/` returns empty). Decision lock: future routers writing to Json columns MUST use this exact cast, NEVER `as any` or `as unknown as Json`.
+# ---

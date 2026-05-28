@@ -4,6 +4,31 @@
 
 # ---
 
+## Latest Update (2026-05-29)
+
+**Overlay Cluster A-group SHIPPED — sharedFiles + whiteboardSnapshots tRPC routers in PR #3.** Branch `feat/shared-files-router` pushed with 2 commits (Sub-A1 `5fce2a6` + Sub-A2 `cd3c653`). Both routers registered in `appRouter`; feature-router keys remain alphabetical; admin/superadmin preserved at end. Sub-A1 added 5 plan-gated procedures (requestUpload/commit/listByMeeting/getDownloadUrl/softDelete) on `requirePlanCapability("filePersistence")` with direct-to-storage upload pattern; Sub-A2 added 2 procedures (save/getLatest) on `requirePlanCapability("whiteboardPersistence")` with NOT_FOUND enumeration guard on cross-org meeting access. Schema: `SharedFile.deleted_at DateTime?` + index added (migration `20260529000000_add_shared_file_deleted_at`); `WhiteboardSnapshot` model was pre-existing. Storage: `@yelli/storage` now exports `getPresignedUploadUrl()` — keeps `@aws-sdk/*` out of web app workspace. Middleware: `plan-limit.ts` MiddlewareOpts.next typed as `Promise<MiddlewareResult<unknown>>` — zero-cast `.use(<guard>)` for any plan-capability middleware. Test suite locally: 25/25 router tests pass (19 sharedFiles + 6 whiteboardSnapshots). tsc 0, eslint 0/0 on changed files. No `as any`, no `@ts-ignore`. Single canonical `as Prisma.InputJsonValue` cast on Json column write (whiteboardSnapshots.save). Governance branch `chore/governance-overlay-a-group` lands this entry + CHANGELOG_AI + 5 typed lessons.md entries (🟤×2 decisions, 🔴×2 gotchas, 🟢×1 change). 4 Sonnet executor dispatches per Sub-A2 (1 router+register, 1 tests, 2 micro-fixes for import path + lint) — exactly the V32.1 op-note pattern of recovery via re-decomposition and Opus-side `ctx_execute` verification.
+
+**Overlay Cluster status (post-A-group):**
+- Sub-A1 (sharedFiles tRPC router):           ✅ SHIPPED 2026-05-29 (`5fce2a6` in PR #3)
+- Sub-A2 (whiteboardSnapshots tRPC router):   ✅ SHIPPED 2026-05-29 (`cd3c653` in PR #3)
+- Sub-B (whiteboard realtime sockets):        ⬜ NEXT (parallel-eligible with Sub-B′)
+- Sub-B′ (file-share socket transport):       ⬜ NEXT (parallel-eligible with Sub-B; free-tier ≤2MB base64 broadcast)
+- Sub-C (in-call-file-dropzone.tsx wiring):   ⬜ PENDING — needs A-group (DONE) + Sub-B′ events
+- Sub-D (in-call-whiteboard.tsx wiring):      ⬜ PENDING — needs A-group (DONE) + Sub-B events
+
+**A-group artifacts:**
+- `apps/web/src/server/trpc/routers/sharedFiles.ts` (315L) — Sub-A1 router
+- `apps/web/src/server/trpc/routers/sharedFiles.test.ts` (467L, 19/19 ✓) — Sub-A1 tests
+- `apps/web/src/server/trpc/routers/whiteboardSnapshots.ts` (118L) — Sub-A2 router
+- `apps/web/src/server/trpc/routers/whiteboardSnapshots.test.ts` (238L, 6/6 ✓) — Sub-A2 tests
+- `apps/web/src/server/trpc/router.ts` — both routers registered
+- `apps/web/src/server/trpc/middleware/plan-limit.ts` — `next` return type tightened
+- `packages/db/prisma/schema.prisma` — `SharedFile.deleted_at` + index added
+- `packages/db/prisma/migrations/20260529000000_add_shared_file_deleted_at/migration.sql` — migration
+- `packages/storage/src/client.ts` (+53L) + `src/index.ts` (+3L) — `getPresignedUploadUrl()` helper
+
+# ---
+
 ## Latest Update (2026-05-28)
 
 **CI Recovery Sprint CLOSED — 8/8 CI jobs green on main.** Sprint started morning at 2/8 (only governance + audit green); closed at 8/8 after 8 commits + 2 PRs landed on `origin/main` today. Three layers fixed: (a) CI workflow plumbing — Prisma generate ordering + Postgres + Valkey services for E2E job (`3e60007`, `7f86a43`); (b) test pollution + auth path — static `vi.mock` + `vi.hoisted` replaced `vi.doMock` + dynamic import in LiveKit webhook tests, bypass auth provider wired into `auth.setup.ts` (`d827397`, `223f1ef`, `5354aa1`); (c) E2E fixture contracts + Turbo env allowlist — fixture `file_path` prefix dropped to match `verifyKeyOwnership` org-id derivation, spec response shape switched from snake_case `{ id, egress_id }` to camelCase `{ recordingId, egressId }` matching tRPC at `apps/web/src/server/trpc/routers/recordings.ts:309`, `turbo.json` globalEnv expanded to allowlist env-validated vars (PR #1 `1f783bb`, PR #2 `62fab35`). Final sprint commits: `06dec12` (local/CI parity docs in `.env.test.e2e.example`) + `a50ab77` (+7 typed gotchas to lessons.md) + `6d642a7` (STATE.md checkpoint follow-ups 1+2). Test suite stays at 473/473 ✓. CI suite 2/8 → 8/8. No source-feature changes — sprint was bug-fix + governance only.
@@ -15,7 +40,7 @@
 - sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
 - sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (branch tip `a1e3351`, on main)
 - CI recovery sprint (post-sub-4 stabilisation):   ✅ CLOSED 2026-05-28 (8 commits + 2 PRs, final `62fab35`; governance `06dec12`/`a50ab77`/`6d642a7` + this entry)
-- overlay cluster (File Sharing + Whiteboard):     ⬜ NEXT (or deferred Phase 8 Batch B tier-1 fixes per `phase8-batch-b-closed.md` memory)
+- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group shipped 2026-05-29 (PR #3); B/B′/C/D pending
 
 # ---
 
@@ -29,7 +54,7 @@
 - sub-3 (LiveKit Egress recording feed):           ✅ CLOSED 2026-05-26 AM (`1053729`)
 - sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
 - sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (squash on main; branch tip `a1e3351`)
-- overlay cluster (File Sharing + Whiteboard):     ⬜ NEXT (or framework V31.3 stash pop / Playwright install / filter UI — user pick)
+- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group shipped 2026-05-29 (PR #3); B/B′/C/D pending
 
 **Files added in this polish (3):**
 - `apps/web/src/components/recordings/recording-delete-button.tsx` — client component with shadcn AlertDialog confirmation + softDelete mutation + invalidate-and-refresh on success + inline error on failure
