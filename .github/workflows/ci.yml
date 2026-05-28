@@ -181,3 +181,112 @@ jobs:
         # affected package, or document mitigation in DECISIONS_LOG and keep both
         # `.npmrc` + this flag at `critical` (phases.md Phase 5 CVE decision tree).
         run: pnpm audit --audit-level=critical
+
+  e2e:
+    name: Playwright E2E (Chromium)
+    needs: governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yelli_e2e
+          POSTGRES_PASSWORD: yelli_e2e_pw_min22chars_ci_only
+          POSTGRES_DB: yelli_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep -q PONG"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Database — matches services.postgres
+      DATABASE_URL: postgresql://yelli_e2e:yelli_e2e_pw_min22chars_ci_only@localhost:5432/yelli_e2e
+      # Cache — matches services.valkey
+      REDIS_URL: redis://localhost:6379
+      # Auth.js v5 (apps/web env.ts requires AUTH_SECRET min 32 chars)
+      AUTH_SECRET: e2e-ci-auth-secret-min-32-chars-static-not-prod-xxxx
+      AUTH_TRUST_HOST: "true"
+      # Storage intentionally unset — LIVEKIT_E2E_MOCK=true bypasses all MinIO/S3 calls.
+      # STORAGE_* vars are .optional() in apps/web/src/env.ts; omitting them is safe.
+      # Storage will need to be added if a future e2e spec asserts on uploaded artefacts.
+      STORAGE_REGION: us-east-1
+      # Cloudflare Turnstile — official test keys (always pass — never expose to CI runner network)
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+      # App
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_SLUG: yelli
+      APP_PORT: "3000"
+      NODE_ENV: test
+      # E2E guard — keeps LiveKit Egress calls mocked so CI runs without LK creds.
+      # Source of truth: apps/web/src/lib/livekit/egress-client.ts (early return on "true").
+      LIVEKIT_E2E_MOCK: "true"
+      # Webmaster credential — used by packages/db/prisma/seed.ts AND e2e/auth.setup.ts.
+      # Static CI-only value; never touches prod (DATABASE_URL points at ephemeral postgres service).
+      # Must be >= 22 chars per seed.ts validation.
+      WEBMASTER_PASSWORD: e2e-webmaster-pw-min-22-chars-static-not-prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers (Chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm --filter @yelli/db db:generate
+
+      - name: Run Prisma migrations (deploy mode)
+        run: pnpm --filter @yelli/db exec prisma migrate deploy
+
+      - name: Seed database (webmaster account)
+        run: pnpm --filter @yelli/db exec tsx prisma/seed.ts
+
+      - name: Run Playwright e2e suite
+        run: pnpm test:e2e
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload Playwright test results (traces, screenshots, videos)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: playwright-results/
+          retention-days: 7
