@@ -22,6 +22,58 @@
 
 # ---
 
+## 2026-05-28 — CI Recovery Sprint: 2/8 → 8/8 CI jobs green
+
+- Agent: CLAUDE_CODE (Architect: Opus 4.7 inline orchestration; Sonnet 4.6 dispatches for atomic fixes per V32 Architect-Execute Model. STATE.md was the lone Opus direct write per V32 R1 §4 checkpoint exception across the sprint.)
+- Why: Phase 8 Batch B sub-4 squash-merge (2026-05-27) landed Playwright infra but immediately surfaced 6 broken CI jobs on `main` (lint, typecheck, test, build, coverage, e2e — only governance + audit green at start-of-day). Diagnosed and shipped 8 commits + 2 PRs over the day to restore CI to 8/8 green. Sprint spanned three layers: (a) CI workflow plumbing (Prisma generate ordering, Postgres + Valkey service containers for E2E job); (b) test pollution + auth path fixes (LiveKit webhook test isolation, bypass auth provider wired into auth.setup.ts); (c) E2E fixture contract fixes (storage-key org-prefix shape, tRPC camelCase response shape, Turbo Build env allowlist via `turbo.json` globalEnv expansion).
+- Sprint chronology on `origin/main` (oldest → newest):
+  - `f2b2e49` fix(ui): blank line between parent and sibling imports in alert-dialog (eslint-plugin-import-dedup deferred fix)
+  - `3e60007` ci(e2e): wire Postgres + Valkey services into Playwright E2E pipeline
+  - `7f86a43` ci: generate Prisma client before turbo + coverage jobs — unblocked lint + typecheck
+  - `d827397` fix(test): replace `vi.doMock` + dynamic import with static `vi.mock` + hoisted env in LiveKit webhook tests — eliminated module-cache pollution; unblocked Turbo test + coverage
+  - `223f1ef` fix(e2e): use Email selector in auth.setup.ts — first auth fix, exposed bypass-needed layer
+  - `5354aa1` fix(e2e): use bypass provider in auth.setup.ts — auth.setup green in CI
+  - `1f783bb` PR #1 squash — Turbo Build env block (`f3c868a`) + turbo.json globalEnv allowlist (`21b1cfd`); unblocked Turbo Build job
+  - `62fab35` PR #2 squash — fixture `file_path` prefix fix + spec response shape fix; closes sprint at 8/8
+  - `06dec12` docs(e2e): document local/CI parity for bypass auth provider (`.env.test.e2e.example`)
+  - `a50ab77` docs(lessons): record 7 typed gotchas from CI recovery sprint
+  - `6d642a7` chore(governance): STATE.md checkpoint — deferred follow-ups 1+2 of 3 closed
+- Files added: none (sprint was bug-fix + governance only)
+- Files modified:
+  - `.github/workflows/ci.yml` — Prisma generate step inserted before lint/typecheck/test/build/coverage; Postgres + Valkey service containers added to E2E job; env block expanded on quality matrix Build task
+  - `turbo.json` — globalEnv allowlist expanded to include `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `APP_URL`, and remaining env-validated vars that Turbo was stripping despite GitHub Actions YAML `env:` block setting them
+  - `apps/web/src/server/livekit/webhook.test.ts` — `vi.doMock` + `await import()` pattern replaced with static `vi.mock()` + `vi.hoisted()` env stub
+  - `e2e/auth.setup.ts` — switched login flow from real credentials provider to bypass provider matching `apps/web/src/server/auth-bypass.ts`; selector updated to "Email" to match login form label
+  - `e2e/fixtures/seed-recording.ts` — `file_path` now starts with `{organizationId}/` (stray `e2e-mock/` literal prefix dropped). `verifyKeyOwnership` at `apps/web/src/lib/storage/keys.ts:41-47` splits storage key on `/` and returns `parts[0]` as the org id; the literal prefix made `parts[0] === "e2e-mock"`, breaking the ownership check at `apps/web/src/server/trpc/routers/recordings.ts:149` and forcing every `softDelete` to NOT_FOUND
+  - `e2e/specs/recording-flow.spec.ts:155-162` — response-shape expectation switched from snake_case `{ id, egress_id }` to camelCase `{ recordingId, egressId }` matching the actual tRPC contract at `apps/web/src/server/trpc/routers/recordings.ts:309`
+  - `.env.test.e2e.example` — expanded with `WEBMASTER_PASSWORD`, `PLAYWRIGHT_BASE_URL`, `LIVEKIT_E2E_MOCK` documenting local/CI parity for bypass auth
+  - `.cline/memory/lessons.md` — +7 typed entries (3 🔴 gotchas, 1 🟤 decision, 1 🟡 fix, 2 🔴 ops gotchas) covering: turbo globalEnv allowlist, fixture file_path org prefix, tRPC camelCase contract, bypass provider from day one, prisma generate before CI tasks, CI workflow trigger scope, webmaster lookup shared helper
+  - `packages/ui/src/components/alert-dialog.tsx` — blank line between parent and sibling imports (eslint dedup fix)
+- Files deleted: none
+- Schema/migrations: none
+- Key decisions locked:
+  - **Bypass auth provider is the only viable E2E auth path from day one.** Real credentials provider + Turnstile gate cannot pass in CI without weakening prod security. Locked as 🟤 decision in lessons.md.
+  - **Turbo env allowlist is mandatory for any var that `next.config` / `env.ts` validates.** Turbo strips env vars not in `globalEnv` even when GitHub Actions `env:` block sets them. Locked as 🔴 gotcha.
+  - **E2E fixtures must encode org ownership the same way prod storage keys do.** `verifyKeyOwnership` derives org id from `parts[0]` of the storage key — fixtures that prepend literal markers break tenant ownership checks. Locked as 🔴 gotcha.
+  - **tRPC procedure responses are camelCase per shared TS conventions.** Specs that test response shape must match exactly — no snake_case fallback. Locked as 🔴 gotcha.
+- Errors encountered:
+  - 6 CI jobs red at start-of-day on main (lint, typecheck, test, build, coverage, e2e) immediately after sub-4 merge
+  - Turbo Build job kept failing even after env block added to GitHub Actions YAML — turbo.json globalEnv was filtering them out
+  - `recordings.softDelete` E2E spec failed with NOT_FOUND despite seeded recording existing in DB
+  - `recordings.start` E2E spec failed with `egressId is undefined` despite mutation returning 200
+  - GitHub API 404 retrieving CI run ID from feature branch — CI workflow only runs on main push + PRs, not feature-branch push
+- Errors resolved:
+  - Prisma generate added as first step in ci.yml — unblocked lint + typecheck (`7f86a43`)
+  - Static `vi.mock()` + `vi.hoisted()` replaced runtime mock pattern — unblocked test + coverage (`d827397`)
+  - Bypass provider wired into auth.setup.ts — unblocked first part of E2E (`5354aa1`)
+  - turbo.json globalEnv allowlist expanded — unblocked Turbo Build (PR #1 commit `21b1cfd`)
+  - Fixture `file_path` prefix dropped + spec response shape switched to camelCase — closed last two E2E specs (PR #2 commit `62fab35`)
+- Validation: 8/8 CI jobs green on `main` post-`62fab35`. Local: `pnpm test` 473/473 ✓ / `pnpm typecheck` 0 errors / `pnpm lint` 0 errors.
+- Lessons recorded: `.cline/memory/lessons.md` — 7 new typed entries (commit `a50ab77`).
+- Sprint close-out governance: STATE.md checkpoints `ef7a170` (sprint close) + `6d642a7` (follow-ups 1+2 closed) + this CHANGELOG entry closing follow-up 3.
+
+# ---
+
 ## 2026-05-27 — Phase 8 Batch B sub-4: Playwright E2E pipeline (full close-out)
 
 - Agent: CLAUDE_CODE (Architect: Opus 4.7 inline + Sonnet 4.6 subagent executors via memory-governance.md §4 Architect-Execute Model. V32.1 Sonnet overhead mitigation applied throughout — dispatch prompts ≤1K tokens, writes split from verifications, recovery dispatches picked up from current git state not from scratch.)

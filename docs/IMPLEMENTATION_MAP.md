@@ -4,6 +4,21 @@
 
 # ---
 
+## Latest Update (2026-05-28)
+
+**CI Recovery Sprint CLOSED — 8/8 CI jobs green on main.** Sprint started morning at 2/8 (only governance + audit green); closed at 8/8 after 8 commits + 2 PRs landed on `origin/main` today. Three layers fixed: (a) CI workflow plumbing — Prisma generate ordering + Postgres + Valkey services for E2E job (`3e60007`, `7f86a43`); (b) test pollution + auth path — static `vi.mock` + `vi.hoisted` replaced `vi.doMock` + dynamic import in LiveKit webhook tests, bypass auth provider wired into `auth.setup.ts` (`d827397`, `223f1ef`, `5354aa1`); (c) E2E fixture contracts + Turbo env allowlist — fixture `file_path` prefix dropped to match `verifyKeyOwnership` org-id derivation, spec response shape switched from snake_case `{ id, egress_id }` to camelCase `{ recordingId, egressId }` matching tRPC at `apps/web/src/server/trpc/routers/recordings.ts:309`, `turbo.json` globalEnv expanded to allowlist env-validated vars (PR #1 `1f783bb`, PR #2 `62fab35`). Final sprint commits: `06dec12` (local/CI parity docs in `.env.test.e2e.example`) + `a50ab77` (+7 typed gotchas to lessons.md) + `6d642a7` (STATE.md checkpoint follow-ups 1+2). Test suite stays at 473/473 ✓. CI suite 2/8 → 8/8. No source-feature changes — sprint was bug-fix + governance only.
+
+**Phase 8 Batch B status (post-CI-recovery):**
+- sub-1 (Real-time chat over Socket.IO):           ✅ CLOSED 2026-05-25 PM (`85ea101`)
+- sub-2 (Reports CSV/PDF generation):              ✅ CLOSED 2026-05-26 AM (`2955eae`)
+- sub-3 (LiveKit Egress recording feed):           ✅ CLOSED 2026-05-26 AM (`1053729`)
+- sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
+- sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (branch tip `a1e3351`, on main)
+- CI recovery sprint (post-sub-4 stabilisation):   ✅ CLOSED 2026-05-28 (8 commits + 2 PRs, final `62fab35`; governance `06dec12`/`a50ab77`/`6d642a7` + this entry)
+- overlay cluster (File Sharing + Whiteboard):     ⬜ NEXT (or deferred Phase 8 Batch B tier-1 fixes per `phase8-batch-b-closed.md` memory)
+
+# ---
+
 ## Latest Update (2026-05-27)
 
 **Phase 8 Batch B sub-3 polish CLOSED** — squash commit `2175f61` on main. 11 files changed (+447/-18). 5 atomic sub-commits squashed: scan-results chore + `View recordings →` nav link from /app/meetings + /app/history + soft-delete UI (shadcn AlertDialog primitive in @yelli/ui + `RecordingDeleteButton` + 5 vitest cases for pure copy/payload) + governance updates. Test suite 465 → 470 passing. Typecheck 0 errors (@yelli/ui + @yelli/web). Lint 0 new errors. Recordings module now reachable from app shell with full create/download/delete flow shipping. Three architect spec errors discovered + corrected during execution (see lessons.md entries [[yelli-vitest-node-env-no-rtl]], [[credentials-md-gitignored-never-in-pr]], [[polish-spec-verify-codebase-before-assuming]]). Two Sonnet subagent thrashes recovered inline by architect — see [[sonnet-subagent-thrash-budget-pattern]]. Spec: `docs/superpowers/specs/2026-05-26-livekit-egress-polish-design.md` (`45e71a3`); Plan: `docs/superpowers/plans/2026-05-26-recordings-polish.md` (`3c63f37`); Parent: `1053729` (sub-3 LiveKit Egress recording feed).
