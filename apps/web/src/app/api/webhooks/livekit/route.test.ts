@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { POST } from "./route";
+
 import type { NextRequest } from "next/server";
 
 const hoisted = vi.hoisted(() => ({
   add: vi.fn().mockResolvedValue(undefined),
   verify: vi.fn(),
+  env: {
+    LIVEKIT_API_KEY: "test-key" as string | undefined,
+    LIVEKIT_API_SECRET: "test-secret" as string | undefined,
+  },
 }));
 
 vi.mock("@yelli/jobs", () => ({
@@ -16,10 +22,7 @@ vi.mock("@/lib/livekit/webhook-verify", () => ({
 }));
 
 vi.mock("@/env", () => ({
-  env: {
-    LIVEKIT_API_KEY: "test-key",
-    LIVEKIT_API_SECRET: "test-secret",
-  },
+  env: hoisted.env,
 }));
 
 function mkRequest(body: string, auth: string | null = "Bearer good-jwt") {
@@ -32,44 +35,27 @@ function mkRequest(body: string, auth: string | null = "Bearer good-jwt") {
   }) as unknown as NextRequest;
 }
 
-function mockEnv(env: {
-  LIVEKIT_API_KEY?: string | undefined;
-  LIVEKIT_API_SECRET?: string | undefined;
-}) {
-  vi.doMock("@/env", () => ({ env }));
-  vi.doMock("@yelli/jobs", () => ({
-    livekitEgressWebhookQueue: { add: hoisted.add },
-  }));
-  vi.doMock("@/lib/livekit/webhook-verify", () => ({
-    verifyLiveKitWebhook: hoisted.verify,
-  }));
-  vi.resetModules();
-}
-
 describe("POST /api/webhooks/livekit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockEnv({ LIVEKIT_API_KEY: "test-key", LIVEKIT_API_SECRET: "test-secret" });
+    hoisted.env.LIVEKIT_API_KEY = "test-key";
+    hoisted.env.LIVEKIT_API_SECRET = "test-secret";
   });
 
   it("503 when LIVEKIT_API_KEY is unset", async () => {
-    mockEnv({ LIVEKIT_API_KEY: undefined, LIVEKIT_API_SECRET: "x" });
-    const { POST } = await import("./route");
+    hoisted.env.LIVEKIT_API_KEY = undefined;
     const res = await POST(mkRequest("{}"));
     expect(res.status).toBe(503);
   });
 
   it("401 when WebhookReceiver returns null (bad signature, missing auth, etc.)", async () => {
-    vi.resetModules();
     hoisted.verify.mockResolvedValueOnce(null);
-    const { POST } = await import("./route");
     const res = await POST(mkRequest("{}", null));
     expect(res.status).toBe(401);
     expect(hoisted.add).not.toHaveBeenCalled();
   });
 
   it("200 + enqueues envelope on valid egress_ended event", async () => {
-    vi.resetModules();
     hoisted.verify.mockResolvedValueOnce({
       id: "EV_123",
       event: "egress_ended",
@@ -82,7 +68,6 @@ describe("POST /api/webhooks/livekit", () => {
         ],
       },
     });
-    const { POST } = await import("./route");
     const res = await POST(mkRequest("{}"));
     expect(res.status).toBe(200);
     expect(hoisted.add).toHaveBeenCalledOnce();
@@ -100,24 +85,20 @@ describe("POST /api/webhooks/livekit", () => {
   });
 
   it("200 + ignores events without egressInfo (e.g. room_started)", async () => {
-    vi.resetModules();
     hoisted.verify.mockResolvedValueOnce({
       id: "EV_999",
       event: "room_started",
     });
-    const { POST } = await import("./route");
     const res = await POST(mkRequest("{}"));
     expect(res.status).toBe(200);
     expect(hoisted.add).not.toHaveBeenCalled();
   });
 
   it("falls back to composite jobId when event.id is missing", async () => {
-    vi.resetModules();
     hoisted.verify.mockResolvedValueOnce({
       event: "egress_started",
       egressInfo: { egressId: "EG_xyz", roomName: "r", status: 0 },
     });
-    const { POST } = await import("./route");
     const res = await POST(mkRequest("{}"));
     expect(res.status).toBe(200);
     const [, , opts] = hoisted.add.mock.calls[0]!;
@@ -125,14 +106,12 @@ describe("POST /api/webhooks/livekit", () => {
   });
 
   it("500 when queue enqueue throws (so LiveKit retries per its backoff)", async () => {
-    vi.resetModules();
     hoisted.verify.mockResolvedValueOnce({
       id: "EV_err",
       event: "egress_ended",
       egressInfo: { egressId: "EG_err", roomName: "r", status: 2 },
     });
     hoisted.add.mockRejectedValueOnce(new Error("redis down"));
-    const { POST } = await import("./route");
     const res = await POST(mkRequest("{}"));
     expect(res.status).toBe(500);
   });
