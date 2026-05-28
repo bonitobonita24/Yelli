@@ -90,6 +90,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: pnpm --filter @yelli/db db:generate
+
       - name: Restore Turbo cache
         uses: actions/cache@v4
         with:
@@ -128,6 +131,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @yelli/db db:generate
 
       - name: Run tests with coverage thresholds
         # Thresholds defined in apps/web/vitest.config.ts (Phase 7 #5).
