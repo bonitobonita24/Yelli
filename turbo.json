@@ -6,10 +6,16 @@
     "APP_ENV",
     "COMPOSE_PROJECT_NAME",
     "APP_PORT",
+    "APP_SLUG",
     "DATABASE_URL",
     "REDIS_URL",
     "AUTH_SECRET",
-    "NEXTAUTH_URL"
+    "AUTH_TRUST_HOST",
+    "NEXTAUTH_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+    "TURNSTILE_SECRET_KEY",
+    "STORAGE_REGION"
   ],
   "tasks": {
     "build": {

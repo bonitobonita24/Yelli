@@ -66,6 +66,20 @@ jobs:
     needs: governance
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # apps/web/src/env.ts Zod schema — `next build` evaluates these statically.
+      # Mirrors the e2e job env (lines 221-251) minus runtime-only e2e gates.
+      DATABASE_URL: postgresql://yelli_ci:yelli_ci_pw_min22chars_static_only@localhost:5432/yelli_ci
+      REDIS_URL: redis://localhost:6379
+      AUTH_SECRET: ci-quality-auth-secret-min-32-chars-static-not-prod
+      AUTH_TRUST_HOST: "true"
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+      STORAGE_REGION: us-east-1
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_SLUG: yelli
+      APP_PORT: "3000"
+      NODE_ENV: test
     strategy:
       fail-fast: false
       matrix:
