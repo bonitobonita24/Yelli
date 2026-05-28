@@ -499,11 +499,37 @@ if [ "$backup_count" -gt 0 ]; then
   echo ""
 fi
 
+# Detect Planning Assistant artifacts (V32.1.4):
+#   - docs/PRODUCT.md is necessary for any greenfield
+#   - docs/DESIGN.md OR docs/MOCKUP.jsx → strong signal user just came from Planning Assistant
+# If PA signal present, recommend Bootstrap-first path (V32.1.1 Step 7d sequence).
+# Otherwise, recommend prompt 1.2 (Universal Analyzer) which auto-routes by project state.
+pa_signal=0
+if [ -f "$PROJECT/docs/PRODUCT.md" ] && { [ -f "$PROJECT/docs/DESIGN.md" ] || [ -f "$PROJECT/docs/MOCKUP.jsx" ]; }; then
+  pa_signal=1
+fi
+
 echo "  Next steps:"
-echo "    1. Make sure docs/PRODUCT.md is in place (already done from claude.ai planning)"
-echo "    2. Open Prompt_References.html in a browser (or read Prompt_References.md)"
-echo "    3. Open Claude Code: type 'claude' in WSL2 terminal at project root"
-echo "    4. Paste prompt 1.2 (Universal Analyzer) from Prompt References"
-echo "       Claude will detect greenfield / V32 upgrade / brownfield and route you"
-echo "       to prompt 1.3 / 1.4 / 1.5 / 1.6 automatically."
+if [ "$pa_signal" -eq 1 ]; then
+  echo "    Detected Planning Assistant artifacts in docs/ (PRODUCT.md + DESIGN.md/MOCKUP.jsx)."
+  echo "    Routing to V32.1.1 fresh-project sequence:"
+  echo ""
+  echo "    1. Open Prompt_References.html in a browser (or read Prompt_References.md)"
+  echo "    2. Open Claude Code: type 'claude' in WSL2 terminal at project root"
+  echo "    3. Type 'Bootstrap' → runs Phase 0 (creates CREDENTIALS.md gate for Phase 2)"
+  echo "    4. Type 'Start Phase 2' → operational interview (Docker Hub, model routing,"
+  echo "       dev ports, git strategy, CORS origins) — NOT a duplicate of Planning Assistant"
+  echo "    5. Type 'Start Phase 3' → generates inputs.yml from docs/PRODUCT.md"
+  echo "       (Phase 2.8 is SKIPPED in Claude Code — the mockup already ran in Planning Assistant)"
+  echo ""
+  echo "    If you'd rather let Claude auto-detect project state, paste prompt 1.2"
+  echo "    (Universal Analyzer) instead — it will route greenfield to 1.3."
+else
+  echo "    1. Make sure docs/PRODUCT.md is in place (already done from claude.ai planning)"
+  echo "    2. Open Prompt_References.html in a browser (or read Prompt_References.md)"
+  echo "    3. Open Claude Code: type 'claude' in WSL2 terminal at project root"
+  echo "    4. Paste prompt 1.2 (Universal Analyzer) from Prompt References"
+  echo "       Claude will detect greenfield / V32 upgrade / brownfield and route you"
+  echo "       to prompt 1.3 / 1.4 / 1.5 / 1.6 automatically."
+fi
 echo "============================================================"

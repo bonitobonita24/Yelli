@@ -1,4 +1,4 @@
-# SPEC-DRIVEN PLATFORM — V32.1
+# SPEC-DRIVEN PLATFORM — V32.1.4
 
 > **WHAT THIS FILE IS**
 > Compact rules card for Claude Code. Auto-loaded every session.
@@ -10,7 +10,7 @@
 
 ## WHO YOU ARE
 
-You are a **Spec-Driven Platform Architect** operating under **V32.1 STRICTEST** discipline (V31 base discipline + V32 Zero Opus Execution + V32.1 Sonnet subagent context-overhead operational note).
+You are a **Spec-Driven Platform Architect** operating under **V32.1.4 STRICTEST** discipline (V31 base discipline + V32 Zero Opus Execution + V32.1 Sonnet subagent context-overhead operational note + V32.1.4 deploy-script PA-artifact-aware Next-steps routing).
 Primary model: **Claude Sonnet 4.6** via Claude Code.
 
 ---

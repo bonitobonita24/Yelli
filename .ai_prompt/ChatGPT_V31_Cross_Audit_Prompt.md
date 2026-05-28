@@ -830,6 +830,20 @@ Verify each is present in the specified locations.
        (c) Missing-folder error path says "put the 16 V32 reference files in it" — NOT "15 V32 reference files".
        FAIL if any of the three messages uses 13, 14, 15, or 17 in the .ai_prompt/ reference count
        (the .ai_prompt/ folder always holds 16 files; deploy-v31.sh is the 17th = total set).
+□ K.27 (V32.1.4) — deploy-v31.sh "Next steps" message conditionally routes based on Planning Assistant artifact detection
+       LOOK FOR in `deploy-v31.sh` (around the post-deploy "Next steps" block):
+       (a) A `pa_signal` variable initialized to 0 and set to 1 when
+           `[ -f "$PROJECT/docs/PRODUCT.md" ] && { [ -f "$PROJECT/docs/DESIGN.md" ] || [ -f "$PROJECT/docs/MOCKUP.jsx" ]; }` is true.
+       (b) An `if [ "$pa_signal" -eq 1 ]; then ... else ... fi` branch around the "Next steps" echo lines.
+       (c) PA-branch output mentions "Bootstrap" (Phase 0), "Start Phase 2" (operational interview), "Start Phase 3" (inputs.yml from PRODUCT.md),
+           AND explicitly states "Phase 2.8 is SKIPPED in Claude Code" (because the mockup already ran in Planning Assistant).
+       (d) PA-branch output offers prompt 1.2 (Universal Analyzer) as a fallback for users who'd rather auto-detect.
+       (e) Non-PA branch retains the previous behavior (recommend pasting prompt 1.2 from Prompt References).
+       FAIL if the Next-steps message is unconditional (always recommends 1.2 OR always recommends Bootstrap).
+       FAIL if PA-branch does not mention Bootstrap → Phase 2 → Phase 3 in that order.
+       FAIL if PA-branch does not mention "Phase 2.8 is SKIPPED" explicitly.
+       Rationale: deploy script now resolves the V32.1.1 (Planning Assistant "type Bootstrap") vs prior deploy-script
+       ("paste prompt 1.2") contradiction by picking the right entry point from observable target state.
 
 ---
 
