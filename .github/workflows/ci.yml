@@ -245,6 +245,10 @@ jobs:
       # Static CI-only value; never touches prod (DATABASE_URL points at ephemeral postgres service).
       # Must be >= 22 chars per seed.ts validation.
       WEBMASTER_PASSWORD: e2e-webmaster-pw-min-22-chars-static-not-prod
+      # E2E bypass dual gate (apps/web/src/server/auth-bypass.ts) — skips bcrypt/Turnstile/UI.
+      # Both required: AUTH_BYPASS_FOR_E2E=true AND APP_ENV!=production. Never set in prod env.
+      AUTH_BYPASS_FOR_E2E: "true"
+      APP_ENV: development
 
     steps:
       - name: Checkout
