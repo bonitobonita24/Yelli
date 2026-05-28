@@ -19,6 +19,7 @@ export {
 export {
   getS3Client,
   uploadObject,
+  getPresignedUploadUrl,
   getDownloadUrl,
   deleteObject,
   objectExists,
@@ -27,6 +28,8 @@ export {
 // Type re-exports
 export type {
   UploadObjectInput,
+  GetPresignedUploadUrlInput,
+  GetPresignedUploadUrlOutput,
   GetDownloadUrlInput,
   GetDownloadUrlOutput,
   DeleteObjectInput,

@@ -129,6 +129,59 @@ export interface GetDownloadUrlOutput {
   expiresAt: string;
 }
 
+export interface GetPresignedUploadUrlInput {
+  /** Tenant-prefixed storage key — use buildStorageKey() from ./keys */
+  storageKey: string;
+  /** Validated content-type — use isAllowedMimeType() from ./mime before calling */
+  contentType: string;
+  /** File size in bytes — written into the signed URL so the client cannot swap a larger file */
+  contentLength: number;
+  /**
+   * URL expiry in seconds.
+   * Default: 900 (15 minutes). Maximum recommended: 3600 (1 hour).
+   */
+  expiresInSeconds?: number;
+}
+
+export interface GetPresignedUploadUrlOutput {
+  /** Pre-signed PUT URL valid for the requested duration */
+  url: string;
+  /** ISO timestamp when the URL expires */
+  expiresAt: string;
+}
+
+/**
+ * Generate a pre-signed PUT URL so a browser can upload directly to S3/MinIO
+ * without routing the file through the API tier.
+ *
+ * SECURITY:
+ * - Caller MUST use buildStorageKey() to generate the storageKey (never user input).
+ * - Caller MUST validate MIME type via isAllowedMimeType() before calling this.
+ * - The pre-signed URL is single-use and time-limited — do not cache.
+ * - After upload completes the caller MUST call the `commit` API endpoint to
+ *   persist the SharedFile row — the file is not tracked until commit runs.
+ */
+export async function getPresignedUploadUrl(
+  input: GetPresignedUploadUrlInput,
+): Promise<GetPresignedUploadUrlOutput> {
+  const client = getS3Client();
+  const bucket = getBucket();
+  const expiresIn = input.expiresInSeconds ?? 900;
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: input.storageKey,
+    ContentType: input.contentType,
+    ContentLength: input.contentLength,
+    ContentDisposition: 'attachment',
+  });
+
+  const url = await getSignedUrl(client, command, { expiresIn });
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+  return { url, expiresAt };
+}
+
 /**
  * Generate a pre-signed download URL for a stored object.
  *

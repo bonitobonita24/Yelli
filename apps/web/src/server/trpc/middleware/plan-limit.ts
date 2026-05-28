@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { prisma } from "@yelli/db";
 import { hasCapability, isAtNumericLimit } from "@yelli/shared";
 
+import type { MiddlewareResult } from "@trpc/server/unstable-core-do-not-import";
 import type { BooleanPlanFeature, NumericPlanFeature } from "@yelli/shared";
 
 /**
@@ -11,11 +12,15 @@ import type { BooleanPlanFeature, NumericPlanFeature } from "@yelli/shared";
  * (see apps/web/src/server/trpc/trpc.ts:48-87 — adminProcedure uses inline async
  * functions identically). Composing with adminProcedure/protectedProcedure
  * preserves narrowed ctx because tRPC's type inference flows through `.use()`.
+ *
+ * `next` is typed as returning `Promise<MiddlewareResult<unknown>>` so callers
+ * can pass the function directly to `.use()` without casts — tRPC's `.use()`
+ * accepts any function whose `next()` return type is assignable to MiddlewareResult.
  */
 
 type MiddlewareOpts = {
   ctx: unknown;
-  next: () => Promise<unknown>;
+  next: () => Promise<MiddlewareResult<unknown>>;
 };
 
 export function enforceNumericPlanLimit(
