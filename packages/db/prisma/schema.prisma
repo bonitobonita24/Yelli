@@ -614,6 +614,7 @@ model SharedFile {
 
   created_at DateTime  @default(now())
   expires_at DateTime?
+  deleted_at DateTime?
 
   // Relations
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
@@ -623,6 +624,7 @@ model SharedFile {
   @@index([organization_id])
   @@index([meeting_id])
   @@index([expires_at])
+  @@index([deleted_at])
   @@map("shared_files")
 }
 
