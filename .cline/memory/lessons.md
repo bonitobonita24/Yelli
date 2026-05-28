@@ -1735,3 +1735,59 @@ The outer `as never` satisfies the DynamicModelExtensionFluentApi parameter type
 - Files:     e2e/tsconfig.json (NEW 24 lines)
 - Concepts:  e2e-tsconfig, typecheck-gate, workspace-config, monorepo
 - Narrative: New `e2e/tsconfig.json` extends `../tsconfig.base.json` with `rootDir: "."`, excludes `test-results/` + `playwright-report/`, and sets explicit `typeRoots: ["../apps/web/node_modules/@types", "../node_modules/@types"]` to resolve the pnpm-hoisted `@types/node`. Future e2e spec files inherit standalone typecheck out of the box. Future fixture additions that introduce invalid Prisma enum values or other type errors will be caught at authoring time, not deferred to Playwright runtime. Verification command: `cd e2e && npx tsc -p . --noEmit` — now part of pre-commit gate per [[e2e-typecheck-gate-mandatory]] / DECISIONS_LOG G10.
+
+## 2026-05-28 — 🔴 Turbo globalEnv allowlist gotcha
+- Type:      🔴 gotcha
+- Phase:     CI recovery sprint
+- Files:     turbo.json, .github/workflows/ci.yml
+- Concepts:  turbo, env-vars, next-build, zod-validation, ci
+- Narrative: Turbo strips env vars NOT declared in `turbo.json` globalEnv before invoking child processes such as `next build`. Adding env vars only to the GitHub Actions `env:` block is insufficient — `next build` then fails Zod env-schema validation with cryptic "missing required env var" errors despite the var being visible to the shell. Fix is two-part: declare the var in `turbo.json` globalEnv AND in the workflow `env:` block. Verified by commit 21b1cfd which added TURNSTILE_SECRET_KEY (plus the full required set) to globalEnv after the GHA env block alone failed.
+# ---
+
+## 2026-05-28 — 🔴 E2E fixture file_path must start with org ID (no prefix)
+- Type:      🔴 gotcha
+- Phase:     E2E test infrastructure
+- Files:     apps/web/tests/fixtures/seed-recording.ts, apps/api recordings ownership module
+- Concepts:  e2e, fixtures, storage-keys, ownership-check, tenant-isolation
+- Narrative: `verifyKeyOwnership` extracts the org ID from a storage key by splitting on the first `/` and reading segment[0] as the org ID. Any fixture prefix (e.g. `e2e-mock/{orgId}/...`) breaks ownership — the parser reads `e2e-mock` as the org and returns NOT_FOUND on softDelete and other ownership-gated ops. Rule: fixture `file_path` must be the bare `{orgId}/...` — no namespacing prefix. The bypass auth provider masked this for months because auth failed before the ownership check ever ran.
+# ---
+
+## 2026-05-28 — 🔴 tRPC response shape is camelCase by contract
+- Type:      🔴 gotcha
+- Phase:     E2E test infrastructure
+- Files:     apps/web/tests/e2e/recording-flow.spec.ts, apps/api recordings router
+- Concepts:  trpc, response-shape, naming-convention, e2e-contract
+- Narrative: tRPC routers return camelCase by default (`recordingId`, `egressId`). E2E test code written assuming snake_case (`id`, `egress_id`) gets `undefined` at runtime — the test passes auth and the network call succeeds, but property access on the response silently yields undefined and cascades into downstream assertion failures. PR #2 corrected `recording-flow.spec.ts:133` to consume `{ recordingId, egressId }`. Rule: contract names are camelCase end-to-end unless an explicit transformer is documented.
+# ---
+
+## 2026-05-28 — 🟤 E2E bypass auth provider belongs on day one
+- Type:      🟤 decision
+- Phase:     CI recovery sprint
+- Files:     apps/web/auth bypass provider, apps/web/tests/e2e/auth.setup.ts
+- Concepts:  auth, e2e, bypass-provider, livekit-mock, ci-parity
+- Narrative: Playwright tests must use a dedicated bypass auth provider (gated by `LIVEKIT_E2E_MOCK=true`) from the first E2E test, not retrofitted later. The bypass unblocks contract testing without a real OAuth flow or LiveKit token. Without it, real auth flakiness hides downstream contract bugs (fixture format, response shape) for months — both fixture-prefix and response-shape bugs only surfaced after the bypass landed and let the test runner reach the assertions. Lock-in decision: every new test surface gets a bypass provider before the first spec is written.
+# ---
+
+## 2026-05-28 — 🟡 Run prisma generate before CI lint/typecheck/test/build
+- Type:      🟡 fix
+- Phase:     CI recovery sprint
+- Files:     .github/workflows/ci.yml
+- Concepts:  prisma, ci, typecheck, generated-types
+- Narrative: The generated Prisma client is not committed. CI must run `pnpm prisma generate` (or the equivalent workspace task) after `pnpm install --frozen-lockfile` and BEFORE any matrix task that imports `@prisma/client`. Without this step, lint/typecheck/test/build all fail with module-not-found on every Prisma import. The fix was a single step added at the top of the quality matrix; runs in ~5 seconds and uses Turbo cache on warm runs.
+# ---
+
+## 2026-05-28 — 🔴 CI workflow only triggers on main + pull_request (not feature branches)
+- Type:      🔴 gotcha
+- Phase:     CI recovery sprint
+- Files:     .github/workflows/ci.yml
+- Concepts:  github-actions, workflow-triggers, feature-branches, pr-flow
+- Narrative: The CI workflow declares `on: push (branches: main)` and `on: pull_request`. Pushing directly to a feature branch (e.g. `fix/ci-quality-env-block`) produces NO CI run, and the GitHub API returns 404 when fetching run IDs by branch. Implication for the fix-and-verify loop: open the PR FIRST to trigger the `pull_request` workflow, then watch the PR's checks. Pushing to the branch alone gives a false sense of "nothing failed yet" because nothing ran.
+# ---
+
+## 2026-05-28 — 🔴 Webmaster user lookup must use a single shared helper
+- Type:      🔴 gotcha
+- Phase:     E2E test infrastructure
+- Files:     apps/web/tests/fixtures/seed-recording.ts, apps/web/auth bypass provider
+- Concepts:  e2e, fixtures, webmaster-user, lookup-divergence, shared-helper
+- Narrative: `seedRecording` and the auth-bypass provider both resolved the webmaster user by email, but through different DB lookup paths — one joined org membership, the other did not. Symptom: fixture-created records appeared with a `created_by` that did not match the bypass-authenticated session's user ID, breaking every ownership-gated assertion. Both call sites now route through one shared `findWebmaster()` helper. Rule: any user lookup reused across test infra and runtime auth MUST go through a single helper — never duplicate the query.
+# ---
