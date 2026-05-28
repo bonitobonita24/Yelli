@@ -88,7 +88,7 @@ export async function seedRecording(opts?: {
         meeting_id: meeting.id,
         call_log_id: callLog.id,
         recorded_by_user_id: userId,
-        file_path: `e2e-mock/${orgId}/recordings/${egressId}.mp4`,
+        file_path: `${orgId}/recordings/${egressId}.mp4`,
         status,
         egress_id: egressId,
       },
