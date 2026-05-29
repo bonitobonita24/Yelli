@@ -8,13 +8,13 @@
 
 **Overlay Cluster A-group SHIPPED — sharedFiles + whiteboardSnapshots tRPC routers in PR #3.** Branch `feat/shared-files-router` pushed with 2 commits (Sub-A1 `5fce2a6` + Sub-A2 `cd3c653`). Both routers registered in `appRouter`; feature-router keys remain alphabetical; admin/superadmin preserved at end. Sub-A1 added 5 plan-gated procedures (requestUpload/commit/listByMeeting/getDownloadUrl/softDelete) on `requirePlanCapability("filePersistence")` with direct-to-storage upload pattern; Sub-A2 added 2 procedures (save/getLatest) on `requirePlanCapability("whiteboardPersistence")` with NOT_FOUND enumeration guard on cross-org meeting access. Schema: `SharedFile.deleted_at DateTime?` + index added (migration `20260529000000_add_shared_file_deleted_at`); `WhiteboardSnapshot` model was pre-existing. Storage: `@yelli/storage` now exports `getPresignedUploadUrl()` — keeps `@aws-sdk/*` out of web app workspace. Middleware: `plan-limit.ts` MiddlewareOpts.next typed as `Promise<MiddlewareResult<unknown>>` — zero-cast `.use(<guard>)` for any plan-capability middleware. Test suite locally: 25/25 router tests pass (19 sharedFiles + 6 whiteboardSnapshots). tsc 0, eslint 0/0 on changed files. No `as any`, no `@ts-ignore`. Single canonical `as Prisma.InputJsonValue` cast on Json column write (whiteboardSnapshots.save). Governance branch `chore/governance-overlay-a-group` lands this entry + CHANGELOG_AI + 5 typed lessons.md entries (🟤×2 decisions, 🔴×2 gotchas, 🟢×1 change). 4 Sonnet executor dispatches per Sub-A2 (1 router+register, 1 tests, 2 micro-fixes for import path + lint) — exactly the V32.1 op-note pattern of recovery via re-decomposition and Opus-side `ctx_execute` verification.
 
-**Overlay Cluster status (post-A-group):**
-- Sub-A1 (sharedFiles tRPC router):           ✅ SHIPPED 2026-05-29 (`5fce2a6` in PR #3)
-- Sub-A2 (whiteboardSnapshots tRPC router):   ✅ SHIPPED 2026-05-29 (`cd3c653` in PR #3)
-- Sub-B (whiteboard realtime sockets):        ⬜ NEXT (parallel-eligible with Sub-B′)
-- Sub-B′ (file-share socket transport):       ⬜ NEXT (parallel-eligible with Sub-B; free-tier ≤2MB base64 broadcast)
-- Sub-C (in-call-file-dropzone.tsx wiring):   ⬜ PENDING — needs A-group (DONE) + Sub-B′ events
-- Sub-D (in-call-whiteboard.tsx wiring):      ⬜ PENDING — needs A-group (DONE) + Sub-B events
+**Overlay Cluster status (post-B-group):**
+- Sub-A1 (sharedFiles tRPC router):            ✅ SHIPPED 2026-05-29 (`5fce2a6` in PR #3)
+- Sub-A2 (whiteboardSnapshots tRPC router):    ✅ SHIPPED 2026-05-29 (`cd3c653` in PR #3)
+- Sub-B (whiteboard realtime sockets):         ✅ SHIPPED 2026-05-29 (`c8039c5` + `70a6f0f` + `ef5b930` in PR #5)
+- Sub-B′ (file-share socket transport):        ✅ SHIPPED 2026-05-29 (`ba1c158` + `ef5b930` in PR #5)
+- Sub-C (in-call-file-dropzone.tsx wiring):    ⬜ NEXT — A-group ✓ + Sub-B′ ✓ both shipped
+- Sub-D (in-call-whiteboard.tsx wiring):       ⬜ NEXT — A-group ✓ + Sub-B ✓ both shipped
 
 **A-group artifacts:**
 - `apps/web/src/server/trpc/routers/sharedFiles.ts` (315L) — Sub-A1 router
@@ -26,6 +26,15 @@
 - `packages/db/prisma/schema.prisma` — `SharedFile.deleted_at` + index added
 - `packages/db/prisma/migrations/20260529000000_add_shared_file_deleted_at/migration.sql` — migration
 - `packages/storage/src/client.ts` (+53L) + `src/index.ts` (+3L) — `getPresignedUploadUrl()` helper
+
+**Overlay Cluster B-group SHIPPED — whiteboard + free-tier file-share socket transport in PR #5.** Branch `feat/overlay-b-group` cherry-pick integration off main (`12f5b48`). 5 commits, 810 insertions, 5 files. Architecture: org-channel + payload `meetingId` filter (locked chat realtime pattern, 2026-05-25). Sub-B: 3 events (stroke / cursor / clear) with Zod validation + byte caps (32KB stroke, 512B cursor); cursor userId server-stamped from session. Sub-B′: free-tier socket-only broadcast, server-side 2MB cap from base64 length, MIME allowlist (7 types), 4-reason rejection emit. Wire-up: both handlers receive `{io, socket}` (need IOServer for emitToOrg), unlike chat which receives `{socket}` (emit happens from tRPC mutation). Cross-org gate on every event matches chat.send posture: `prisma.meeting.findUnique({where:{id:meetingId}, select:{organization_id:true}})` → silent drop or REJECTED emit on mismatch. Test suite: 521/521 (+17 whiteboard + 10 file-share + 6 cross-org). tsc 0, eslint 0. No `as any`, no `@ts-ignore`. Per-meeting Socket.IO rooms NOT adopted — locked decision preserved; revisit if Sub-C/D client wiring needs stricter isolation.
+
+**B-group artifacts:**
+- `apps/web/src/server/socket/whiteboard.ts` (124L) — Sub-B handler
+- `apps/web/src/server/socket/whiteboard.test.ts` (279L, 13/13 ✓) — Sub-B tests
+- `apps/web/src/server/socket/file-share.ts` (127L) — Sub-B′ handler
+- `apps/web/src/server/socket/file-share.test.ts` (276L, 10/10 ✓) — Sub-B′ tests
+- `apps/web/src/server/socket/server.ts` (+4L wire-up) — both handlers registered
 
 # ---
 
@@ -40,7 +49,7 @@
 - sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
 - sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (branch tip `a1e3351`, on main)
 - CI recovery sprint (post-sub-4 stabilisation):   ✅ CLOSED 2026-05-28 (8 commits + 2 PRs, final `62fab35`; governance `06dec12`/`a50ab77`/`6d642a7` + this entry)
-- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group shipped 2026-05-29 (PR #3); B/B′/C/D pending
+- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group + B-group shipped 2026-05-29 (PR #3, PR #5); Sub-C + Sub-D pending
 
 # ---
 
@@ -54,7 +63,7 @@
 - sub-3 (LiveKit Egress recording feed):           ✅ CLOSED 2026-05-26 AM (`1053729`)
 - sub-3 polish (recordings UX):                    ✅ CLOSED 2026-05-26 PM (`2175f61`)
 - sub-4 (Playwright E2E pipeline):                 ✅ CLOSED 2026-05-27 (squash on main; branch tip `a1e3351`)
-- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group shipped 2026-05-29 (PR #3); B/B′/C/D pending
+- overlay cluster (File Sharing + Whiteboard):     🟡 IN PROGRESS — A-group + B-group shipped 2026-05-29 (PR #3, PR #5); Sub-C + Sub-D pending
 
 **Files added in this polish (3):**
 - `apps/web/src/components/recordings/recording-delete-button.tsx` — client component with shadcn AlertDialog confirmation + softDelete mutation + invalidate-and-refresh on success + inline error on failure
