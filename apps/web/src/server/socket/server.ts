@@ -31,6 +31,7 @@ import { env } from "@/env";
 import { socketAuthMiddleware } from "@/server/socket/auth";
 import { attachCallHandlers } from "@/server/socket/calls";
 import { attachChatHandlers } from "@/server/socket/chat";
+import { attachFileShareHandlers } from "@/server/socket/file-share";
 import {
   attachInCallHandlers,
   createInCallRoster,
@@ -39,6 +40,7 @@ import {
   attachPresenceHandlers,
   createPresenceRoster,
 } from "@/server/socket/presence";
+import { attachWhiteboardHandlers } from "@/server/socket/whiteboard";
 
 import type { Server as HttpServer } from "http";
 
@@ -106,6 +108,8 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
     attachInCallHandlers({ io, socket, roster: inCallRoster });
     attachCallHandlers({ io, socket });
     attachChatHandlers({ socket });
+    attachFileShareHandlers({ io, socket });
+    attachWhiteboardHandlers({ io, socket });
   });
 
   return io;
