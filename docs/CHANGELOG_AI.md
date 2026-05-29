@@ -39,6 +39,29 @@ Commits in PR #3 (feat/shared-files-router → main):
 - 5fce2a6 feat(shared-files): add sharedFiles tRPC router with plan-gated procedures
 - cd3c653 feat(whiteboard): add whiteboardSnapshots tRPC router with plan-gated save/getLatest
 
+## 2026-05-29 — Overlay Cluster B-group: whiteboard + free-tier file-share socket transport (PR #5)
+
+- Agent:               CLAUDE_CODE (Opus 4.7 architect + Sonnet 4.6 executors per V32 §4)
+- Why:                 Land the realtime socket layer for in-call whiteboard collaboration and free-tier file sharing. Pairs with A-group routers (PR #3) — A-group = paid-tier persistence via tRPC, B-group = realtime broadcast (free-tier file share is socket-only, paid-tier persists via A-group + broadcasts via B-group).
+- Files added:         apps/web/src/server/socket/whiteboard.ts (124L), apps/web/src/server/socket/whiteboard.test.ts (279L, 13/13 ✓), apps/web/src/server/socket/file-share.ts (127L), apps/web/src/server/socket/file-share.test.ts (276L, 10/10 ✓)
+- Files modified:      apps/web/src/server/socket/server.ts (+4L wire-up; alphabetical import order preserved: chat → file-share → in-call → presence → whiteboard)
+- Files deleted:       none
+- Schema/migrations:   none
+- Errors encountered:  Security review flagged 3 issues post-initial-commit: (1) HIGH — whiteboard socket emits skipped meeting-membership check; (2) MEDIUM — cursor userId client-supplied (spoof risk); (3) MEDIUM — file-share emits skipped meeting-membership check
+- Errors resolved:     (2) Cursor userId now server-stamped from session (mirrors file-share senderUserId pattern). (1)+(3) Cross-org meeting check via prisma.meeting.findUnique({where:{id:meetingId}, select:{organization_id:true}}) before emit — silent drop (whiteboard) / REJECTED emit with reason "meeting_not_accessible" (file-share). Matches chat.send tRPC posture exactly. Within-org cross-meeting interaction permitted (locked org-channel pattern unchanged).
+
+Commits in PR #5 (feat/overlay-b-group → main):
+- c8039c5 feat(socket/whiteboard): add whiteboard realtime handler (Sub-B)
+- ba1c158 feat(socket/file-share): add free-tier file-share socket transport (Sub-B′)
+- 477f79d feat(socket): wire whiteboard + file-share handlers into server.ts
+- 70a6f0f fix(socket/whiteboard): server-stamp cursor userId from session
+- ef5b930 fix(socket): add cross-org meeting gate to whiteboard + file-share handlers
+
+Test suite: 521/521 passing locally (+6 cross-org gating tests vs initial 515); CI 8/8 green on PR #5
+Dispatch tally: 5 Sonnet executor dispatches (Sub-B + Sub-B′ parallel-worktree, wire-up sequential, 2 security micro-fixes). Zero thrash. V32.1 op-note pattern held (each dispatch ≤1K-token prompt, 10-26 tool uses per dispatch — substantial-file creation tasks).
+
+---
+
 ## 2026-05-28 — CI Recovery Sprint: 2/8 → 8/8 CI jobs green
 
 - Agent: CLAUDE_CODE (Architect: Opus 4.7 inline orchestration; Sonnet 4.6 dispatches for atomic fixes per V32 Architect-Execute Model. STATE.md was the lone Opus direct write per V32 R1 §4 checkpoint exception across the sprint.)

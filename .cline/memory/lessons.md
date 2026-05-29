@@ -1831,3 +1831,43 @@ The outer `as never` satisfies the DynamicModelExtensionFluentApi parameter type
 - Concepts:  prisma, json-column, type-cast, z.unknown, canonical
 - Narrative: Sub-A2 `save` procedure receives `snapshotData: z.unknown()` from the client and writes to the `snapshot_data Json` column. Direct assignment fails Prisma's strict input type. `input.snapshotData as Prisma.InputJsonValue` is the canonical Prisma idiom for the `z.unknown() → Json` flow. This is the ONLY acceptable `as` cast in the codebase — all others remain banned (`grep -E 'as any|as unknown as|@ts-ignore' apps/web/src/server/trpc/routers/` returns empty). Decision lock: future routers writing to Json columns MUST use this exact cast, NEVER `as any` or `as unknown as Json`.
 # ---
+
+## 2026-05-29 — 🟤 Overlay Cluster B-group cross-org gate matches chat.send tRPC posture (org check only, not participant)
+- Type:      🟤 decision
+- Phase:     Overlay Cluster Sub-B + Sub-B′ (PR #5)
+- Files:     apps/web/src/server/socket/whiteboard.ts, apps/web/src/server/socket/file-share.ts
+- Concepts:  socket-security, cross-org, chat-parity, meeting-membership, locked-design
+- Narrative: Security review flagged whiteboard/file-share socket emits as missing meeting-membership verification (Findings #1 HIGH and #3 MEDIUM). Adopted "Option B" — minimum cross-org check via `prisma.meeting.findUnique({where:{id:meetingId}, select:{organization_id:true}})` before emit. This matches `chat.send` exactly — chat also does ONLY org-match check, NOT participant membership check. So within-org cross-meeting interaction (any org member can send strokes / cursors / files to any meeting in their org) is the chat-parity posture and is INTENTIONALLY permitted. Stricter options considered and deferred: (D) per-event `meetingParticipant.findFirst` (closes within-org cross-meeting injection but costs 1-2 extra DB hits per cursor event at ~60fps); (C) per-meeting Socket.IO rooms (cleanest, but breaks locked org-channel decision and pushes scope into Sub-C/D client wiring). Revisit if Sub-C/D introduces meeting-entry coordination — at that point per-meeting rooms become natural.
+# ---
+
+## 2026-05-29 — 🔴 Async socket.on handlers need flushAsync helper in tests
+- Type:      🔴 gotcha
+- Phase:     Overlay Cluster Sub-B + Sub-B′ (PR #5)
+- Files:     apps/web/src/server/socket/whiteboard.test.ts, apps/web/src/server/socket/file-share.test.ts
+- Concepts:  vitest, async-handlers, socket-tests, microtask-flush
+- Narrative: Adding `await prisma.meeting.findUnique(...)` to socket.on callbacks made them async. Existing tests used `socket.__emit("event", payload)` which returns immediately — assertions for `emitToOrg` calls fired before the async handler resolved, causing false failures. Fix: introduced `flushAsync = () => new Promise(resolve => setImmediate(resolve))` and `await flushAsync()` after every `__emit` in tests. Any future socket handler that becomes async (DB lookups, IO, etc.) needs the same pattern. Alternative considered: make `__emit` return the listener's promise so tests `await __emit(...)` directly. Did NOT adopt because some listeners are sync — uniformity hurts more than helps. Pattern: "if you add `await` inside a socket.on, update tests to use flushAsync."
+# ---
+
+## 2026-05-29 — 🟢 server.ts socket wire-up convention: B-group handlers take {io, socket}, chat takes {socket}
+- Type:      🟢 change
+- Phase:     Overlay Cluster wire-up (PR #5, commit 477f79d)
+- Files:     apps/web/src/server/socket/server.ts
+- Concepts:  socket-wire-up, attach-handler-signature, emit-source
+- Narrative: Existing socket attach-handler signatures diverge by emit source: `attachChatHandlers({ socket })` because chat's send-side runs in tRPC (mutation calls emitToOrg with its own IOServer reference via `getIO()`). New B-group handlers `attachWhiteboardHandlers({ io, socket })` and `attachFileShareHandlers({ io, socket })` need IOServer at attach time because they emit directly from socket.on. The connection callback in server.ts now passes `{io, socket}` to all in-call / calls / presence / file-share / whiteboard handlers; only chat keeps the `{socket}` shorthand. Future socket handlers that emit from socket.on (not from tRPC) should follow the `{io, socket}` pattern.
+# ---
+
+## 2026-05-29 — 🟤 Per-meeting Socket.IO rooms NOT adopted for B-group; org-channel + meetingId filter preserved
+- Type:      🟤 decision
+- Phase:     Overlay Cluster Sub-B + Sub-B′ design review
+- Files:     apps/web/src/server/socket/whiteboard.ts, apps/web/src/server/socket/file-share.ts
+- Concepts:  socket-rooms, org-channel, meeting-isolation, locked-pattern, deferred-architecture
+- Narrative: When security review pushed for stricter per-meeting isolation, considered breaking the locked org-channel pattern (chat realtime, 2026-05-25) by introducing per-meeting Socket.IO rooms. Cost analysis: rooms eliminate per-event DB cost (the cross-org check), but require new join/leave events, meeting-participants verification at join time, room cleanup on disconnect, and client-side coordination. Decision: do NOT adopt for B-group. Preserve the locked pattern. The minimum cross-org check (Option B) achieves chat-parity security at acceptable cost (one indexed DB hit per stroke/cursor — ~60/s peak for active drawing). Revisit ONLY if Sub-C/D client wiring introduces meeting-entry coordination naturally — then per-meeting rooms become a small additional step rather than a re-architecture. Until then: org-channel + payload meetingId filter is the convention for ALL new realtime features.
+# ---
+
+## 2026-05-29 — 🔴 Worktree-spawned agents lack `prisma generate`; "pre-existing failures" claim must be verified on main
+- Type:      🔴 gotcha
+- Phase:     Overlay Cluster Sub-B + Sub-B′ parallel dispatch (PR #5)
+- Files:     n/a (operational pattern, not code)
+- Concepts:  worktree-isolation, prisma-client-generation, sonnet-verification-claims, opus-side-validation
+- Narrative: Both Sub-B and Sub-B′ Sonnet agents ran in fresh git worktrees off main. Both reported "DONE — pre-existing failures in xendit-webhook.ts / 3 vitest suites — same failures exist on main before our commits." The claim was WRONG: those failures were worktree-local because `prisma generate` had not been run in the fresh node_modules of each worktree (Prisma client types missing). Main was actually green. Opus-side verification via `ctx_execute` on the real main with prisma generated confirmed clean state. Pattern: any Sonnet "pre-existing failure" claim from a worktree dispatch MUST be verified by Opus on main with the build environment fully set up before trusting it — otherwise valid code looks broken or merge-blocking issues look benign. Workaround for future parallel dispatches: include `cd packages/db && pnpm prisma generate` in the worktree setup step of the dispatch prompt.
+# ---
