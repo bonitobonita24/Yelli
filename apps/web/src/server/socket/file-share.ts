@@ -10,10 +10,14 @@
  * rejection. Accepted files are broadcast to all org peers via emitToOrg
  * using FILE_SHARE_BROADCAST_EVENT.
  *
+ * Cross-org gate: meetingId is verified against the caller's org before any
+ * broadcast — matching the chat.send tRPC posture (prisma.meeting.findUnique).
+ * On mismatch or DB error, FILE_SHARE_REJECTED_EVENT is emitted to the sender.
+ *
  * Paid-tier persistence (tRPC + MinIO) flows through the sharedFiles
- * router and is completely separate from this module. This module is
- * socket-only transport — no database involvement whatsoever.
+ * router and is completely separate from this module.
  */
+import { prisma } from "@yelli/db";
 import { z } from "zod";
 
 import { emitToOrg, joinOrgChannel } from "@/server/socket/channels";
@@ -73,7 +77,7 @@ export function attachFileShareHandlers(args: {
 
   joinOrgChannel(socket, FILE_SHARE_BROADCAST_EVENT);
 
-  socket.on(FILE_SHARE_UPLOAD_EVENT, (raw: unknown) => {
+  socket.on(FILE_SHARE_UPLOAD_EVENT, async (raw: unknown) => {
     const parsed = uploadInput.safeParse(raw);
     if (!parsed.success) {
       socket.emit(FILE_SHARE_REJECTED_EVENT, { reason: "invalid_payload" });
@@ -96,6 +100,21 @@ export function attachFileShareHandlers(args: {
         reason: "too_large",
         maxBytes: MAX_FREE_TIER_FILE_BYTES,
       });
+      return;
+    }
+
+    // Cross-org gate: verify the meeting belongs to the caller's org.
+    try {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: parsed.data.meetingId },
+        select: { organization_id: true },
+      });
+      if (!meeting || meeting.organization_id !== session.organizationId) {
+        socket.emit(FILE_SHARE_REJECTED_EVENT, { reason: "meeting_not_accessible" });
+        return;
+      }
+    } catch {
+      socket.emit(FILE_SHARE_REJECTED_EVENT, { reason: "meeting_not_accessible" });
       return;
     }
 

@@ -8,8 +8,10 @@
  *
  * Server enforces: Zod schema validation + byte-length caps on every inbound
  * event. Silent drop on failure — no error emit (high-frequency input path).
- * Cross-org leak is prevented by emitToOrg (never socket.broadcast.emit).
+ * Cross-org gate: meetingId is verified against the caller's org before any
+ * broadcast — matching the chat.send tRPC posture (prisma.meeting.findUnique).
  */
+import { prisma } from "@yelli/db";
 import { z } from "zod";
 
 import { emitToOrg, joinOrgChannel } from "@/server/socket/channels";
@@ -71,25 +73,52 @@ export function attachWhiteboardHandlers(args: {
   joinOrgChannel(socket, WHITEBOARD_CURSOR_EVENT);
   joinOrgChannel(socket, WHITEBOARD_CLEAR_EVENT);
 
-  socket.on(WHITEBOARD_STROKE_EVENT, (raw: unknown) => {
+  socket.on(WHITEBOARD_STROKE_EVENT, async (raw: unknown) => {
     const parsed = strokeInput.safeParse(raw);
     if (!parsed.success) return;
     const json = JSON.stringify(parsed.data);
     if (Buffer.byteLength(json, "utf8") > MAX_STROKE_BYTES) return;
+    try {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: parsed.data.meetingId },
+        select: { organization_id: true },
+      });
+      if (!meeting || meeting.organization_id !== organizationId) return;
+    } catch {
+      return;
+    }
     emitToOrg(io, organizationId, WHITEBOARD_STROKE_EVENT, parsed.data);
   });
 
-  socket.on(WHITEBOARD_CURSOR_EVENT, (raw: unknown) => {
+  socket.on(WHITEBOARD_CURSOR_EVENT, async (raw: unknown) => {
     const parsed = cursorInput.safeParse(raw);
     if (!parsed.success) return;
     const json = JSON.stringify(parsed.data);
     if (Buffer.byteLength(json, "utf8") > MAX_CURSOR_BYTES) return;
+    try {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: parsed.data.meetingId },
+        select: { organization_id: true },
+      });
+      if (!meeting || meeting.organization_id !== organizationId) return;
+    } catch {
+      return;
+    }
     emitToOrg(io, organizationId, WHITEBOARD_CURSOR_EVENT, { ...parsed.data, userId: session.userId });
   });
 
-  socket.on(WHITEBOARD_CLEAR_EVENT, (raw: unknown) => {
+  socket.on(WHITEBOARD_CLEAR_EVENT, async (raw: unknown) => {
     const parsed = clearInput.safeParse(raw);
     if (!parsed.success) return;
+    try {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: parsed.data.meetingId },
+        select: { organization_id: true },
+      });
+      if (!meeting || meeting.organization_id !== organizationId) return;
+    } catch {
+      return;
+    }
     emitToOrg(io, organizationId, WHITEBOARD_CLEAR_EVENT, parsed.data);
   });
 }

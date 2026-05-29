@@ -1,3 +1,4 @@
+import { prisma } from "@yelli/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emitToOrg, joinOrgChannel } from "@/server/socket/channels";
@@ -12,6 +13,10 @@ import {
 
 import type { SocketSession } from "@/server/socket/auth";
 import type { Server as IOServer, Socket } from "socket.io";
+
+vi.mock("@yelli/db", () => ({
+  prisma: { meeting: { findUnique: vi.fn() } },
+}));
 
 vi.mock("@/server/socket/channels", () => ({
   emitToOrg: vi.fn(),
@@ -71,12 +76,20 @@ const VALID_PNG_PAYLOAD = {
 /** base64 string long enough that Math.floor(length * 3 / 4) > 2 MB. */
 const OVERSIZE_BASE64 = "A".repeat(2_800_000); // decodes to ~2.1 MB
 
+/** Flush all pending microtasks (async socket handlers). */
+function flushAsync(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("attachFileShareHandlers", () => {
   beforeEach(() => {
     vi.mocked(emitToOrg).mockClear();
     vi.mocked(joinOrgChannel).mockClear();
+    vi.mocked(prisma.meeting.findUnique).mockResolvedValue({
+      organization_id: SAMPLE_SESSION.organizationId,
+    } as never);
   });
 
   // ── 1. attaches ────────────────────────────────────────────────────────────
@@ -109,10 +122,11 @@ describe("attachFileShareHandlers", () => {
 
   // ── 3. happy path PNG ─────────────────────────────────────────────────────
 
-  it("broadcasts valid PNG payload to org peers with senderUserId + sentAt", () => {
+  it("broadcasts valid PNG payload to org peers with senderUserId + sentAt", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, VALID_PNG_PAYLOAD);
+    await flushAsync();
 
     expect(emitToOrg).toHaveBeenCalledOnce();
     const call0 = vi.mocked(emitToOrg).mock.calls[0];
@@ -132,13 +146,14 @@ describe("attachFileShareHandlers", () => {
 
   // ── 4. oversize ───────────────────────────────────────────────────────────
 
-  it("rejects oversize file with too_large reason and does not broadcast", () => {
+  it("rejects oversize file with too_large reason and does not broadcast", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, {
       ...VALID_PNG_PAYLOAD,
       base64Data: OVERSIZE_BASE64,
     });
+    await flushAsync();
 
     expect(socket.emit).toHaveBeenCalledOnce();
     expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
@@ -150,13 +165,14 @@ describe("attachFileShareHandlers", () => {
 
   // ── 5. disallowed MIME ────────────────────────────────────────────────────
 
-  it("rejects disallowed MIME type and does not broadcast", () => {
+  it("rejects disallowed MIME type and does not broadcast", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, {
       ...VALID_PNG_PAYLOAD,
       mimeType: "application/x-msdownload",
     });
+    await flushAsync();
 
     expect(socket.emit).toHaveBeenCalledOnce();
     expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
@@ -168,11 +184,12 @@ describe("attachFileShareHandlers", () => {
 
   // ── 6. invalid payload — missing meetingId ────────────────────────────────
 
-  it("rejects payload missing meetingId with invalid_payload reason", () => {
+  it("rejects payload missing meetingId with invalid_payload reason", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     const { meetingId: _dropped, ...noMeetingId } = VALID_PNG_PAYLOAD;
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, noMeetingId);
+    await flushAsync();
 
     expect(socket.emit).toHaveBeenCalledOnce();
     expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
@@ -183,13 +200,14 @@ describe("attachFileShareHandlers", () => {
 
   // ── 7. invalid payload — empty filename ───────────────────────────────────
 
-  it("rejects payload with empty filename with invalid_payload reason", () => {
+  it("rejects payload with empty filename with invalid_payload reason", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, {
       ...VALID_PNG_PAYLOAD,
       filename: "",
     });
+    await flushAsync();
 
     expect(socket.emit).toHaveBeenCalledOnce();
     expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
@@ -200,7 +218,7 @@ describe("attachFileShareHandlers", () => {
 
   // ── 8. happy path PDF ─────────────────────────────────────────────────────
 
-  it("broadcasts valid PDF payload to org peers", () => {
+  it("broadcasts valid PDF payload to org peers", async () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
     socket.__emit(FILE_SHARE_UPLOAD_EVENT, {
@@ -209,6 +227,7 @@ describe("attachFileShareHandlers", () => {
       mimeType: "application/pdf",
       base64Data: "JVBERi0xLjQKJcOkw7zDtsOfCjIgMCBvYmoKPDwvTGVuZ3RoIDMgMCBSPj4Kc3RyZWFtCg==",
     });
+    await flushAsync();
 
     expect(emitToOrg).toHaveBeenCalledOnce();
     const call0pdf = vi.mocked(emitToOrg).mock.calls[0];
@@ -219,5 +238,39 @@ describe("attachFileShareHandlers", () => {
       "application/pdf",
     );
     expect(socket.emit).not.toHaveBeenCalled();
+  });
+
+  // ── 9. cross-org gate — meeting belongs to different org ──────────────────
+
+  it("rejects upload when meeting belongs to different org", async () => {
+    vi.mocked(prisma.meeting.findUnique).mockResolvedValueOnce({
+      organization_id: "org_other",
+    } as never);
+    const socket = makeFakeSocket(SAMPLE_SESSION);
+    attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
+    socket.__emit(FILE_SHARE_UPLOAD_EVENT, VALID_PNG_PAYLOAD);
+    await flushAsync();
+
+    expect(socket.emit).toHaveBeenCalledOnce();
+    expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
+      reason: "meeting_not_accessible",
+    });
+    expect(emitToOrg).not.toHaveBeenCalled();
+  });
+
+  // ── 10. cross-org gate — meeting not found ────────────────────────────────
+
+  it("rejects upload when meeting not found", async () => {
+    vi.mocked(prisma.meeting.findUnique).mockResolvedValueOnce(null);
+    const socket = makeFakeSocket(SAMPLE_SESSION);
+    attachFileShareHandlers({ io: fakeIO, socket: castSocket(socket) });
+    socket.__emit(FILE_SHARE_UPLOAD_EVENT, VALID_PNG_PAYLOAD);
+    await flushAsync();
+
+    expect(socket.emit).toHaveBeenCalledOnce();
+    expect(socket.emit).toHaveBeenCalledWith(FILE_SHARE_REJECTED_EVENT, {
+      reason: "meeting_not_accessible",
+    });
+    expect(emitToOrg).not.toHaveBeenCalled();
   });
 });
