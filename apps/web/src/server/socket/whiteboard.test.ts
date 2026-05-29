@@ -145,14 +145,13 @@ describe("attachWhiteboardHandlers", () => {
 
   // ── 6. cursor happy path ──────────────────────────────────────────────────
 
-  it("relays valid whiteboard:cursor via emitToOrg", () => {
+  it("relays valid whiteboard:cursor via emitToOrg, server-stamping userId", () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachWhiteboardHandlers({ io: fakeIO, socket: castSocket(socket) });
     const payload = {
       meetingId: "meet_1",
       x: 55.5,
       y: 120.0,
-      userId: "user_alice",
     };
     socket.__emit(WHITEBOARD_CURSOR_EVENT, payload);
     expect(emitToOrg).toHaveBeenCalledTimes(1);
@@ -160,7 +159,7 @@ describe("attachWhiteboardHandlers", () => {
       fakeIO,
       "org_acme",
       WHITEBOARD_CURSOR_EVENT,
-      payload,
+      { ...payload, userId: SAMPLE_SESSION.userId },
     );
   });
 
@@ -169,7 +168,7 @@ describe("attachWhiteboardHandlers", () => {
   it("drops whiteboard:cursor with missing meetingId", () => {
     const socket = makeFakeSocket(SAMPLE_SESSION);
     attachWhiteboardHandlers({ io: fakeIO, socket: castSocket(socket) });
-    socket.__emit(WHITEBOARD_CURSOR_EVENT, { x: 10, y: 20, userId: "user_alice" });
+    socket.__emit(WHITEBOARD_CURSOR_EVENT, { x: 10, y: 20 });
     expect(emitToOrg).not.toHaveBeenCalled();
   });
 

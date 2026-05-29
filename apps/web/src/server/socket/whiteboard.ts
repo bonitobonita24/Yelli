@@ -42,7 +42,6 @@ const cursorInput = z.object({
   meetingId: z.string().min(1),
   x: z.number(),
   y: z.number(),
-  userId: z.string().min(1),
 });
 
 const clearInput = z.object({
@@ -85,7 +84,7 @@ export function attachWhiteboardHandlers(args: {
     if (!parsed.success) return;
     const json = JSON.stringify(parsed.data);
     if (Buffer.byteLength(json, "utf8") > MAX_CURSOR_BYTES) return;
-    emitToOrg(io, organizationId, WHITEBOARD_CURSOR_EVENT, parsed.data);
+    emitToOrg(io, organizationId, WHITEBOARD_CURSOR_EVENT, { ...parsed.data, userId: session.userId });
   });
 
   socket.on(WHITEBOARD_CLEAR_EVENT, (raw: unknown) => {
