@@ -1,6 +1,6 @@
 {
-  "scannedAt": "2026-05-26",
-  "previousScans": ["2026-05-11", "2026-05-13", "2026-05-22", "2026-05-26-am", "2026-05-26-pm-1432"],
+  "scannedAt": "2026-05-29",
+  "previousScans": ["2026-05-11", "2026-05-13", "2026-05-22", "2026-05-26-am", "2026-05-26-pm-1432", "2026-05-29-overlay-A1"],
   "techStack": [
     "Next.js 15 App Router",
     "tRPC v11",
@@ -28,7 +28,7 @@
     "frameworkVersion": "V31",
     "memoryGovernanceInstalled": true,
     "memoryGovernancePath": ".claude/rules/memory-governance.md",
-    "currentPhase": "Phase 8 Batch B — sub-1 (Socket.IO chat, 85ea101), sub-2 (Reports CSV/PDF, 2955eae), sub-3 (LiveKit Egress recording, 1053729) all CLOSED. NEXT: overlay cluster (File Sharing + Whiteboard) OR sub-3 polish pass. Phase 8 Batch 1 Item 3 (Xendit billing) shipped 8a40ede.",
+    "currentPhase": "Phase 8 Batch B closed (sub-1/2/3 shipped 2026-05-27). CI Recovery Sprint closed 2026-05-28 (8/8 green at 62fab35, PR #2). Overlay Cluster IN PROGRESS: Sub-A1 (sharedFiles tRPC router + plan-gated procedures + migration adding deleted_at) shipped on branch feat/shared-files-router at 5fce2a6 (NOT pushed). Sub-A2 (whiteboardSnapshots router + register both in router.ts) NEXT. Sub-B/B′/C/D pending.",
     "midProjectAdoption": false,
     "mcpJsonWired": true,
     "mcpServers": ["socraticode", "context7", "shadcn"]
@@ -67,7 +67,7 @@
     { "name": "a11y-skill", "rejectedAt": "2026-05-12", "decisionRef": "DECISIONS_LOG.md + observation 565", "reason": "Layered accessibility coverage already provided by design-auditor + frontend-design + ui-ux-pro-max + oiloil-ui-ux-guide + Phase 2.6 MASTER.md a11y enforcement block. Dedicated a11y-skill would be redundant." }
   ],
   "systemTools": [
-    { "name": "code-review-graph", "status": "binary installed at /home/me/.local/bin/code-review-graph; .code-review-graph/ NOT yet built in project", "nextAction": "Run 'code-review-graph build' in WSL2 terminal (~1-3 min) to enable blast-radius analysis for Phase 8 Feature Updates. Then 'code-review-graph watch' in background terminal for live graph updates." }
+    { "name": "code-review-graph", "status": "BUILT 2026-05-29 01:27 (on branch feat/shared-files-router @ 5fce2a6). 280 files, 1381 nodes, 14942 edges, 81 flows, 13 communities. graph.db = 19MB at .code-review-graph/graph.db (gitignored).", "nextAction": "Optional: run 'code-review-graph watch' in a background WSL2 terminal for live graph updates as Sub-A2/B/B′/C/D land. Blast-radius analysis now available via the 28 MCP tools — Opus can call get_impact_radius_tool before each overlay-cluster sub-dispatch.", "note": "igraph not available — fell back to file-based community detection (works, slightly slower). Not a blocker." }
   ],
   "mcpsAlreadyWired": [
     { "name": "socraticode", "location": ".vscode/mcp.json", "purpose": "Vector search — 61% less context" },
@@ -157,5 +157,19 @@
       "deliveryMechanism": "plugin sub-skill (no file copy — already in fullstack-dev-skills bundle)",
       "reason": "Phase 8 Batch B overlay cluster (Whiteboard) is canvas-heavy React work. Dedicated React expertise complements vercel-agent-skills (which covers React 67 rules) — react-expert covers React patterns like Concurrent Mode, useTransition, Suspense boundaries that the Whiteboard collab UI will need."
     }
-  ]
+  ],
+  "scan_2026_05_29_overlay_A1": {
+    "runAt": "2026-05-29T01:27+08:00",
+    "trigger": "/scan-project (6th run; re-verification after Overlay Cluster Sub-A1 shipped)",
+    "summary": "Re-verification scan after Overlay Cluster Sub-A1 (sharedFiles tRPC router + Prisma migration adding deleted_at) shipped at 5fce2a6. All foundation skills, plugins, MCPs still verified active. Zero new skills to install. Zero unresolved conflicts. One outstanding action carried since 2026-05-22 RESOLVED: code-review-graph build executed successfully — 280 files, 1381 nodes, 14942 edges, 81 flows, 13 communities indexed. Blast-radius analysis now available for upcoming overlay cluster Sub-A2/B/B′/C/D.",
+    "newInstalls": 0,
+    "newRemovals": 0,
+    "conflictsDetected": 0,
+    "systemToolsActioned": [
+      "code-review-graph build — completed 2026-05-29 01:27 on branch feat/shared-files-router @ 5fce2a6"
+    ],
+    "outstandingActions": [
+      "Optional: code-review-graph watch in background WSL2 terminal for live graph updates during overlay cluster sub-sessions (not strictly required — graph can be rebuilt incrementally)."
+    ]
+  }
 }
