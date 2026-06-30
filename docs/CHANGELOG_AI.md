@@ -1,3 +1,5 @@
+2026-06-30 — Framework sync V32.1.x → V32.18 (governance layer only).
+
 # Changelog — AI-attributed (Spec-Driven Platform V31)
 
 # Format (Rule 15):

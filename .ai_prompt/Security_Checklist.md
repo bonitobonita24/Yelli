@@ -11,7 +11,7 @@
 > **How to use:** Copy this file into your project root. After code generation, `grep` or
 > manually inspect each item. Mark PASS / FAIL / N/A. Fix all FAILs before squash-merge.
 >
-> **Total: 84 verification items across 13 sections.**
+> **Total: 114 verification items across 16 sections.**
 
 ---
 
@@ -351,19 +351,217 @@ Run them as a baseline before the security checklist above.
 
 ---
 
+## SECTION 14 — COMPLIANCE & DATA PRIVACY (V32.9)
+
+Run when PRODUCT.md §12 declares `personal data: yes`. Skip only when `personal data: no` is explicit.
+
+```
+□ 14.1  PH DPA (RA 10173) lawful basis declared per processing activity
+        → PRODUCT.md §12 Compliance & Data Privacy → Lawful basis field
+        VERIFY: lawful basis is one of: consent · contract · legal obligation · legitimate interest ·
+                vital interest · public authority — and is recorded in PRODUCT.md, not left blank
+
+□ 14.2  Privacy notice presented at the point of collection (inline form or linked modal)
+        → privacy.md § Consent + privacy notice at collection
+        VERIFY: consent/signup flow renders a privacy notice with: what data, why, lawful basis,
+                retention period, data-subject rights, and how to exercise them
+
+□ 14.3  ConsentLog (or ConsentRecord) Prisma model exists and records consent events
+        → privacy.md § Prisma ConsentLog / DataSubjectRequest / retention models
+        VERIFY: schema.prisma contains ConsentLog with fields: userId, tenantId, purpose,
+                legalBasis, givenAt, withdrawnAt, privacyNoticeVersion
+
+□ 14.4  All 6 data-subject rights implemented as app features or formally deferred in PRODUCT.md
+        Rights: access · rectify · erase · object · portability · restrict
+        → privacy.md § The 6 data-subject rights → implement as APP FEATURES
+        VERIFY: DSR tRPC endpoints exist (or PRODUCT.md §12 states "defer to v2" with owner sign-off)
+        VERIFY: DataSubjectRequest model in schema has: type, status, requestedAt, resolvedAt, evidenceUrl
+
+□ 14.5  Retention policy enforced — automated erasure / archival job wired
+        → privacy.md § Retention / erasure jobs (BullMQ)
+        VERIFY: BullMQ job exists for retention policy declared in PRODUCT.md §12
+        VERIFY: eraseExpiredPersonalData job deletes or anonymizes on schedule (cron string matches policy)
+
+□ 14.6  Breach-notification runbook present and 72-hour deadline acknowledged
+        → privacy.md § Breach notification — 72 hours
+        VERIFY: docs/BREACH_RUNBOOK.md (or equivalent) exists with: NPC report URL, subject notification
+                template, 72-hour timer trigger, incident-log location
+        VERIFY: PRODUCT.md §12 Breach procedure field is not blank
+
+□ 14.7  Privacy Impact Assessment (PIA) artifact produced before Phase 6 deploy
+        → privacy.md § DPO · NPC registration · PIA
+        VERIFY: docs/PIA.md (or docs/PRIVACY_IMPACT.md) exists with: processing activities list,
+                risks identified, mitigations applied
+        CONDITION: skip only if PRODUCT.md §12 PIA required: no is explicitly declared
+
+□ 14.8  Data Protection Officer (DPO) named or formally designated as "to be appointed"
+        → PRODUCT.md §12 Compliance & Data Privacy → DPO field
+        VERIFY: DPO field in PRODUCT.md §12 is not blank — "to be appointed" is acceptable
+        VERIFY: privacy notice (14.2) references DPO contact point
+
+□ 14.9  NPC registration status acknowledged in PRODUCT.md
+        → privacy.md § DPO · NPC registration · PIA
+        VERIFY: PRODUCT.md §12 NPC registration field is set (required or not required — not blank)
+        NOTE: qualifying Personal Information Controllers must register data-processing systems
+              with the NPC at privacy.gov.ph before going live
+
+□ 14.10 WCAG 2.2 AA accessibility verified when gov/LGU client flag is set
+        → PRODUCT.md §12 Gov/LGU client → WCAG 2.2 AA required (DICT Memorandum Circular 004)
+        VERIFY: if gov_lgu_flag: yes → run accessibility audit (axe-core / Lighthouse a11y ≥90)
+                on all public + citizen-facing pages before Phase 6 sign-off
+        CONDITION: skip only when gov_lgu_flag: no is explicitly declared
+
+□ 14.11 Sensitive personal information (SPI) receives heightened protection
+        SPI: health, biometric, government-issued IDs (SSS/GSIS/TIN/PhilHealth), racial/ethnic origin,
+             political/religious affiliation, sexual life, offenses/proceedings
+        → privacy.md § Sensitive personal information (heightened protection)
+        VERIFY: SPI fields in schema have: encryption at rest (column-level or application-level),
+                access restricted to minimum roles (L3 RBAC), retention minimized
+        CONDITION: skip if no SPI is declared in PRODUCT.md §12
+
+□ 14.12 Compliance-badge claims are honest — design-claim badges only, no false certification claims
+        → Master Prompt Rule 33 / privacy.md § Honest compliance-badge policy
+        VERIFY: footer / trust-badge UI uses only design-claim badges (e.g. "Privacy-First Design")
+                unless the app holds a real certification (ISO 27001, SOC 2, etc.)
+        VERIFY: no badge claims "GDPR Certified", "ISO 27001 Certified", or "PCI DSS Compliant"
+                unless certification evidence is on file
+
+□ 14.13 OWASP Top 10:2025 A03 (Injection / Supply Chain) — dependency integrity gate
+        → security.md § ASVS 5.0 mapping / OWASP Top 10:2025 A03
+        VERIFY: pnpm audit --audit-level=high exits 0 (Section 13 item 13.9 must PASS first)
+        VERIFY: package.json has no packages with known supply-chain compromise history
+                (check npm advisories; flag any package flagged in the last 90 days)
+        VERIFY: lockfile (pnpm-lock.yaml) is committed and --frozen-lockfile enforced in CI
+
+□ 14.14 OWASP Top 10:2025 A10 (Fail-Closed / Exceptional Conditions) — fail-safe defaults
+        → security.md § ASVS 5.0 mapping / OWASP Top 10:2025 A10
+        VERIFY: all tRPC procedures default to DENY on error — no permission granted in catch blocks
+        VERIFY: auth session failure → redirects to login, never grants access
+        VERIFY: external-service failure (payment, SMS, webhook) → logged + queued for retry,
+                never silently continues with elevated privileges
+        VERIFY: error boundary in Next.js root layout — unhandled render errors show safe fallback,
+                not raw stack traces
+```
+
+---
+
+## SECTION 15 — AI / LLM / MCP SECURITY (V32.18)
+
+Run when the app calls an LLM, exposes tools to a model, runs an agent, or ships/consumes an MCP server.
+Skip only when the app has no AI/LLM/agent/MCP surface. Maps to OWASP LLM Top 10:2025 + MITRE ATLAS.
+→ security.md § AI / LLM / MCP SECURITY. Deep procedures: curated cybersecurity-skills bundle.
+
+```
+□ 15.1  Untrusted-input boundary — system instructions structurally separated from all user/retrieved
+        content (no untrusted text concatenated into the system-prompt region)
+        → security.md § AI/LLM/MCP item 1–2  (OWASP LLM01 · ATLAS AML.T0051)
+        VERIFY: system role holds instructions only; user/tool content is fenced + labelled as data
+        VERIFY: privileged actions gated by L3 RBAC server-side, NOT by what the model "decided"
+
+□ 15.2  Indirect-injection sanitization on every content the model later reads (RAG chunks, fetched
+        pages, uploads, tool results, image-embedded text)
+        → security.md § AI/LLM/MCP item 1, 5  (OWASP LLM01)
+        VERIFY: retrieved/fetched text is stripped of zero-width chars + Unicode-flattened + scanned
+                before ingestion; instructions found inside retrieved chunks are NOT auto-executed
+
+□ 15.3  Tool/function-calling least privilege + server-side argument validation
+        → security.md § AI/LLM/MCP item 3  (OWASP LLM06/LLM08)
+        VERIFY: high-impact tools (delete, pay, email, role-change, raw SQL, shell) require human
+                approval or are not exposed to the model
+        VERIFY: every tool argument re-validated Zod-strict + tenant-ownership (model-supplied id is
+                an untrusted id — BOLA surface); tool outputs treated as untrusted input
+
+□ 15.4  MCP server safety — for any MCP server the app ships OR consumes
+        → security.md § AI/LLM/MCP item 4  (ATLAS AML.T0010 · OWASP MCP03:2025)
+        VERIFY: tool definitions pinned + rug-pull detection; raw tool/prompt/resource descriptions
+                inspected for hidden instructions (tool poisoning)
+        VERIFY: URL-fetching MCP tools pass the SSRF block (allowlist + blocked private ranges)
+
+□ 15.5  RAG corpus provenance + tenant-scoped retrieval
+        → security.md § AI/LLM/MCP item 5, 7  (OWASP LLM01/LLM03)
+        VERIFY: write access to the vector store is known; user-writable corpora treated as untrusted
+        VERIFY: model retrieval is scoped to the requesting tenant/user (same L1 scoping as any query)
+
+□ 15.6  Output handling — model output treated as untrusted
+        → security.md § AI/LLM/MCP item 6  (OWASP LLM02 insecure output handling)
+        VERIFY: raw LLM output never rendered as HTML unsanitized, never passed to eval/exec/shell/SQL/
+                file-path; structured output schema-validated before any downstream consumer
+        VERIFY: output rail filters leaked secrets/PII before reaching the user
+
+□ 15.7  Secrets/PII protection + consumption cap on LLM endpoints
+        → security.md § AI/LLM/MCP item 7  (OWASP LLM06/LLM10)
+        VERIFY: no API keys, tenant secrets, other users' data, or full system prompt placed where the
+                model can echo them; PII redacted from inputs that don't need it
+        VERIFY: LLM endpoints rate-limited + cost-capped (treated as public endpoint per L4 tiers)
+```
+
+---
+
+## SECTION 16 — API AUTHORIZATION DEPTH & INJECTION FAMILY (V32.18)
+
+Always run when any tRPC router or non-tRPC Route Handler exists. Sharpens IDOR into the full OWASP
+API Top 10 authorization set + the non-SQL injection classes.
+→ security.md § API AUTHORIZATION DEPTH + § INJECTION FAMILY.
+
+```
+□ 16.1  BOLA (API1) — object-level ownership verified before every read/mutate by id
+        → security.md § API AUTHORIZATION DEPTH item 1
+        VERIFY: object belongs to ctx.tenantId (and ctx.userId where relevant) BEFORE return/mutate,
+                even with L6 active; model/client-supplied ids re-checked
+
+□ 16.2  BFLA (API5) — function-level role check tested with a LOW-privilege token
+        → security.md § API AUTHORIZATION DEPTH item 2
+        VERIFY: admin/privileged procedures check role server-side; a standard user token cannot reach
+                an admin function; function never gated by UI visibility alone
+
+□ 16.3  BOPLA mass assignment (API3) — writable fields whitelisted
+        → security.md § API AUTHORIZATION DEPTH item 3
+        VERIFY: Zod .strict() + .pick() on writable fields; client-sent role, isAdmin, isVerified,
+                tenantId, balance, discountRate, permissions, securityVersion are rejected/ignored
+
+□ 16.4  BOPLA excessive data exposure (API3) — response returns only needed fields
+        → security.md § API AUTHORIZATION DEPTH item 4
+        VERIFY: Prisma select scopes output; passwordHash, internal notes, tenantId, audit fields, and
+                other users' PII never leak in a response object
+
+□ 16.5  NoSQL / operator injection closed
+        → security.md § INJECTION FAMILY item 1
+        VERIFY: object-typed values rejected where a scalar is expected (no { "$gt": "" } smuggling)
+
+□ 16.6  XXE disabled on any XML/SVG/DOCX parser
+        → security.md § INJECTION FAMILY item 2
+        VERIFY: external entity + DTD resolution disabled on every XML-parsing path
+
+□ 16.7  SSTI — no server-side template built from unsanitized user input
+        → security.md § INJECTION FAMILY item 3
+        VERIFY: email/report/label templates never interpolate raw user input into a code-executing engine
+
+□ 16.8  Insecure deserialization — typed JSON parse only
+        → security.md § INJECTION FAMILY item 4
+        VERIFY: untrusted input never deserialized into live objects; parsed to typed Zod schemas only
+
+□ 16.9  CORS not wildcard in prod + Host header validated
+        → security.md § INJECTION FAMILY item 5 + SECURE PRODUCTION DEFAULTS item 5
+        VERIFY: no wildcard CORS in production; Host header validated/pinned where it drives links or cache keys
+```
+
+---
+
 ## HOW TO USE THIS CHECKLIST
 
 **After Phase 4 (initial scaffold):**
-Run ALL 13 sections. Every item applies. This is the most critical audit — the scaffold
+Run ALL 16 sections. Every item applies. This is the most critical audit — the scaffold
 defines the security posture for the entire project lifecycle.
 
 **After Phase 7 (Feature Update):**
 Run only the sections relevant to the feature:
-- Added a new tRPC router? → Sections 2, 3, 4, 5, 8
+- Added a new tRPC router? → Sections 2, 3, 4, 5, 8, 16
 - Added file uploads? → Section 6
 - Added background jobs? → Section 7
 - Added external webhook integration? → Section 10
 - Changed auth config? → Section 1
+- Personal data feature added or changed? → Section 14
+- Added an LLM / agent / tool / MCP surface? → Section 15
 - Always run Section 13 (Phase 5 commands) regardless
 
 **Cross-AI audit loop:**
@@ -375,5 +573,5 @@ Run only the sections relevant to the feature:
 ---
 
 *Part of the Spec-Driven Platform V31 deliverable set.*
-*Companion to the SECURE CODE GENERATION section in Master_Prompt_v31.md.*
+*Companion to the SECURE CODE GENERATION section in Master_Prompt.md.*
 *Maintained by Claude on behalf of Bonito — Powerbyte IT Solutions, Lipa City, Philippines.*

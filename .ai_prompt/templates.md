@@ -77,7 +77,7 @@ PHASE_COMPLETE
 
 ## PROMPT VERSIONING CONVENTION
 
-Files named: `Master_Prompt_v29.md`, `Master_Prompt_v30.md`, `Master_Prompt_v31.md`, etc.
+Files named: `Master_Prompt_v29.md`, `Master_Prompt_v30.md`, `Master_Prompt.md`, etc.
 All 16 files in the complete set always share the same version number.
 
 Version increments when: new Rule added, new Phase added, new Scenario added,
@@ -494,11 +494,11 @@ UNKNOWN      → SpecStory diff exists but source cannot be determined
 CHANGELOG_AI or agent-log write. Append governance docs after the implementation step,
 not before or during.
 
-### Rule 4 — Read all 9 context documents before changing anything
+### Rule 4 — Hydrate all 9 governance docs before changing anything
 
 **MANDATORY SEQUENCE — DO NOT SKIP, DO NOT REORDER, DO NOT PROCEED UNTIL COMPLETE:**
 
-Read these 9 files in this exact order before taking ANY action:
+Hydrate these 9 governance docs in this exact order before taking ANY action (V32.3: files >200 lines route through Sonnet Scout via the Governance Extraction Schema — see memory-governance.md §4):
 
 1. `.cline/memory/lessons.md` — READ FIRST. Read ALL 🔴 gotcha entries in full. Then ALL 🟤 decision entries in full. For remaining entries: read ONLY entries whose title contains a keyword matching the current task domain. Skip all others.
 2. `docs/PRODUCT.md` — the feature specification
@@ -510,7 +510,7 @@ Read these 9 files in this exact order before taking ANY action:
 8. `project.memory.md` — active rules and agent stack
 9. `.cline/memory/agent-log.md` — running log of every agent action
 
-**Rule: Do not write a single line of code until all 9 files are read.**
+**Rule: Do not write a single line of code until all 9 files are hydrated.**
 **Rule: If any file does not exist yet — note it as missing and continue reading the rest.**
 **Rule: If DECISIONS_LOG.md contains the answer to a question — do not ask it again.**
 
@@ -524,7 +524,7 @@ Infrastructure is split into **separate compose files per service group**.
 ```
 deploy/compose/[env]/
   docker-compose.db.yml       — PostgreSQL + PgBouncer      → Amazon RDS
-  docker-compose.storage.yml  — MinIO (S3-compatible)       → Amazon S3
+  docker-compose.storage.yml  — MinIO (S3-compatible)       → Amazon S3 / Cloudflare R2 (opt-in)
   docker-compose.cache.yml    — Valkey (cache + BullMQ)     → Amazon ElastiCache
   docker-compose.infra.yml    — MailHog dev / SMTP relay    → Amazon SES
   docker-compose.app.yml      — Next.js app(s) + worker(s)  → ECS / EC2
@@ -534,12 +534,87 @@ deploy/compose/[env]/
 `docker-compose.db.yml` always starts first — it creates the shared Docker network.
 All other compose files reference it as `external: true`.
 
+---
+
+### OPT-IN: Cloudflare R2 for staging/prod object storage (V32.16 — NOT the default)
+
+**Default storage stays MinIO** (dev + staging + prod). Cloudflare R2 is an S3-wire-compatible,
+zero-egress alternative you MAY opt into per app for staging/prod once you accept the budget caveat
+below. The storage layer is provider-agnostic (`STORAGE_*` env + `packages/storage/` wrapper), so
+switching is a one-edit change — **no code changes**.
+
+> ⚠️ **BUDGET CAVEAT — read before opting in (this is why R2 is opt-in, not default).**
+> R2's free tier — **10 GB-month storage · 1,000,000 Class A (write) · 10,000,000 Class B (read) ops
+> per month · $0 egress** — is **per Cloudflare ACCOUNT, NOT per bucket.** Every app's bucket draws
+> from the *same shared pool*, and R2 has **no native per-bucket spend cap** and only coarse
+> per-bucket attribution. With a growing fleet, combined I/O is hard to measure/limit and can produce
+> a surprise bill. Before adopting: (a) decide how you'll monitor per-bucket usage (CF dashboard
+> per-bucket metrics / GraphQL Analytics API), (b) set a Cloudflare billing alert, (c) confirm an
+> account-wide budget you're comfortable with. Overage rate beyond the free pool: storage
+> $0.015/GB-mo · Class A $4.50/M · Class B $0.36/M (rounded up per unit). **Never put gov/LGU or
+> PII assets on a backend you can't bound + attribute** (PH Data Privacy Act). Full evaluation:
+> conductor memory `reference_telegram_as_s3_storage`.
+
+**To opt an app into R2 for staging/prod (owner-run):**
+
+1. In `.env.staging` / `.env.prod`, replace the MinIO `FILE STORAGE` block with:
+   ```
+   # FILE STORAGE (Cloudflare R2 — S3-compatible — OPT-IN)
+   STORAGE_PROVIDER=r2
+   STORAGE_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com
+   STORAGE_BUCKET=${app_slug}-staging        # prod: ${app_slug}-prod (separate bucket per env)
+   STORAGE_ACCESS_KEY=<r2-access-key-id — from Server-Setups cloudflare-r2>
+   STORAGE_SECRET_KEY=<r2-secret-access-key — from Server-Setups cloudflare-r2>
+   STORAGE_REGION=auto
+   ```
+   Credentials source of truth: `Server-Setups/Powerbyte-Hostinger/secrets/cloudflare-r2.enc.yaml`
+   (SOPS+age — `sops -d`). **Never copy R2 keys into the app repo — point back to Server-Setups.**
+2. Create the R2 buckets `${app_slug}-staging` / `${app_slug}-prod` in the Cloudflare dashboard.
+3. **Remove `docker-compose.storage.yml` from the staging/prod startup** (no MinIO container needed —
+   storage is now external R2). Dev keeps MinIO via its own `docker-compose.storage.yml`.
+4. Phase 0 still mints MinIO keys for dev; staging/prod no longer need generated MinIO keys.
+5. AWS S3 is the same kind of swap — repoint the identical `STORAGE_*` vars.
+
 ```yaml
 networks:
   app_network:
     name: ${COMPOSE_PROJECT_NAME}_network
     driver: bridge
 ```
+
+**Resource limits (mem/cpu) — MANDATORY on stage + prod, every service.**
+Framework hosts run many stacks on one small shared VPS (e.g. 8 GB). Every service in the
+**stage and prod** compose files MUST declare resource caps so one container can't starve the host.
+Use the **top-level compose keys** `mem_limit` / `mem_reservation` / `cpus` — NOT a `deploy:` block
+(Komodo / `docker compose up` run non-swarm, where `deploy.resources` is ignored). **Dev is exempt**
+(runs on the developer machine).
+
+```yaml
+services:
+  app:                       # Next.js web
+    image: ...
+    container_name: ...
+    mem_limit: 640m
+    mem_reservation: 192m
+    cpus: 1.0
+```
+
+Default per-service-role caps (tune to the app's measured footprint):
+
+| Service role | mem_limit | mem_reservation | cpus |
+|---|---|---|---|
+| Next.js app/web | 640m | 192m | 1.0 |
+| worker (BullMQ) | 512m | 128m | 1.0 |
+| pdf renderer (chromium) | 512m | 96m | 1.0 |
+| postgres | 512m | 128m | 1.0 |
+| pgbouncer | 96m | 16m | 0.5 |
+| valkey/redis | 192m | 32m | 0.5 |
+| minio | 256m | 64m | 0.5 |
+| pgadmin / small sidecar | 128–256m | 32m | 0.5 |
+
+⚠ **A database's `mem_limit` MUST exceed its configured buffer/cache pool + overhead**, or the kernel
+OOM-kills it under load. If a DB sets e.g. `--innodb-buffer-pool-size=512M`, cap it at ≥768m, not 512m.
+Komodo "files-on-host" stacks read these compose files directly, so on-disk edits persist across redeploys.
 
 One-command startup: `bash deploy/compose/start.sh dev up -d`
 
@@ -556,6 +631,231 @@ Port assignments are generated during Phase 3 and locked in inputs.yml + .env.ex
 Staging and production use standard ports. AWS migration = zero port changes in source code.
 
 AWS migration = stop one compose service + update `.env` + restart app. Zero code changes.
+
+### Rule 5c — CI → Docker Hub → Komodo-API auto-deploy (V32.13 — fleet default)
+
+The fleet's **Watchtower-free** staging deploy pipeline. Push to `main` → GitHub Actions builds +
+pushes the image to Docker Hub → Actions calls the **Komodo API** to redeploy the staging stack with
+the **exact new image SHA**, in seconds. Replaces the V27 Komodo registry-poll (hourly, too slow; and
+Komodo's git-listener webhook does **not** fire for `files_on_host` stacks). Proven in production by
+the `fmo-fisherfolk` stack. **Production is NEVER auto-deployed — manual promotion only** (fleet
+prod-gating policy). CONDITIONAL: only when `docker.publish: true`.
+
+**Canonical source of truth (do NOT reinvent — vendor + point):**
+`Server-Setups/Powerbyte-Hostinger/runbooks/komodo-ci-deploy.md` (full procedure + provisioning +
+per-app enable checklist + rollback). The two app-side artifacts below are vendored copies of
+`Server-Setups/Powerbyte-Hostinger/komodo/ci-deploy/{komodo-deploy.sh,docker-publish.template.yml}`.
+
+**Tag-variable contract (deterministic SHA-pinned deploys).** `DeployStack` has no image-tag
+parameter, so to deploy an *exact* SHA (not a mutable `:latest` race) the staging compose service
+interpolates a Komodo Variable, and CI sets that Variable to the new SHA before deploying. Rollback =
+set the Variable to any prior SHA and redeploy.
+
+```yaml
+# deploy/compose/stage/docker-compose.app.yml — staging service image line
+services:
+  app:
+    image: ${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${STAGING_IMAGE_TAG:-staging-latest}
+    # Komodo staging stack env interpolates the tag variable:
+    #   STAGING_IMAGE_TAG = [[<APP>_STAGING_TAG]]
+    # CI pins <APP>_STAGING_TAG to the exact sha-XXXXXXX before DeployStack.
+```
+
+**`deploy/komodo-deploy.sh`** — vendored CI helper (copy verbatim from the canonical source; `chmod +x`).
+Pins the Komodo tag Variable → `DeployStack` → polls `GetUpdate` so CI fails on a real deploy failure.
+The Mozilla `User-Agent` header it sends is REQUIRED — `kmd.powerbyte.app` is Cloudflare-fronted and
+challenges default curl/bot agents. Required env: `KOMODO_HOST`, `KOMODO_API_KEY`, `KOMODO_API_SECRET`,
+`KOMODO_STACK`; SHA-pin env: `KOMODO_TAG_VAR` + `IMAGE_TAG`. Do not re-author it — vendor the canonical
+file so every app stays byte-identical to the fleet standard.
+
+**`.github/workflows/docker-publish.yml`** — adds a deploy step after the Docker Hub push (V32.13 form;
+supersedes the V27 poll-only workflow when Komodo CI-deploy is enabled). Multi-arch build, two tags
+(`sha-XXXXXXX` + `staging-latest`), then `bash deploy/komodo-deploy.sh`:
+
+```yaml
+# .github/workflows/docker-publish.yml  (CONFIG block edited per app)
+name: Build, Push & Deploy (staging)
+on:
+  push: { branches: [main] }
+  workflow_dispatch:        # prod promotion stays a SEPARATE manual gate — never auto
+
+env:
+  IMAGE: ${DOCKERHUB_USERNAME}/${IMAGE_NAME}     # e.g. bonitobonita24/<app>
+  KOMODO_STACK: <app>-staging                    # e.g. yelli-staging
+  KOMODO_TAG_VAR: <APP>_STAGING_TAG              # e.g. YELLI_STAGING_TAG
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        run: echo "sha=sha-$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.sha }}
+            ${{ env.IMAGE }}:staging-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Deploy to Komodo (staging)        # instant, deterministic, SHA-pinned
+        env:
+          KOMODO_HOST: https://kmd.powerbyte.app
+          KOMODO_API_KEY: ${{ secrets.KOMODO_API_KEY }}      # dedicated CI key — NOT the master key
+          KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
+          KOMODO_STACK: ${{ env.KOMODO_STACK }}
+          KOMODO_TAG_VAR: ${{ env.KOMODO_TAG_VAR }}
+          IMAGE_TAG: ${{ steps.meta.outputs.sha }}
+        run: bash deploy/komodo-deploy.sh
+```
+
+**Repo Actions secrets required:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `KOMODO_API_KEY`,
+`KOMODO_API_SECRET` (the dedicated `github-actions-ci` Komodo key — independently revocable, never the
+master key). Add these to CREDENTIALS.md's GitHub Secrets section.
+
+**Per-app Komodo ENABLE checklist** (when the staging stack already exists):
+1. Vendor `deploy/komodo-deploy.sh` (+x) and the `.github/workflows/docker-publish.yml` with CONFIG set.
+2. Set the 4 repo Actions secrets above.
+3. Komodo Variable `<APP>_STAGING_TAG` exists; staging stack env interpolates `STAGING_IMAGE_TAG = [[<APP>_STAGING_TAG]]`.
+4. Compose image tag = `${STAGING_IMAGE_TAG:-staging-latest}`.
+5. Push to `main` → confirm the Actions deploy job goes green and the stack shows the new SHA.
+
+**Production promotion (manual — NEVER in the push-to-main workflow):** re-tag the verified staging SHA
+to the prod channel → set `<APP>_PROD_TAG` → `DeployStack <app>-prod` (UI button or the helper with prod
+env). Do not add a prod auto-deploy step. See the runbook §6.
+
+### Rule 5b — Observability & Extended Testing (opt-in, target-gated)
+
+Mostly **CLI / Docker tools, not installable Claude skills** — driven by the templates below
+plus the Phase 5/6 hooks in `phases.md`, NOT by `/scan-project` / SKILLS_DB.
+- **5b.0 dev profiling is ALWAYS available in dev** — it answers "which execution eats CPU/RAM right now."
+- **5b.2–5b.4 are OFF by default**; activate only on the matching `docs/PRODUCT.md` signal.
+- **Production infra monitoring is OUT OF SCOPE for this framework (5b.1)** — the server-layer
+  Server-Setups framework owns it. Do NOT scaffold monitoring into app deploy.
+
+#### 5b.0 — Dev-time profiling: which execution eats CPU/RAM (realtime, always-on)
+
+The dev question "what command / query / library is heavy *right now*" is **profiling** — it
+looks *inside* the running process. No deploy, no container.
+
+**Realtime graph (zero install) — Chrome DevTools + the Node inspector.** Start with `--inspect`:
+```bash
+NODE_OPTIONS='--inspect' pnpm dev          # Next.js dev server (or: node --inspect server.js)
+```
+Open `chrome://inspect` → "inspect" the target → two live views:
+- **Performance monitor** (⋮ → More tools → Performance monitor): live line graphs of **CPU
+  usage, JS heap size, event-loop** handles while you exercise the app — this is the realtime graph.
+- **Performance** recorder: record while you hit the slow path → a **flamechart** names the exact
+  function/library burning CPU; the **Memory** tab's allocation timeline names what's growing the heap.
+
+**Recorded report (deeper) — clinic.js:**
+```bash
+pnpm dlx clinic doctor -- node .next/standalone/server.js   # CPU/mem/event-loop timeline + auto-diagnosis
+pnpm dlx clinic flame  -- node .next/standalone/server.js   # CPU flamegraph
+```
+**DB load attribution — Prisma:** `new PrismaClient({ log: ['query'] })` (dev only) logs every
+query + duration → surfaces N+1 / slow queries, the usual server CPU+latency culprit. Pair with
+Postgres `log_min_duration_statement`.
+**Frontend:** `react-doctor` (already Phase 5/7) + React DevTools Profiler for render cost.
+
+#### 5b.1 — Production infra monitoring — OUT OF SCOPE (owned by Server-Setups framework)
+
+This app-build framework does **NOT** scaffold production monitoring. Server health, resource
+dashboards, alerting, and uptime for the deployed stack are owned by the separate **Server-Setups
+framework** (the per-server SOP layer that provisions the Hostinger/Komodo host). Do not add a
+`docker-compose.monitoring.yml` or any Netdata/Prometheus service to an app's `deploy/compose/`.
+Keep the boundary clean: Spec-Driven builds the app; Server-Setups runs the server.
+For dev-time "is my app heavy / what's the culprit," use **5b.0** (profiling) — not infra monitoring.
+
+#### 5b.2 — Load testing: k6 (Phase 5 gate)
+
+Signal: `PRODUCT.md` §10 (Non-functional Requirements) declares throughput / latency /
+concurrency targets, OR the app exposes a public API. Thresholds map to exit code → it gates.
+
+`deploy/compose/[env]/docker-compose.loadtest.yml`:
+```yaml
+services:
+  k6:
+    image: grafana/k6:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_k6
+    networks: [app_network]
+    volumes:
+      - ./loadtest:/scripts:ro
+    environment:
+      - BASE_URL=http://app:3000        # internal compose service name
+    entrypoint: ["k6", "run", "/scripts/smoke.js"]
+networks:
+  app_network:
+    external: true
+```
+`deploy/compose/[env]/loadtest/smoke.js`:
+```javascript
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  scenarios: {
+    smoke: { executor: 'constant-vus', vus: 1, duration: '30s' },
+    ramp:  { executor: 'ramping-vus', startTime: '30s',
+             stages: [ {duration:'1m',target:20}, {duration:'2m',target:20}, {duration:'1m',target:0} ] },
+  },
+  thresholds: {
+    http_req_failed:   ['rate<0.01'],   // <1% errors  → else FAIL
+    http_req_duration: ['p(95)<500'],   // p95 < 500ms → else FAIL
+  },
+};
+const BASE = __ENV.BASE_URL || 'http://localhost:3000';
+export default function () {
+  const res = http.get(`${BASE}/api/health`);
+  check(res, { 'status 200': (r) => r.status === 200 });
+  sleep(1);
+}
+```
+Run: `docker compose -f deploy/compose/dev/docker-compose.loadtest.yml run --rm k6` — non-zero
+exit if any threshold fails (CI / Phase-5 gate). For authenticated routes pass a seeded JWT
+(`-e TOKEN=...`) + an `Authorization` header. **Never load-test a tenant holding real data.**
+
+#### 5b.3 — Mobile E2E (Expo): Maestro (Phase 5, gated on Mobile Needs)
+
+Signal: `PRODUCT.md` §9 (Mobile Needs) declares native mobile (the locked Expo + WatermelonDB
++ Expo Push stack). Maestro = single binary, YAML flows, first-class Expo support, no native
+build config (lighter than Detox/Appium). Complements — does not replace — Jest/RNTL unit
+tests and the catalogued `midscene-skills` (vision-driven cross-platform exploratory checks).
+
+`apps/mobile/.maestro/<flow>.yaml` — one file per PRODUCT.md core user flow:
+```yaml
+appId: com.yourco.appname
+---
+- launchApp: { clearState: true }
+- tapOn: "Sign in"
+- inputText: "admin@tenant.test"
+- tapOn: "Passphrase"
+- inputText: "${MAESTRO_TEST_PASSPHRASE}"
+- tapOn: "Continue"
+- assertVisible: "Active Calls"
+```
+Setup: `curl -Ls https://get.maestro.mobile.dev | bash`. Run against an Expo dev build or
+simulator: `maestro test apps/mobile/.maestro/`. CI: `maestro test --format junit` → Phase 5 artifact.
+
+#### 5b.4 — PC / Windows desktop testing (BACKLOG — gated on Electron opt-in)
+
+Status: **NOT active.** No framework app has a native-Windows target today (Electron is a
+backlog opt-in). When/if `deploy.electron.enabled: true` is declared in `inputs.yml`:
+- **Electron** (web-tech desktop) → drive with Playwright's `_electron` API (`electron.launch()`);
+  reuse existing `webapp-testing` / `playwright-skill` knowledge. No new tool needed.
+- **True native Windows** (WPF/WinForms/`.exe`) → out of scope; needs WinAppDriver/FlaUI on a
+  Windows runner, which the WSL2 / Linux / Hostinger toolchain does not target.
+
+Do NOT scaffold any of 5b.4 until the Electron opt-in is active.
 
 ### Rule 6 — K8s scaffold is inactive by default
 
@@ -1345,12 +1645,12 @@ No separate installation needed per project. Zero API key required.
 ## UI LOADING STATE TEMPLATES (NEW V31.3 — supports ui-rules.md Rule 11)
 
 Rule 11 mandates a dual-path loading-state policy. These are the canonical snippets
-agents use during Phase 4 Part 2 (UI scaffold), Phase 7 (Feature Update), and any
+agents use during Phase 4 Parts 5-6 (UI scaffold), Phase 7 (Feature Update), and any
 async/suspense boundary.
 
 ### PATH A — shadcn `<Skeleton>` (for shadcn-composed UI — DEFAULT)
 
-Install once per app (already covered by Bootstrap Step 19 + Phase 4 Part 2):
+Install once per app (already covered by Bootstrap Step 19 + Phase 4 Part 5):
 ```bash
 npx shadcn@latest add skeleton
 ```
@@ -1424,7 +1724,7 @@ return <UsersList data={data} />;
 
 ### PATH B — `<phantom-ui>` wrapper (for bespoke / non-shadcn UI)
 
-Install once per app (Phase 4 Part 2 — added after the shadcn add sequence):
+Install once per app (Phase 4 Part 5 — added after the shadcn add sequence):
 ```bash
 npm i @aejkatappaja/phantom-ui
 # postinstall auto-detects Next.js and adds:
@@ -1516,6 +1816,813 @@ import "@aejkatappaja/phantom-ui";
 4. ALWAYS keep phantom-ui usage inside a `"use client"` boundary.
 5. NEVER skip the JSX intrinsic element declaration — TypeScript will reject `<phantom-ui>`
    without it.
+
+---
+
+## V32.8 — DESIGN PIPELINE TEMPLATES
+
+> These skeletons are scaffolded by `bootstrap.md` Phase 0 and shipped by `deploy.sh`.
+> They implement the Design-as-Contract pipeline: DESIGN.md tokens → Style Dictionary compile →
+> generated-tokens.css → globals.css bridge → Tailwind/shadcn utilities.
+> `generated-tokens.css` (SD output, never hand-edit) and `globals.css` (hand-authored bridge)
+> are DISTINCT files — never conflate them.
+
+---
+
+### `tokens/tokens.json` — minimal DTCG v2025.10 seed
+
+Scaffold one token per category as a placeholder. Replace with the full token table from
+`docs/DESIGN.md` (generated by the Planning Assistant in Step 7). Every leaf must have `$value`.
+
+```json
+{
+  "$schema": "https://tr.designtokens.org/format/",
+  "color": {
+    "primary": {
+      "$type": "color",
+      "$value": "#0066ff",
+      "$description": "Replace with DESIGN.md primary color"
+    },
+    "primary-foreground": {
+      "$type": "color",
+      "$value": "#ffffff"
+    },
+    "background": {
+      "$type": "color",
+      "$value": "#f8f9fa"
+    },
+    "foreground": {
+      "$type": "color",
+      "$value": "#111111"
+    }
+  },
+  "dimension": {
+    "radius": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "Base border-radius. Replace with DESIGN.md value."
+    },
+    "spacing": {
+      "sm": { "$type": "dimension", "$value": "8px" },
+      "md": { "$type": "dimension", "$value": "16px" }
+    }
+  }
+}
+```
+
+---
+
+### `sd.config.mjs` — Style Dictionary config (prefix: 'sd' required)
+
+The `prefix: 'sd'` is non-negotiable — it namespaces compiled vars as `--sd-color-*`,
+`--sd-dimension-*`, etc., preventing collisions with shadcn's own CSS vars.
+
+```js
+import StyleDictionary from 'style-dictionary';
+
+const sd = new StyleDictionary({
+  source: ['tokens/tokens.json'],
+  platforms: {
+    css: {
+      transformGroup: 'css',
+      prefix: 'sd',
+      buildPath: 'app/',
+      files: [
+        {
+          destination: 'generated-tokens.css',
+          format: 'css/variables',
+          options: {
+            selector: ':root',
+            outputReferences: false,
+          },
+        },
+      ],
+    },
+    ts: {
+      transformGroup: 'js',
+      buildPath: '',
+      files: [
+        {
+          destination: 'tokens.js',
+          format: 'javascript/es6',
+        },
+        {
+          destination: 'tokens.d.ts',
+          format: 'typescript/es6-declarations',
+        },
+      ],
+    },
+  },
+});
+
+await sd.buildAllPlatforms();
+console.log('Style Dictionary build complete');
+```
+
+---
+
+### `app/globals.css` — three-layer bridge
+
+**Import order is mandatory** (each layer depends on the previous):
+1. `tailwindcss` — Tailwind v4 engine + default theme
+2. `tw-animate-css` — animation utilities
+3. `shadcn/tailwind.css` — shadcn component layer + semantic var declarations
+4. `./generated-tokens.css` — SD-compiled `--sd-*` vars (never hand-edit this file)
+
+Then: `:root` maps SD vars → shadcn semantic vars; `@theme inline` maps semantic vars → Tailwind
+utility classes. No circular references: SD vars → semantic vars → @theme inline → Tailwind.
+
+```css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "./generated-tokens.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── CONTRACT 4 enforcement (see palette-disable.css) ────────────────────── */
+/* Paste palette-disable.css content here, or @import it, to disable all     */
+/* default Tailwind color scales. Only SD-compiled semantic vars remain.      */
+
+/*
+  Bridge: SD emits --sd-color-* (raw hex) and --sd-dimension-* (px).
+  Override shadcn semantic vars in :root to point to SD namespaced vars.
+  The @theme inline block maps semantic vars → Tailwind utilities.
+  No circular refs: SD vars → semantic vars → @theme inline → Tailwind.
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  /* === TOKEN BRIDGE: SD vars override shadcn defaults === */
+  --primary: var(--sd-color-primary);
+  --primary-foreground: var(--sd-color-primary-foreground);
+  --background: var(--sd-color-background);
+  --foreground: var(--sd-color-foreground);
+  --radius: var(--sd-dimension-radius);
+
+  /* shadcn supplementary vars (not yet token-driven — fill from DESIGN.md) */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+}
+```
+
+---
+
+### `app/palette-disable.css` — disable all default Tailwind color scales
+
+**Why this file exists:** Tailwind v4 ships ~22 named color scales as `@theme default` values.
+Without this block, `bg-red-500` still resolves even if your design never uses it — silent
+UI drift. Setting each var to `initial` inside a non-default `@theme` block overrides the
+`@theme default` values shipped by `tailwindcss/theme.css`.
+
+**CRITICAL:** Do NOT use `--color-*: initial` as a wildcard — it is silently ignored in
+Tailwind v4.3.1. Every shade of every scale must be listed individually.
+
+Inline this block in `globals.css` (after the `@import` lines) or `@import` it as a
+separate file. Either works; choose one and be consistent.
+
+```css
+/*
+  CONTRACT 4 enforcement: disable every Tailwind default color so that
+  bg-red-500, text-blue-700, etc. resolve to no value (utility class becomes
+  a no-op). Only our SD-compiled semantic vars (--color-primary, etc.) remain.
+  Setting a theme variable to `initial` inside a non-default @theme block
+  overrides the `@theme default` values shipped by tailwindcss/theme.css.
+*/
+@theme {
+  /* ── Remove ALL named color scales ───────────────────────────── */
+  --color-red-50: initial; --color-red-100: initial; --color-red-200: initial;
+  --color-red-300: initial; --color-red-400: initial; --color-red-500: initial;
+  --color-red-600: initial; --color-red-700: initial; --color-red-800: initial;
+  --color-red-900: initial; --color-red-950: initial;
+
+  --color-orange-50: initial; --color-orange-100: initial; --color-orange-200: initial;
+  --color-orange-300: initial; --color-orange-400: initial; --color-orange-500: initial;
+  --color-orange-600: initial; --color-orange-700: initial; --color-orange-800: initial;
+  --color-orange-900: initial; --color-orange-950: initial;
+
+  --color-amber-50: initial; --color-amber-100: initial; --color-amber-200: initial;
+  --color-amber-300: initial; --color-amber-400: initial; --color-amber-500: initial;
+  --color-amber-600: initial; --color-amber-700: initial; --color-amber-800: initial;
+  --color-amber-900: initial; --color-amber-950: initial;
+
+  --color-yellow-50: initial; --color-yellow-100: initial; --color-yellow-200: initial;
+  --color-yellow-300: initial; --color-yellow-400: initial; --color-yellow-500: initial;
+  --color-yellow-600: initial; --color-yellow-700: initial; --color-yellow-800: initial;
+  --color-yellow-900: initial; --color-yellow-950: initial;
+
+  --color-lime-50: initial; --color-lime-100: initial; --color-lime-200: initial;
+  --color-lime-300: initial; --color-lime-400: initial; --color-lime-500: initial;
+  --color-lime-600: initial; --color-lime-700: initial; --color-lime-800: initial;
+  --color-lime-900: initial; --color-lime-950: initial;
+
+  --color-green-50: initial; --color-green-100: initial; --color-green-200: initial;
+  --color-green-300: initial; --color-green-400: initial; --color-green-500: initial;
+  --color-green-600: initial; --color-green-700: initial; --color-green-800: initial;
+  --color-green-900: initial; --color-green-950: initial;
+
+  --color-emerald-50: initial; --color-emerald-100: initial; --color-emerald-200: initial;
+  --color-emerald-300: initial; --color-emerald-400: initial; --color-emerald-500: initial;
+  --color-emerald-600: initial; --color-emerald-700: initial; --color-emerald-800: initial;
+  --color-emerald-900: initial; --color-emerald-950: initial;
+
+  --color-teal-50: initial; --color-teal-100: initial; --color-teal-200: initial;
+  --color-teal-300: initial; --color-teal-400: initial; --color-teal-500: initial;
+  --color-teal-600: initial; --color-teal-700: initial; --color-teal-800: initial;
+  --color-teal-900: initial; --color-teal-950: initial;
+
+  --color-cyan-50: initial; --color-cyan-100: initial; --color-cyan-200: initial;
+  --color-cyan-300: initial; --color-cyan-400: initial; --color-cyan-500: initial;
+  --color-cyan-600: initial; --color-cyan-700: initial; --color-cyan-800: initial;
+  --color-cyan-900: initial; --color-cyan-950: initial;
+
+  --color-sky-50: initial; --color-sky-100: initial; --color-sky-200: initial;
+  --color-sky-300: initial; --color-sky-400: initial; --color-sky-500: initial;
+  --color-sky-600: initial; --color-sky-700: initial; --color-sky-800: initial;
+  --color-sky-900: initial; --color-sky-950: initial;
+
+  --color-blue-50: initial; --color-blue-100: initial; --color-blue-200: initial;
+  --color-blue-300: initial; --color-blue-400: initial; --color-blue-500: initial;
+  --color-blue-600: initial; --color-blue-700: initial; --color-blue-800: initial;
+  --color-blue-900: initial; --color-blue-950: initial;
+
+  --color-indigo-50: initial; --color-indigo-100: initial; --color-indigo-200: initial;
+  --color-indigo-300: initial; --color-indigo-400: initial; --color-indigo-500: initial;
+  --color-indigo-600: initial; --color-indigo-700: initial; --color-indigo-800: initial;
+  --color-indigo-900: initial; --color-indigo-950: initial;
+
+  --color-violet-50: initial; --color-violet-100: initial; --color-violet-200: initial;
+  --color-violet-300: initial; --color-violet-400: initial; --color-violet-500: initial;
+  --color-violet-600: initial; --color-violet-700: initial; --color-violet-800: initial;
+  --color-violet-900: initial; --color-violet-950: initial;
+
+  --color-purple-50: initial; --color-purple-100: initial; --color-purple-200: initial;
+  --color-purple-300: initial; --color-purple-400: initial; --color-purple-500: initial;
+  --color-purple-600: initial; --color-purple-700: initial; --color-purple-800: initial;
+  --color-purple-900: initial; --color-purple-950: initial;
+
+  --color-fuchsia-50: initial; --color-fuchsia-100: initial; --color-fuchsia-200: initial;
+  --color-fuchsia-300: initial; --color-fuchsia-400: initial; --color-fuchsia-500: initial;
+  --color-fuchsia-600: initial; --color-fuchsia-700: initial; --color-fuchsia-800: initial;
+  --color-fuchsia-900: initial; --color-fuchsia-950: initial;
+
+  --color-pink-50: initial; --color-pink-100: initial; --color-pink-200: initial;
+  --color-pink-300: initial; --color-pink-400: initial; --color-pink-500: initial;
+  --color-pink-600: initial; --color-pink-700: initial; --color-pink-800: initial;
+  --color-pink-900: initial; --color-pink-950: initial;
+
+  --color-rose-50: initial; --color-rose-100: initial; --color-rose-200: initial;
+  --color-rose-300: initial; --color-rose-400: initial; --color-rose-500: initial;
+  --color-rose-600: initial; --color-rose-700: initial; --color-rose-800: initial;
+  --color-rose-900: initial; --color-rose-950: initial;
+
+  --color-slate-50: initial; --color-slate-100: initial; --color-slate-200: initial;
+  --color-slate-300: initial; --color-slate-400: initial; --color-slate-500: initial;
+  --color-slate-600: initial; --color-slate-700: initial; --color-slate-800: initial;
+  --color-slate-900: initial; --color-slate-950: initial;
+
+  --color-gray-50: initial; --color-gray-100: initial; --color-gray-200: initial;
+  --color-gray-300: initial; --color-gray-400: initial; --color-gray-500: initial;
+  --color-gray-600: initial; --color-gray-700: initial; --color-gray-800: initial;
+  --color-gray-900: initial; --color-gray-950: initial;
+
+  --color-zinc-50: initial; --color-zinc-100: initial; --color-zinc-200: initial;
+  --color-zinc-300: initial; --color-zinc-400: initial; --color-zinc-500: initial;
+  --color-zinc-600: initial; --color-zinc-700: initial; --color-zinc-800: initial;
+  --color-zinc-900: initial; --color-zinc-950: initial;
+
+  --color-neutral-50: initial; --color-neutral-100: initial; --color-neutral-200: initial;
+  --color-neutral-300: initial; --color-neutral-400: initial; --color-neutral-500: initial;
+  --color-neutral-600: initial; --color-neutral-700: initial; --color-neutral-800: initial;
+  --color-neutral-900: initial; --color-neutral-950: initial;
+
+  --color-stone-50: initial; --color-stone-100: initial; --color-stone-200: initial;
+  --color-stone-300: initial; --color-stone-400: initial; --color-stone-500: initial;
+  --color-stone-600: initial; --color-stone-700: initial; --color-stone-800: initial;
+  --color-stone-900: initial; --color-stone-950: initial;
+
+  --color-black: initial;
+  --color-white: initial;
+}
+```
+
+---
+
+### `tests/visual/token-pipeline.spec.ts` — Playwright design-pipeline checks
+
+Two contract types: (1) computed-style assertion in `rgb()` form proving the SD→semantic→Tailwind
+chain is live; (2) `toHaveScreenshot` visual snapshot for regression detection.
+
+```ts
+import { test, expect } from '@playwright/test';
+
+/**
+ * token-pipeline.spec.ts
+ *
+ * Verifies the three-layer design token chain:
+ *   tokens.json  →  SD compile  →  generated-tokens.css  →  globals.css bridge
+ *   →  shadcn semantic vars  →  Tailwind utility classes
+ *
+ * Run: npx playwright test tests/visual/token-pipeline.spec.ts
+ * Requires a running dev server (npm run dev).
+ */
+test.describe('Design token pipeline', () => {
+  test.beforeEach(async ({ page }) => {
+    // Disable animations so screenshots are deterministic
+    await page.addStyleTag({
+      content: '*, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }',
+    });
+  });
+
+  // ── CONTRACT 1: SD-compiled CSS var arrives in the browser ───────────────
+  test('CONTRACT 1: --sd-color-primary CSS var is present in :root', async ({ page }) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForLoadState('networkidle');
+
+    const value = await page.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--sd-color-primary')
+        .trim()
+    );
+
+    // Browsers may normalise #0066ff → #06f. Accept both.
+    expect(['#0066ff', '#06f']).toContain(value);
+  });
+
+  // ── CONTRACT 2: @theme inline maps semantic var → Tailwind utility ────────
+  test('CONTRACT 2: --primary semantic var resolves to SD token value', async ({ page }) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForLoadState('networkidle');
+
+    const value = await page.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--primary')
+        .trim()
+    );
+
+    // globals.css :root sets --primary: var(--sd-color-primary)
+    expect(['#0066ff', '#06f']).toContain(value);
+  });
+
+  // ── CONTRACT 3: shadcn component uses the token (end-to-end chain) ───────
+  test('CONTRACT 3: primary button background resolves to token rgb value', async ({ page }) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForLoadState('networkidle');
+
+    const bgColor = await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="primary-button"]') as HTMLElement;
+      return window.getComputedStyle(btn).backgroundColor;
+    });
+
+    // #0066ff in rgb form — use rgb() assertion, not hex
+    expect(bgColor).toBe('rgb(0, 102, 255)');
+  });
+
+  // ── CONTRACT 4: default Tailwind palette is disabled ─────────────────────
+  test('CONTRACT 4: bg-red-500 does NOT resolve (default palette disabled)', async ({ page }) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForLoadState('networkidle');
+
+    const bgColor = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="red-element"]') as HTMLElement;
+      return window.getComputedStyle(el).backgroundColor;
+    });
+
+    // When --color-red-500 is set to `initial` in @theme, bg-red-500 has no
+    // color to apply → computed backgroundColor falls back to transparent.
+    expect(bgColor).toBe('rgba(0, 0, 0, 0)');
+  });
+
+  // ── VISUAL SNAPSHOT: full-page regression guard ───────────────────────────
+  test('VISUAL: home page matches token snapshot', async ({ page }) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page).toHaveScreenshot('home-token-snapshot.png', {
+      fullPage: true,
+      threshold: 0.02, // 2% pixel diff tolerance
+    });
+  });
+});
+```
+
+---
+
+### `package.json` design:* scripts
+
+Add these to the `"scripts"` block. `design:build` is the standard compile step;
+`design:validate` is the pre-compile DTCG schema gate; `design:check` runs the Playwright
+visual contracts.
+
+```json
+{
+  "scripts": {
+    "design:validate": "node scripts/design-validate.mjs",
+    "design:build": "npm run design:validate && node sd.config.mjs",
+    "design:check": "npx playwright test tests/visual/token-pipeline.spec.ts"
+  }
+}
+```
+
+---
+
+### `scripts/design-validate.mjs` — DTCG schema validator
+
+**Must be a script file — never inline `node -e '...'`** (shell quoting breaks on CI and Windows).
+Validates that every token group in `tokens/tokens.json` follows DTCG v2025.10 structure:
+leaf tokens have `$value`; groups have at least one non-`$` child key.
+
+```js
+#!/usr/bin/env node
+/**
+ * design:validate — DTCG schema check for tokens/tokens.json
+ * Validates that every token group follows DTCG v2025.10 structure:
+ *   - Leaf tokens have $value
+ *   - Groups have child keys (each of which is a leaf or nested group)
+ */
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const tokensPath = resolve(__dirname, '../tokens/tokens.json');
+
+let tokens;
+try {
+  tokens = JSON.parse(readFileSync(tokensPath, 'utf8'));
+} catch (e) {
+  console.error('❌ Could not read tokens/tokens.json:', e.message);
+  process.exit(1);
+}
+
+function isValidDTCG(obj, path = '') {
+  if (typeof obj !== 'object' || obj === null) {
+    console.error(`❌ Non-object at ${path}`);
+    return false;
+  }
+  // Leaf token: must have $value
+  if ('$value' in obj) return true;
+  // Group: must have at least one non-$ child key, each valid recursively
+  const childKeys = Object.keys(obj).filter(k => !k.startsWith('$'));
+  if (childKeys.length === 0) {
+    console.error(`❌ Empty group at ${path} (no $value and no children)`);
+    return false;
+  }
+  return childKeys.every(k => isValidDTCG(obj[k], `${path}.${k}`));
+}
+
+const topKeys = Object.keys(tokens).filter(k => !k.startsWith('$'));
+const allValid = topKeys.every(k => isValidDTCG(tokens[k], k));
+
+if (!allValid) {
+  console.error('❌ tokens/tokens.json DTCG validation FAILED');
+  process.exit(1);
+}
+
+console.log(`✓ tokens/tokens.json DTCG valid (${topKeys.length} groups: ${topKeys.join(', ')})`);
+```
+
+---
+
+## V32.8 — VERIFICATION & LEARNING LAYER TEMPLATES
+
+> These skeletons implement Rule 32 "Verifiable-Done + Learning Loop".
+> One canonical copy lives here; `bootstrap.md` Phase 0, `phases.md` hooks,
+> and `deploy.sh` reference or ship them to target apps.
+
+---
+
+### Acceptance-contract skeleton
+
+Write the contract **before** work starts. "Done" is claimable only by running it and
+capturing the output. Machine-executable check is the default; human-attestation is a
+labeled exception.
+
+```yaml
+# acceptance_contract:
+#
+# PROPORTIONALITY RULE (anti-drag):
+#   trivial task  → one-line check is sufficient
+#   substantial / risky task → full criteria block required
+#
+# Machine-executable check (DEFAULT):
+check_command: "npm run design:build && npx playwright test tests/visual/token-pipeline.spec.ts"
+pass_criteria: "exit 0; all 5 Playwright contracts green"
+#
+# Human-attestation exception (LABELED — use ONLY when a machine genuinely cannot judge):
+# human_attestation:
+#   reason: "Design sign-off — visual quality, brand alignment, UX feel"
+#   attested_by: ""      # fill with name before marking done
+#   attested_at: ""      # ISO-8601 timestamp
+#
+# The exception label exists so attestation cannot silently become the lazy default.
+```
+
+---
+
+### `evidence:` block for STATE.md / Smart-Checkpoint
+
+Every done-claim in STATE.md must carry this block. A claim without it is a structurally
+malformed artifact — the Stop hook blocks it.
+
+```yaml
+evidence:
+  contract: "npm run design:build exits 0; all Playwright token-pipeline contracts green"
+  check_command: "npm run design:build && npx playwright test tests/visual/token-pipeline.spec.ts"
+  captured_output: |
+    ✓ tokens/tokens.json DTCG valid (2 groups: color, dimension)
+    Style Dictionary build complete
+    5 passed (token-pipeline.spec.ts)
+```
+
+Replace `captured_output` with the real terminal output before marking done.
+
+---
+
+### `LESSONS_REGISTRY.md` entry template
+
+The registry is append-only. One entry per promoted lesson. `fingerprint` is a
+coarse structured tuple `{scope.category.surface}`; add `machine_signature` when
+the failure is machine-emitted (CVE-ID, error code, or normalized error string).
+
+```markdown
+## <short title>
+
+| Field | Value |
+|---|---|
+| **fingerprint** | `<scope>.<category>.<surface>` — e.g. `framework.docker-build.worker-image` |
+| **machine_signature** | `<CVE-ID / error-code / normalized-error-string>` _(omit if not machine-emitted)_ |
+| **scope** | `project` \| `framework` \| `conductor` |
+| **failure** | One-sentence description of what went wrong and when it was first observed. |
+| **standing_check** | The check that must not erode — command, assertion, or gate that catches recurrence. |
+| **check_location** | Where the standing check lives: `lint-deploy.sh C<N>`, `tests/visual/token-pipeline.spec.ts`, `phases.md Phase N pre-flight`, etc. |
+
+_Promoted: YYYY-MM-DD_
+```
+
+**Scope routing:**
+- `project` → check lands in `lessons.md` (in-repo, project-local)
+- `framework` → check lands in a deliverable (`lint-deploy.sh`, `templates.md` rule, phase output contract); shipped to new apps via `deploy.sh`
+- `conductor` → check lands in a `/memory` feedback file; auto-loads each session
+
+---
+
+### `settings.json` Stop hook config block
+
+**ONE canonical copy here.** `bootstrap.md` Phase 0 and `deploy.sh` reference this.
+Merges into `.claude/settings.json` in target app projects (extends deliverable #19).
+
+The Stop hook blocks a done-claim whose `evidence:` field is empty or absent.
+Harness-executed = binds even when the model decides otherwise.
+
+**Mechanism:** Claude Code Stop hooks are command-type only. Blocking is signalled by the
+script exiting **non-zero**. There is no `matcher`/`action`/`message` schema for Stop hooks —
+those keys are silently ignored. The companion script `scripts/design-stop-hook.sh` reads
+`docs/STATE.md`, checks for an empty/missing `captured_output`, and exits 1 to block or 0
+to allow. stdout JSON is ignored; only the exit code matters.
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/design-stop-hook.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Merge note:** When the target app already has a `settings.json` (deliverable #19 ships
+`skillListingBudgetFraction` + `maxSkillDescriptionChars`), merge the `hooks` key — do not
+overwrite the file. Final merged shape:
+
+```json
+{
+  "skillListingBudgetFraction": 0.01,
+  "maxSkillDescriptionChars": 1024,
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/design-stop-hook.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## V32.9 — COMPLIANCE & DATA PRIVACY TEMPLATES
+
+> These templates implement Rule 33 (Compliance & Data Privacy) from V32.9.
+> Reference: Master_Prompt.md Rule 33 · `.ai_prompt/privacy.md` · ui-rules.md Rule 13.
+
+---
+
+### `ComplianceFooter` — shadcn/ui-based compliance badge component
+
+Honest badge policy (non-negotiable, owner-aware):
+- **Default-ON badges assert ONLY what the framework actually enforces.**
+- Third-party CERTIFICATION badges (ISO 27001, SOC 2, PCI DSS, etc.) are **OFF by default**.
+  Enable ONLY if the client genuinely holds the certification — a false cert badge is
+  misrepresentation and carries legal risk. This is noted explicitly in the component.
+- Badge copy must remain accurate to framework guarantees; do not inflate claims.
+
+**Badges that are ON by default** (the framework enforces all four):
+1. **Philippine Data Privacy Act–Aligned** — PH DPA (RA 10173/NPC) model enforced by `.ai_prompt/privacy.md`
+2. **WCAG 2.2 AA** — enforced by ui-rules.md Rule 13 (hard gate for gov/LGU; warn-only otherwise)
+3. **Privacy by Design** — enforced by Hook 18 gap scan at every data-touching build phase
+4. **OWASP ASVS** — L1-L6 security stack enforced by `.ai_prompt/security.md`
+
+```tsx
+// components/ui/compliance-footer.tsx
+// Generated by Bootstrap Step 20b (V32.9) — do NOT manually override badge defaults
+// without updating DECISIONS_LOG.md with the rationale.
+//
+// HONESTY RULE: Only assert what is actually enforced. Certification badges
+// (ISO 27001, SOC 2, etc.) MUST be disabled unless the client holds a real certificate.
+// A false certification badge is misrepresentation — legal risk for client and developer.
+
+import { Badge } from "@/components/ui/badge";
+import { ShieldCheck, Accessibility, Lock, Eye } from "lucide-react";
+
+interface ComplianceFooterProps {
+  /**
+   * Default-ON: assertions backed by framework enforcement.
+   * Set to false only if the app genuinely does not implement the feature.
+   */
+  showPhilippineDpa?: boolean;       // default: true  — privacy.md + Hook 18
+  showWcag22Aa?: boolean;            // default: true  — ui-rules.md Rule 13
+  showPrivacyByDesign?: boolean;     // default: true  — Hook 18 gap scan
+  showOwaspAsvs?: boolean;           // default: true  — security.md L1-L6
+
+  /**
+   * Default-OFF: certification badges.
+   * Enable ONLY if the client holds the real certificate.
+   * Displaying a cert badge without the actual certificate = misrepresentation.
+   */
+  showIso27001?: boolean;            // default: false — enable only with real cert
+  showSoc2?: boolean;                // default: false — enable only with real cert
+  showPciDss?: boolean;              // default: false — enable only with real cert
+
+  className?: string;
+}
+
+export function ComplianceFooter({
+  showPhilippineDpa = true,
+  showWcag22Aa = true,
+  showPrivacyByDesign = true,
+  showOwaspAsvs = true,
+  showIso27001 = false,
+  showSoc2 = false,
+  showPciDss = false,
+  className,
+}: ComplianceFooterProps) {
+  const frameworkBadges = [
+    showPhilippineDpa && {
+      icon: <ShieldCheck className="h-3 w-3" />,
+      label: "Philippine Data Privacy Act–Aligned",
+      title: "Compliant with RA 10173 (PH Data Privacy Act) and NPC regulations",
+    },
+    showWcag22Aa && {
+      icon: <Accessibility className="h-3 w-3" />,
+      label: "WCAG 2.2 AA",
+      title: "Web Content Accessibility Guidelines 2.2 Level AA",
+    },
+    showPrivacyByDesign && {
+      icon: <Eye className="h-3 w-3" />,
+      label: "Privacy by Design",
+      title: "Privacy engineering principles applied throughout development",
+    },
+    showOwaspAsvs && {
+      icon: <Lock className="h-3 w-3" />,
+      label: "OWASP ASVS",
+      title: "OWASP Application Security Verification Standard (L1-L6 stack)",
+    },
+  ].filter(Boolean);
+
+  const certBadges = [
+    showIso27001 && { label: "ISO 27001" },
+    showSoc2 && { label: "SOC 2" },
+    showPciDss && { label: "PCI DSS" },
+  ].filter(Boolean);
+
+  if (frameworkBadges.length === 0 && certBadges.length === 0) return null;
+
+  return (
+    <footer
+      className={`border-t border-border bg-muted/30 px-4 py-3 ${className ?? ""}`}
+      aria-label="Compliance and security certifications"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {frameworkBadges.map((badge) => (
+          <Badge
+            key={badge!.label}
+            variant="outline"
+            className="gap-1 text-xs text-muted-foreground"
+            title={badge!.title}
+          >
+            {badge!.icon}
+            {badge!.label}
+          </Badge>
+        ))}
+        {certBadges.map((badge) => (
+          <Badge
+            key={badge!.label}
+            variant="secondary"
+            className="text-xs"
+            title={`${badge!.label} certified — certificate verified`}
+          >
+            {badge!.label}
+          </Badge>
+        ))}
+      </div>
+    </footer>
+  );
+}
+```
+
+**Installation:** Bootstrap Step 20b (V32.9) writes this component to `components/ui/compliance-footer.tsx`.
+Import in root layout or per-page footer: `import { ComplianceFooter } from "@/components/ui/compliance-footer"`.
+Props are all optional — defaults are correct for any framework-built app.
+
+**Gov/LGU apps:** `showWcag22Aa` must remain `true` (hard gate — DICT MC 004).
+For client-facing PH gov apps also consider adding a DICT/NPC compliance notice to the footer copy.
+
+---
+
+### Architect Dispatch — Decision-Skills Line
+
+Every Architect dispatch prompt that involves a real technical decision MUST include this line.
+Technical decisions = choosing between approaches, selecting a library, designing an API contract,
+picking a schema pattern, evaluating a security tradeoff. Do NOT add this line for pure mechanical
+execution tasks (write the code, run the tests, fix the lint).
+
+```markdown
+## Decision Skills (required at real decision points — do NOT decide from memory)
+Before committing to any technical approach in this task, USE the available decision skills:
+- `superpowers:brainstorming` — generate options before narrowing
+- `deep-research` — evaluate approaches against current docs and ecosystem state
+- `fullstack-dev-skills:architecture-designer` (ADR) — record the decision with context and alternatives
+- `doc-coauthoring` — when the decision output is a governance doc or spec update
+- `code-review` — validate the chosen approach before full implementation
+
+Do not decide from memory or prior training alone. These skills exist precisely because
+training data goes stale and ecosystem best practices shift. Use them.
+```
+
+Wire this block into every Opus task-scope template for Phases 3.5, 4 Parts 1-4, 7, and 8
+where the task description contains words like "choose", "design", "evaluate", "select", "strategy",
+or "approach". Mechanical tasks (scaffold from spec, write tests for X, fix type error at Y) do
+NOT need this block — suppress it to keep Sonnet prompts short.
 
 ---
 

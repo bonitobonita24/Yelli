@@ -1,0 +1,17 @@
+{
+  "skillListingBudgetFraction": 0.01,
+  "maxSkillDescriptionChars": 1024,
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/design-stop-hook.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
